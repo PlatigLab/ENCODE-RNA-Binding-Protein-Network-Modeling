@@ -1,1 +1,1 @@
-# ENCODE-RNA-Binding-Protein-Network-Modelling
+# ENCODE RNA Binding Protein Network Modelling
