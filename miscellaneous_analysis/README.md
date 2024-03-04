@@ -1,5 +1,6 @@
-# Miscellaneous Analysis
+# Miscellaneous Analyses
 
-📂`aligned_BAM_annotation_comparison/`:
+📂 `pval_correction/`: 
 
-Analysis to understand the differences in genome annotation for alignments between `eCLIP` and `shRNA` data. 
+Code related to recalculating p-values for `ENCODE`'s provided data. 
+
