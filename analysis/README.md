@@ -6,4 +6,3 @@ Sub-folders separated by notebooks and output.
 
 Output folders are mixture of `genome build` and values used in the matrix (i.e. `counts` vs `PSI`)
 
-
