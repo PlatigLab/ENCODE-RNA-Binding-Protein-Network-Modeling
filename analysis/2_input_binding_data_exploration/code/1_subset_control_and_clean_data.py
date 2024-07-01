@@ -7,7 +7,7 @@ import sys
 ############
 # Literals #
 ############
-columns_to_drop = ["psip", "delta_psi", "FDR", "p_value", "RBP_KD", "has_RBP_KD"]
+columns_to_drop = ["psip", "delta_psi", "FDR", "p_value", "RBP_KD", "has_RBP_KD", "ENST", "ENSE_UP", "ENSE_DN"]
 
 #############
 # Main Code #
@@ -22,6 +22,11 @@ input = pd.read_csv(
     compression="gzip",
     sep=",", 
 )
+
+# convert all 0/1 columns to int8 as they don't need 64 bits
+for column in input.columns:
+    if input[column].dtype == 'int64':
+        input[column] = input[column].astype("int8")
 
 # subset data to only include control samples
 input = input[input["RBP_KD"]=="NONE"]
