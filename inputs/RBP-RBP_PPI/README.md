@@ -9,7 +9,7 @@ Citation:
 
 <br>
 
-📄 `uniprot_mapping.csv`: 
+📄 `uniprot_mapping.tsv`: 
 
 Table with info focusing on mapping between gene names and `UniProt` IDs. 
 
