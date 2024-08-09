@@ -1,1 +1,4 @@
 .ipynb_checkpoints/
+
+# ignore SLURM output
+analysis/3_get_expression_shrna_BAMs/SLURM_output/*
