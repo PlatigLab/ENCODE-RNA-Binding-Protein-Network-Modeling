@@ -2,3 +2,6 @@
 
 # ignore SLURM output
 analysis/3_get_expression_shrna_BAMs/SLURM_output/*
+
+# ignore individual counts files 
+analysis/3_get_expression_shrna_BAMs/output/1_experiment_counts/*
