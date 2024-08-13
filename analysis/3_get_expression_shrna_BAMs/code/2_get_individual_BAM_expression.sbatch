@@ -22,4 +22,4 @@ prefix=$(basename $encode_id)
 # only count paired end reads where both ends were aligned 
 # count exonic overlapping reads and summarize at the gene level 
 # counts the 2 KD and 2 control BAM files per experiment 
-~/subread-2.0.7-Linux-x86_64/bin/featureCounts -T 20 -s 2 -p --countReadPairs -B -t exon -g gene_id -a ~/gencode.v29.primary_assembly.annotation_UCSC_names.gtf.gz --tmpDir /scratch/y.raghav/ -o ../output/$prefix"".txt $encode_id/star/*/*/*.out.bam 
+~/subread-2.0.7-Linux-x86_64/bin/featureCounts -T 20 -s 2 -p --countReadPairs -B -t exon -g gene_id -a ~/gencode.v29.primary_assembly.annotation_UCSC_names.gtf.gz --tmpDir /scratch/y.raghav/ -o ../output/experiment_counts/$prefix"".txt $encode_id/star/*/*/*.out.bam 
