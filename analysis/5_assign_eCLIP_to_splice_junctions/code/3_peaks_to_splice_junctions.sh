@@ -17,7 +17,7 @@ do
         -a $file \
         -b ../output/bedtools_input/unique_splicing_junctions_sorted.bed \
         -s \
-        -D b \
+        -d \
         -t first > ../output/peaks_to_splice_junctions/$(basename $file "_all_peaks_sorted.bed")_peaks_to_splice_junctions.bed
 
 done
