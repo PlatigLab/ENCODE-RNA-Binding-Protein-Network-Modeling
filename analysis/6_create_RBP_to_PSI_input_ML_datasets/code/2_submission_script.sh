@@ -1,4 +1,5 @@
 #!/bin/bash
+
 thresholds=(50 100 500 1000 2000 5000 10000)
 cell_lines=(HepG2 K562)
 
@@ -10,12 +11,10 @@ do
     for rbp in "${rbps[@]}"
     do
 
-        file=$(find /project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/ -iname "SE*.txt" | grep -v "Transfection" | grep "${rbp}-" | grep "${cell_line}")
-
         for threshold in "${thresholds[@]}"
         do
 
-            sbatch --nodes=1 --ntasks=1 --mem=60GB --partition=standard --account=platiglab --output=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".out --error=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".error --wrap="python3 1_script.py ${cell_line} ${threshold} ${file}"
+            sbatch --nodes=1 --ntasks=1 --mem=50GB --partition=standard --account=platiglab --output=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".out --error=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".error --wrap="python3 1_script.py --cell_line ${cell_line} --rbp ${rbp} --threshold ${threshold}"
         
         done
 
