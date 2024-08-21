@@ -12,3 +12,4 @@ analysis/4_normalize_raw_counts_matrices/outputs/*
 # ignore the shards of the input RBP ML datasets 
 analysis/6_create_RBP_to_PSI_input_ML_datasets/output/*
 analysis/6_create_RBP_to_PSI_input_ML_datasets/SLURM_output/*
+analysis/6_create_RBP_to_PSI_input_ML_datasets/final_modeling_input_datasets/*
