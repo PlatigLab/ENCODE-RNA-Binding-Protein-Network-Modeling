@@ -8,3 +8,7 @@ analysis/3_get_expression_shrna_BAMs/output/1_experiment_counts/*
 
 # ignore normalized counts matrices
 analysis/4_normalize_raw_counts_matrices/outputs/*
+
+# ignore the shards of the input RBP ML datasets 
+analysis/6_create_RBP_to_PSI_input_ML_datasets/output/*
+analysis/6_create_RBP_to_PSI_input_ML_datasets/SLURM_output/*
