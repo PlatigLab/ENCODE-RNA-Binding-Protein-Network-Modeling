@@ -1,12 +1,14 @@
+# %%
 import pandas as pd
 import glob, gzip, pickle, sys, argparse, copy
 
-# add argument parsing code here
-parser = argparse.ArgumentParser(description='Process command line arguments.')
 
-parser.add_argument('--cell_line', type=str, help='Cell line', required=True)
-parser.add_argument('--rbp', type=str, help='RBP', required=True)
-parser.add_argument('--threshold', type=int, help='Threshold', required=True)
+
+
+parser = argparse.ArgumentParser(description='Process arguments.')
+parser.add_argument('--cell_line', type=str, help='Cell line')
+parser.add_argument('--rbp', type=str, help='RNA Binding Protein')
+parser.add_argument('--threshold', type=int, help='Threshold value')
 
 args = parser.parse_args()
 
@@ -41,6 +43,7 @@ exon_ordering = {
 }
 
 sample_names = ["KD-1", "KD-2", "CTRL-1", "CTRL-2"]
+
 
 
 
@@ -82,11 +85,12 @@ rmats_file = rmats_file[0]
 # paranoia check: the cell line should be the same as what's labelled on the folder 
 assert rmats_file.split("/")[-2].split("-")[2] == cell_line
 
-
 # read rMATS file and subset for relevant columns
 rmats_df = pd.read_csv(rmats_file, sep="\t")[rmats_file_column_subset]
 # add RBP KD column 
 rmats_df["RBP_KD_Target"] = rbp
+
+
 
 
 
@@ -118,11 +122,9 @@ with gzip.GzipFile("../../5_assign_eCLIP_to_splice_junctions/output/splice_junct
     junction_to_num_peaks = pickle.load(in_file)
 
     junction_to_num_peaks = junction_to_num_peaks[cell_line][threshold]
-
-
-
-
-
+    
+    
+    
 
 
 
@@ -158,8 +160,6 @@ for row in rmats_df:
                                 
                 events_encountered.add(unique_id)
                 
-                ML_input_data[unique_id] = {}
-
                 binding_present=False
                 binding_dict = {}
                 
@@ -224,14 +224,148 @@ for row in rmats_df:
                     all_zero_events+=1
 
 
-ML_input_data = pd.DataFrame.from_dict(ML_input_data, orient="index")
+print(
+    [{"all_zero_events": all_zero_events, "total_events": len(ML_input_data)}]
+)
 
-ML_input_data.to_csv(
-    "../output/{}_{}_{}-initialdata.tsv.gz".format(cell_line, args.rbp, threshold), 
+
+
+
+
+
+
+
+
+tmp_output_df = copy.deepcopy(ML_input_data)
+
+# %%
+for unique_id in tmp_output_df: 
+    
+    row = tmp_output_df[unique_id]
+    
+    if row["RBP_KD_Target"]!="CTRL": 
+        
+        kd_rbp = row["RBP_KD_Target"]
+        
+        for position in range(1,7): 
+            
+            feature_string = "_".join([kd_rbp, str(position), "binding"])
+            row[feature_string] = 0
+            
+
+tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+
+tmp_output_df.to_csv(
+    "../output/{}_{}_{}_num-peaks-only.tsv.gz".format(cell_line, args.rbp, threshold), 
     sep="\t",
     compression="gzip"
 )
 
-print(
-    {"all_zero_events": all_zero_events, "total_events": len(ML_input_data)}
+
+
+
+
+
+
+# %%
+tmp_output_df = copy.deepcopy(ML_input_data)
+
+for unique_id in tmp_output_df: 
+    
+    row = tmp_output_df[unique_id]
+    
+    if row["RBP_KD_Target"]!="CTRL": 
+        
+        kd_rbp = row["RBP_KD_Target"]
+        
+        for position in range(1,7): 
+            
+            feature_string = "_".join([kd_rbp, str(position), "binding"])
+            row[feature_string] = 0
+    
+    for feature in row: 
+        
+        if "_binding" in feature and row[feature] >1 :
+            
+            row[feature] = 1
+            
+tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+
+tmp_output_df.to_csv(
+    "../output/{}_{}_{}_binary-binding-only.tsv.gz".format(cell_line, args.rbp, threshold), 
+    sep="\t",
+    compression="gzip"
 )
+
+
+
+
+
+
+
+
+
+# %%
+for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
+    
+    tmp_output_df = copy.deepcopy(ML_input_data)
+    
+    analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
+
+    expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
+    
+    for unique_id in tmp_output_df: 
+    
+        row = tmp_output_df[unique_id]
+        sample = "_".join(unique_id.split("_")[-2:])        
+
+        for feature in row: 
+
+            if "_binding" in feature and row[feature] > 0:
+                
+                row[feature] = expression[sample][feature.split("_")[0]]                
+
+    tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+
+    tmp_output_df.to_csv(
+        "../output/{}_{}_{}_{}_dose-independent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
+        sep="\t",
+        compression="gzip"
+    )
+
+
+
+
+
+
+
+
+# %%
+for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
+    
+    tmp_output_df = copy.deepcopy(ML_input_data)
+    
+    analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
+
+    expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
+    
+    for unique_id in tmp_output_df: 
+    
+        row = tmp_output_df[unique_id]
+        sample = "_".join(unique_id.split("_")[-2:])        
+
+        for feature in row: 
+
+            if "_binding" in feature and row[feature] > 0:
+                
+                row[feature] = (row[feature]) * (expression[sample][feature.split("_")[0]])               
+
+    tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+
+    tmp_output_df.to_csv(
+        "../output/{}_{}_{}_{}_dose-dependent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
+        sep="\t",
+        compression="gzip"
+    )
+
+
