@@ -14,7 +14,7 @@ do
         for threshold in "${thresholds[@]}"
         do
 
-            sbatch --nodes=1 --ntasks=1 --mem=60GB --partition=standard --account=platiglab --output=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".out --error=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".error --wrap="python3 1_script.py --cell_line ${cell_line} --rbp ${rbp} --threshold ${threshold}"
+            sbatch --nodes=1 --ntasks=1 --mem=50GB --partition=standard --account=platiglab --output=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".out --error=../SLURM_output/"${cell_line}"_"${rbp}"_"${threshold}".error --wrap="python3 1_script.py --cell_line ${cell_line} --rbp ${rbp} --threshold ${threshold}"
         
         done
 
