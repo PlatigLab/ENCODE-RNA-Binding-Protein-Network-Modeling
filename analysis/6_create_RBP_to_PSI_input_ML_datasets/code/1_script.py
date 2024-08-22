@@ -101,10 +101,10 @@ rmats_df["PSI_CTRL-2"] = rmats_df["IncLevel2"].str.split(",").str[1]
 
 rmats_df = rmats_df.drop(columns = ["IncLevel1", "IncLevel2"])
 
-rmats_df["Counts_KD-1"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[0]) + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[0])
-rmats_df["Counts_KD-2"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[1]) + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[1])
-rmats_df["Counts_CTRL-1"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[0]) + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[0])
-rmats_df["Counts_CTRL-2"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[1]) + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[1])
+rmats_df["Counts_KD-1"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[0]).astype("int64") + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[0]).astype("int64")
+rmats_df["Counts_KD-2"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[1]).astype("int64") + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[1]).astype("int64")
+rmats_df["Counts_CTRL-1"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[0]).astype("int64") + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[0]).astype("int64")
+rmats_df["Counts_CTRL-2"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[1]).astype("int64") + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[1]).astype("int64")
 
 rmats_df =  rmats_df.to_dict(orient="records")
 
@@ -116,7 +116,6 @@ junction_to_num_peaks = {}
 
 with gzip.GzipFile("../../5_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/all_RBP_peaks_num_per_splice_junction.pkl.gz", 'rb') as in_file: 
     junction_to_num_peaks = pickle.load(in_file)
-
     junction_to_num_peaks = junction_to_num_peaks[cell_line][threshold]
     
     
@@ -125,9 +124,7 @@ with gzip.GzipFile("../../5_assign_eCLIP_to_splice_junctions/output/splice_junct
 # Create the ML input data #
 ############################################
 ML_input_data = {}
-
 events_encountered = set()
-    
 all_zero_events = 0 
 
 for row in rmats_df: 
