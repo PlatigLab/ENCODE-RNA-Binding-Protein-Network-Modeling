@@ -1,10 +1,13 @@
-# %%
+############################################
+# Packages #
+############################################
+
 import pandas as pd
 import glob, gzip, pickle, sys, argparse, copy
 
-
-
-
+############################################
+# Argument parsing #
+############################################
 parser = argparse.ArgumentParser(description='Process arguments.')
 parser.add_argument('--cell_line', type=str, help='Cell line')
 parser.add_argument('--rbp', type=str, help='RNA Binding Protein')
@@ -17,8 +20,9 @@ rbp = args.rbp
 threshold = args.threshold
 
 
-
-
+############################################
+# Literals #
+############################################
 rmats_data_path = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/"
 
 rmats_file_column_subset = ["chr", "strand", "exonStart_0base", "exonEnd", "upstreamES", "upstreamEE", "downstreamES", "downstreamEE", "IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2", "IncLevel1", "IncLevel2"]
@@ -45,10 +49,9 @@ exon_ordering = {
 sample_names = ["KD-1", "KD-2", "CTRL-1", "CTRL-2"]
 
 
-
-
-
-
+############################################
+# Get the RBPs chosen for the cell line  #
+############################################
 file = glob.glob("../../5_assign_eCLIP_to_splice_junctions/output/bedtools_input/*{}*_sorted.bed".format(cell_line))
 assert len(file)==1
 
@@ -57,11 +60,9 @@ tmp_df = pd.read_csv(file[0], sep="\t", header=None)
 selected_rbps = sorted(tmp_df[3].str.split("_").str[0].unique().tolist())
 
 
-
-
-
-
-
+############################################
+# Get the association of RBP KD to control experiments #
+############################################
 control_associations = {}
 
 file = glob.glob("../../3_get_expression_shrna_BAMs/output/2_final_raw_counts_matrices/{}*associations*".format(cell_line))
@@ -72,11 +73,9 @@ tmp_df = pd.read_csv(file[0], sep="\t")
 control_associations = tmp_df.set_index("RBP KD").to_dict()["Control Accession"]
 
 
-
-
-
-
-
+############################################
+# Get the rMATS file #
+############################################
 rmats_file = [file for file in glob.glob("{}/{}-*{}*/SE.*".format(rmats_data_path, rbp, cell_line)) if "Transfection" not in file and rbp in selected_rbps]
 assert len(rmats_file)==1, print(rmats_file)
 
@@ -87,16 +86,12 @@ assert rmats_file.split("/")[-2].split("-")[2] == cell_line
 
 # read rMATS file and subset for relevant columns
 rmats_df = pd.read_csv(rmats_file, sep="\t")[rmats_file_column_subset]
-# add RBP KD column 
+
+
+############################################
+# Add RBP and sample-specific PSI and counts columns #
+############################################
 rmats_df["RBP_KD_Target"] = rbp
-
-
-
-
-
-
-
-
 
 rmats_df["PSI_KD-1"] = rmats_df["IncLevel1"].str.split(",").str[0]
 rmats_df["PSI_KD-2"] = rmats_df["IncLevel1"].str.split(",").str[1]
@@ -106,16 +101,17 @@ rmats_df["PSI_CTRL-2"] = rmats_df["IncLevel2"].str.split(",").str[1]
 
 rmats_df = rmats_df.drop(columns = ["IncLevel1", "IncLevel2"])
 
-rmats_df["Counts_KD-1"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[0]).astype("int16") + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[0]).astype("int16")
-rmats_df["Counts_KD-2"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[1]).astype("int16") + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[1]).astype("int16")
-rmats_df["Counts_CTRL-1"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[0]).astype("int16") + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[0]).astype("int16")
-rmats_df["Counts_CTRL-2"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[1]).astype("int16") + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[1]).astype("int16")
+rmats_df["Counts_KD-1"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[0]) + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[0])
+rmats_df["Counts_KD-2"] = (rmats_df["IJC_SAMPLE_1"].str.split(",").str[1]) + (rmats_df["SJC_SAMPLE_1"].str.split(",").str[1])
+rmats_df["Counts_CTRL-1"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[0]) + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[0])
+rmats_df["Counts_CTRL-2"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[1]) + (rmats_df["SJC_SAMPLE_2"].str.split(",").str[1])
 
 rmats_df =  rmats_df.to_dict(orient="records")
 
 
-
-
+############################################
+# Get the mapping from splice junction to number of peaks #
+############################################
 junction_to_num_peaks = {}
 
 with gzip.GzipFile("../../5_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/all_RBP_peaks_num_per_splice_junction.pkl.gz", 'rb') as in_file: 
@@ -124,10 +120,10 @@ with gzip.GzipFile("../../5_assign_eCLIP_to_splice_junctions/output/splice_junct
     junction_to_num_peaks = junction_to_num_peaks[cell_line][threshold]
     
     
-    
-
-
-
+############################################
+# CRUX OF THE SCRIPT #
+# Create the ML input data #
+############################################
 ML_input_data = {}
 
 events_encountered = set()
@@ -229,13 +225,9 @@ print(
 )
 
 
-
-
-
-
-
-
-
+############################################
+# Create version of dataset where binding values are number of peaks #
+############################################
 tmp_output_df = copy.deepcopy(ML_input_data)
 
 # %%
@@ -262,12 +254,9 @@ tmp_output_df.to_csv(
 )
 
 
-
-
-
-
-
-# %%
+############################################
+# Create version of dataset where binding values are binary (presence/absence) #
+############################################
 tmp_output_df = copy.deepcopy(ML_input_data)
 
 for unique_id in tmp_output_df: 
@@ -298,14 +287,10 @@ tmp_output_df.to_csv(
 )
 
 
-
-
-
-
-
-
-
-# %%
+############################################
+# Create version of dataset where binding values are expression values (not multiplied by number of peaks) #
+# Run for each possible expression normalization method #
+############################################
 for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
     
     tmp_output_df = copy.deepcopy(ML_input_data)
@@ -334,13 +319,10 @@ for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz
     )
 
 
-
-
-
-
-
-
-# %%
+############################################
+# Create version of dataset where binding values are expression values (multiplied by number of peaks) #
+# Run for each possible expression normalization method #
+############################################
 for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
     
     tmp_output_df = copy.deepcopy(ML_input_data)
@@ -367,5 +349,3 @@ for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz
         sep="\t",
         compression="gzip"
     )
-
-
