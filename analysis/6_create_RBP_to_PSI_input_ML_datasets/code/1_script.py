@@ -191,7 +191,11 @@ for row in rmats_df:
                     if "KD" in sample: 
                         ML_input_data[unique_id]["RBP_KD_Target"] = row["RBP_KD_Target"]
                     elif "CTRL" in sample: 
-                        ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"                        
+                        ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"    
+
+                    ML_input_data[unique_id]["Sample Name"] = "_".join(
+                        [kd_ctrl_string, sample]
+                    )                    
                     
                     if sample=="KD-1": 
                         ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_1"].split(",")[0])
