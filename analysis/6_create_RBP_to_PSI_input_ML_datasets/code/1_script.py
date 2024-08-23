@@ -137,7 +137,7 @@ for row in rmats_df:
             unique_id = ""
             
             unique_id = "_".join(
-                [str(row[coord_column]) for coord_column in rmats_file_column_subset[0:7]]
+                [str(row[coord_column]) for coord_column in rmats_file_column_subset[0:8]]
             )
             
             if "KD" in sample: 
