@@ -255,98 +255,98 @@ tmp_output_df.to_csv(
 )
 
 
-############################################
-# Create version of dataset where binding values are binary (presence/absence) #
-############################################
-tmp_output_df = copy.deepcopy(ML_input_data)
+# ############################################
+# # Create version of dataset where binding values are binary (presence/absence) #
+# ############################################
+# tmp_output_df = copy.deepcopy(ML_input_data)
 
-for unique_id in tmp_output_df: 
+# for unique_id in tmp_output_df: 
     
-    row = tmp_output_df[unique_id]
+#     row = tmp_output_df[unique_id]
     
-    if row["RBP_KD_Target"]!="CTRL": 
+#     if row["RBP_KD_Target"]!="CTRL": 
         
-        kd_rbp = row["RBP_KD_Target"]
+#         kd_rbp = row["RBP_KD_Target"]
         
-        for position in range(1,7): 
+#         for position in range(1,7): 
             
-            feature_string = "_".join([kd_rbp, str(position), "binding"])
-            row[feature_string] = 0
+#             feature_string = "_".join([kd_rbp, str(position), "binding"])
+#             row[feature_string] = 0
     
-    for feature in row: 
+#     for feature in row: 
         
-        if "_binding" in feature and row[feature] >1 :
+#         if "_binding" in feature and row[feature] >1 :
             
-            row[feature] = 1
+#             row[feature] = 1
             
-tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+# tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
 
-tmp_output_df.to_csv(
-    "../output/{}_{}_{}_binary-binding-only.tsv.gz".format(cell_line, args.rbp, threshold), 
-    sep="\t",
-    compression="gzip"
-)
+# tmp_output_df.to_csv(
+#     "../output/{}_{}_{}_binary-binding-only.tsv.gz".format(cell_line, args.rbp, threshold), 
+#     sep="\t",
+#     compression="gzip"
+# )
 
 
-############################################
-# Create version of dataset where binding values are expression values (not multiplied by number of peaks) #
-# Run for each possible expression normalization method #
-############################################
-for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
+# ############################################
+# # Create version of dataset where binding values are expression values (not multiplied by number of peaks) #
+# # Run for each possible expression normalization method #
+# ############################################
+# for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
     
-    tmp_output_df = copy.deepcopy(ML_input_data)
+#     tmp_output_df = copy.deepcopy(ML_input_data)
     
-    analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
+#     analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
 
-    expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
+#     expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
     
-    for unique_id in tmp_output_df: 
+#     for unique_id in tmp_output_df: 
     
-        row = tmp_output_df[unique_id]
-        sample = "_".join(unique_id.split("_")[-2:])        
+#         row = tmp_output_df[unique_id]
+#         sample = "_".join(unique_id.split("_")[-2:])        
 
-        for feature in row: 
+#         for feature in row: 
 
-            if "_binding" in feature and row[feature] > 0:
+#             if "_binding" in feature and row[feature] > 0:
                 
-                row[feature] = expression[sample][feature.split("_")[0]]                
+#                 row[feature] = expression[sample][feature.split("_")[0]]                
 
-    tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+#     tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
 
-    tmp_output_df.to_csv(
-        "../output/{}_{}_{}_{}_dose-independent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
-        sep="\t",
-        compression="gzip"
-    )
+#     tmp_output_df.to_csv(
+#         "../output/{}_{}_{}_{}_dose-independent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
+#         sep="\t",
+#         compression="gzip"
+#     )
 
 
-############################################
-# Create version of dataset where binding values are expression values (multiplied by number of peaks) #
-# Run for each possible expression normalization method #
-############################################
-for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
+# ############################################
+# # Create version of dataset where binding values are expression values (multiplied by number of peaks) #
+# # Run for each possible expression normalization method #
+# ############################################
+# for file in glob.glob("../../4_normalize_raw_counts_matrices/outputs/*{}*.tsv.gz".format(cell_line)): 
     
-    tmp_output_df = copy.deepcopy(ML_input_data)
+#     tmp_output_df = copy.deepcopy(ML_input_data)
     
-    analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
+#     analysis_method = "expression-" + "_".join(file.split("/")[-1].split(".")[0].split("_")[1:])
 
-    expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
+#     expression = pd.read_csv(file, sep="\t", compression="gzip", index_col=0).to_dict()
     
-    for unique_id in tmp_output_df: 
+#     for unique_id in tmp_output_df: 
     
-        row = tmp_output_df[unique_id]
-        sample = "_".join(unique_id.split("_")[-2:])        
+#         row = tmp_output_df[unique_id]
+#         sample = "_".join(unique_id.split("_")[-2:])        
 
-        for feature in row: 
+#         for feature in row: 
 
-            if "_binding" in feature and row[feature] > 0:
+#             if "_binding" in feature and row[feature] > 0:
                 
-                row[feature] = (row[feature]) * (expression[sample][feature.split("_")[0]])               
+#                 row[feature] = (row[feature]) * (expression[sample][feature.split("_")[0]])               
 
-    tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
+#     tmp_output_df = pd.DataFrame.from_dict(tmp_output_df, orient="index")
 
-    tmp_output_df.to_csv(
-        "../output/{}_{}_{}_{}_dose-dependent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
-        sep="\t",
-        compression="gzip"
-    )
+#     tmp_output_df.to_csv(
+#         "../output/{}_{}_{}_{}_dose-dependent-expression.tsv.gz".format(cell_line, args.rbp, threshold, analysis_method), 
+#         sep="\t",
+#         compression="gzip"
+#     )
