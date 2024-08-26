@@ -1,15 +1,13 @@
 .ipynb_checkpoints/
 
-# ignore SLURM output
-analysis/3_get_expression_shrna_BAMs/SLURM_output/*
-
 # ignore individual counts files 
-analysis/3_get_expression_shrna_BAMs/output/1_experiment_counts/*
+analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/output/*
+analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/SLURM_output/*
 
 # ignore normalized counts matrices
-analysis/4_normalize_raw_counts_matrices/outputs/*
+analysis/3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs/*
 
-# ignore the shards of the input RBP ML datasets 
-analysis/6_create_RBP_to_PSI_input_ML_datasets/output/*
-analysis/6_create_RBP_to_PSI_input_ML_datasets/SLURM_output/*
-analysis/6_create_RBP_to_PSI_input_ML_datasets/final_modeling_input_datasets/*
+# ignore the large data and SLURM output from creating the pre-cursor to the input ML data
+analysis/3_create_RBP_ML_input/4_create_input_ML_datasets/final_modeling_input_datasets/*
+analysis/3_create_RBP_ML_input/4_create_input_ML_datasets/output/*
+analysis/3_create_RBP_ML_input/4_create_input_ML_datasets/SLURM_output/*
