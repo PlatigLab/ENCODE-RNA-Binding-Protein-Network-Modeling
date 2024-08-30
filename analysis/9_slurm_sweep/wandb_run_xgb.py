@@ -36,8 +36,8 @@ param_set = {
         'scoring': ['r2_score', 'mean_squared_error'],
         'wandb': {
             'track': True,
-            'project': "rbp-se-pipeline-dev",
-            'entity': 'platiglab',
+            'project': "rbp-se-pipeline-dev",  # ignored during sweep
+            'entity': 'platiglab',             # ignored during sweep
         }
     },
     'dataset': {
@@ -82,7 +82,6 @@ if __name__ == "__main__":
     parser.add_argument('--sweep_id', type=str, required=True, help='WandB sweep ID')
     args = parser.parse_args()
 
-    print(os.environ)
     wandb_param_set = param_set['training']['wandb']
     wandb.agent(args.sweep_id,
                 function=main,

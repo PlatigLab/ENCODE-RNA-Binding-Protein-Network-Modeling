@@ -5,23 +5,22 @@ import subprocess
 import wandb
 import argparse
 
-# Specify your WandB entity and project
+# WandB entity and project
 WANDB_ENTITY = "platiglab"
 WANDB_PROJECT = "rbp-se-pipeline-dev"
 
-# Define the sweep configuration
 sweep_configuration = {
     'method': 'grid',
     'metric': {
-        'name': 'test_r2_score',
+        'name': 'validation_r2_score',
         'goal': 'maximize'
     },
     'parameters': {
         'model.max_depth': {
-            'values': [3, 5, 7, 9],  # Discrete values for max_depth
+            'values': [3, 5, 7, 9],  # Discrete values
         },
-        'model.reg_alpha': {
-            'values': [0.01, 0.03, 0.05],
+        'model.n_estimators': {
+            'values': [50, 100, 200, 500],
         }
     }
 }
@@ -55,7 +54,7 @@ def main(sweep_name=None):
 
     print(f"Sweep initialized. Sweep ID: {sweep_id}")
     if sweep_name:
-        print(f"Sweep name: {sweep_name}")
+        print(f"Sweep name: {sweep_name}\n")
 
     # send enough slurm jobs for the grid search
     num_jobs = calculate_grid_size(sweep_configuration)
