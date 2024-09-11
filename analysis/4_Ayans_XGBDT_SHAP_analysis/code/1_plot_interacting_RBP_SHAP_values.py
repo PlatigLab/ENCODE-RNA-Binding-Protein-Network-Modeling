@@ -149,9 +149,15 @@ if all([plotting_dict[position] is None for position in plotting_dict]) == False
             ax.set_title(f"Position {counter}", fontsize=20, pad=5)
 
             if df is not None:
-                sns.boxplot(data=df, x="Binding Mode", y="SHAP", hue="RBP", ax=ax)
+                boxplot = sns.boxplot(data=df, x="Binding Mode", y="SHAP", hue="RBP", ax=ax)
                 ax.tick_params(axis='x', labelsize=16)
                 ax.tick_params(axis='y', labelsize=16)
+
+                x_text_value = 0.1    
+                for category in df["Binding Mode"].cat.categories:
+                    category_df = df[df["Binding Mode"] == category]
+                    ax.text(x_text_value, 0.90, str(len(category_df)), transform=ax.transAxes, fontsize=15, color="red")
+                    x_text_value += 0.3
 
             counter += 1
 
@@ -161,5 +167,5 @@ if all([plotting_dict[position] is None for position in plotting_dict]) == False
 
 
     plt.tight_layout()
-    plt.savefig(f"../outputs/plots/{output_file_prefix}_test.png", dpi=400, bbox_inches="tight")
+    plt.savefig(f"../outputs/plots/{output_file_prefix}_all_raw_values.png", dpi=400, bbox_inches="tight")
     plt.close()
