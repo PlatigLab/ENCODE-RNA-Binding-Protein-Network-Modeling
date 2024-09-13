@@ -9,11 +9,11 @@ import argparse
 WANDB_ENTITY = "platiglab"
 WANDB_PROJECT = "rbp-se"
 
-SCRIPT_NAME = 'wandb_run_softvq.py'
-SLURM_JOB_NAME = 'softvq_sweep'
-MEMORY_GB = 64
+SCRIPT_NAME = 'wandb_run_xgb.py'
+SLURM_JOB_NAME = 'xgb_sweep'
+MEMORY_GB = 128
 CPUS = 8
-USE_GPU = True
+USE_GPU = False
 
 sweep_configuration = {
     'method': 'grid',
@@ -22,18 +22,18 @@ sweep_configuration = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset.cell_line': {
-            'values': ['HepG2', 'K562'],
-        },
+        # 'dataset.cell_line': {
+        #     'values': ['HepG2', 'K562'],
+        # },
         'dataset.window': {
-            'values': [50, 100, 500, 1000, 2000, 5000, 10000],
+            'values': [50, 75, 100, 125, 150, 175, 200, 225, 250],
         },
-        'model.num_codewords':{
-            'values': [4, 6, 8, 12, 16, 20, 24],
+        'dataset.binding_format': {
+            'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
         },
-        # 'dataset.binding_format': {
-        #     'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
-        # }
+        'model.n_estimators': {
+            'values': [100, 200, 500],
+        },
     }
 }
 
