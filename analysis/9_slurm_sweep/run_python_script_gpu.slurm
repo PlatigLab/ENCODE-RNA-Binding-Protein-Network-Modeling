@@ -3,8 +3,8 @@
 #SBATCH --ntasks=1
 #SBATCH --time=10:00:00
 #SBATCH --job-name=python_script
-#SBATCH --output=../logs/%x.out
-#SBATCH --error=../logs/%x.err
+#SBATCH --output=./logs/%x.out
+#SBATCH --error=./logs/%x.err
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=gpu
