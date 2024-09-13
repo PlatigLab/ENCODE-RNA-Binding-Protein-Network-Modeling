@@ -28,6 +28,9 @@ sweep_configuration = {
         'dataset.window': {
             'values': [50, 100, 500, 1000, 2000, 5000, 10000],
         },
+        'model.num_codewords':{
+            'values': [4, 6, 8, 12, 16, 20, 24],
+        },
         # 'dataset.binding_format': {
         #     'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
         # }

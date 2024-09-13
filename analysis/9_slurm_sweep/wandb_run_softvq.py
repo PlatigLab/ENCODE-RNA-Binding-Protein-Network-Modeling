@@ -23,7 +23,7 @@ param_set = {
     },
     'training': {
         'batch_size': 1024,
-        'num_epochs': 80,
+        'num_epochs': 4,
         'criterion': 'BCELoss',
         'optim': {
             'name': 'Adam',
