@@ -13,8 +13,6 @@ thresholds=(50 100 500 1000 2000 5000 10000)
 cell_lines=(HepG2 K562)
 # data_value_variations=("binary-binding-only" "num-peaks-only" "expression-getmm_no-log_dose-dependent-expression" "expression-getmm_no-log_dose-independent-expression" "expression-getmm_yes-log_dose-dependent-expression" "expression-getmm_yes-log_dose-independent-expression" "expression-tmm_no-log_dose-dependent-expression" "expression-tmm_no-log_dose-independent-expression" "expression-tmm_yes-log_dose-dependent-expression" "expression-tmm_yes-log_dose-independent-expression")
 
-data_value_variations=("num-peaks-only")
-
 
 combo=()
 
@@ -24,12 +22,7 @@ do
     for threshold in "${thresholds[@]}"
     do
 
-        for data_value_variation in "${data_value_variations[@]}"
-        do
-
-            combo+=("${cell_line}_*_${threshold}_${data_value_variation}.tsv.gz")
-
-        done 
+        combo+=("${cell_line}_*_${threshold}_*.tsv.gz")
 
     done
 
