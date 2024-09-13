@@ -3,9 +3,12 @@ import argparse
 import wandb
 import os
 
-from platiglib.model.model_evaluation import XGBoostModelEvaluation
+import torch
+import torch.nn as nn
+import numpy as np
+
+from platiglib.model.model_evaluation import PytorchModelEvaluation
 from platiglib.data.rbpse_dataset import RBPSEDataset                  # here for dynamic class loading
-from xgboost import XGBRegressor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,27 +16,27 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Configuration dictionary
 param_set = {
     'model': {
-        'name': 'XGBRegressor',
-        'max_depth': 7,
-        'n_estimators': 200,
-        'objective': 'reg:logistic',
-        'learning_rate': 0.1,
-        'reg_alpha': 0.3,
-        'subsample': 1,
-        'n_jobs': -1,
-        "early_stopping_rounds": 100,
-        "eval_metric": ["rmse", "logloss"],
+        'name': 'MLP',
+        'hidden_dim': 36,
+        'l1_reg': 1e-4,
+        'l2_reg': 1e-4,
+        'dropout': 0.5,
     },
     'training': {
         'batch_size': 1024,
-        'criterion': 'mean_squared_error',
+        'num_epochs': 10,
+        'criterion': 'BCELoss',
+        'optim': {
+            'name': 'Adam',
+            'lr': 0.001,
+        },
         'data_split': {
             'method': "set_defs",
             'train_set': ["chr1", "chr3", "chr5", "chr7", "chr9", "chr11", "chr13", "chr15", "chr17", "chr19", "chr21", "chrY"],
             'validate_set': ["chr4", "chr6", "chr10", "chr14", "chr18", "chr22"],
             'test_set': ["chr2", "chr8", "chr12", "chr16", "chr20", "chrX"],
         },
-        'scoring': ['r2_score', 'mean_squared_error', 'mean_absolute_error', 'explained_variance_score'],
+        'scoring': ['r2_score', 'mean_squared_error'],
         'wandb': {
             'track': True,
         }
@@ -48,6 +51,38 @@ param_set = {
         #'df_filter': 'df["RBP_KD"] == "NONE"'
     }
 }
+
+
+class MLP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout=0.5, l1_reg=0.1, l2_reg=0.1):
+        super(MLP, self).__init__()
+        input_dim = np.prod(input_dim)
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.sigmoid = nn.Sigmoid()
+        self.l1_reg = l1_reg
+        self.l2_reg = l2_reg
+
+    def forward(self, x):
+        x = self.flatten(x)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x)
+        return x.squeeze()
+
+    def regularization(self):
+        reg_loss = torch.tensor(0., requires_grad=True)
+        for param in self.parameters():
+            if self.l1_reg is not None:
+                reg_loss = reg_loss + self.l1_reg * torch.norm(param, 1)
+            if self.l2_reg is not None:
+                reg_loss = reg_loss + self.l2_reg * torch.norm(param, 2)**2
+        return reg_loss
 
 
 def update_nested_dict(d, key, value):
@@ -71,12 +106,12 @@ def main():
     # print(param_set['model'])
     model_class = globals()[param_set['model']['name']]
     dataset_class = globals()[param_set['dataset']['name']]
-    model_evaluation = XGBoostModelEvaluation(model_class, dataset_class, param_set)
+    model_evaluation = PytorchModelEvaluation(model_class, dataset_class, param_set)
     model_evaluation.run()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run XGBoost model with WandB sweep')
+    parser = argparse.ArgumentParser(description='Run model with WandB sweep')
     parser.add_argument('--sweep_id', type=str, required=True, help='WandB sweep ID')
     args = parser.parse_args()
 
