@@ -91,43 +91,41 @@ for position in splice_junction_position_renaming:
 
     double_binding = subset_df[(subset_df[binding_cols[0]]==1) & (subset_df[binding_cols[1]]==1)]
     single_binding = subset_df[(subset_df[binding_cols[0]]==1) ^ (subset_df[binding_cols[1]]==1)]
+    no_binding = subset_df[(subset_df[binding_cols[0]]==0) & (subset_df[binding_cols[1]]==0)]
 
-    if len(double_binding)==0: 
-        plotting_dict[splice_junction_position_renaming[position]] = None
+    plotting_df = []
 
-    else:
-    
-        plotting_df = []
+    for row in pd.concat([double_binding, single_binding, no_binding]).itertuples(): 
 
-        for row in pd.concat([double_binding, single_binding]).itertuples(): 
+        binding_mode = [ binding_col.split("_")[0] for binding_col in binding_cols if getattr(row, binding_col)==1 ]
+        assert len(binding_mode)<=2, print(binding_mode)
+        
+        if len(binding_mode) == 2: 
+            binding_mode = "Both"            
+        elif len(binding_mode) == 1: 
+            binding_mode = binding_mode[0]
+        elif len(binding_mode) == 0:
+            binding_mode = "None"
+        
+        for shap_col in shap_cols:
+            tmp_rbp = shap_col.split("_")[0]
 
-            binding_mode = [ binding_col.split("_")[0] for binding_col in binding_cols if getattr(row, binding_col)==1 ]
-            assert len(binding_mode)>=0 and len(binding_mode)<=2, print(binding_mode)
-            
-            if len(binding_mode) == 2: 
-                binding_mode = "Both"            
-            elif len(binding_mode) == 1: 
-                binding_mode = binding_mode[0]
-            
-            for shap_col in shap_cols:
-                tmp_rbp = shap_col.split("_")[0]
+            plotting_df.append(
+                [
+                    binding_mode, 
+                    tmp_rbp, 
+                    getattr(row, shap_col)
 
-                plotting_df.append(
-                    [
-                        binding_mode, 
-                        tmp_rbp, 
-                        getattr(row, shap_col)
+                ]
+            )
 
-                    ]
-                )
+    plotting_df = pd.DataFrame(plotting_df, columns=["Binding Mode", "RBP", "SHAP"])
 
-        plotting_df = pd.DataFrame(plotting_df, columns=["Binding Mode", "RBP", "SHAP"])
+    categorical_order = ["Both"] + sorted(plotting_df["RBP"].unique().tolist()) + ["None"]
+    plotting_df["Binding Mode"] = pd.Categorical(plotting_df["Binding Mode"], categories=categorical_order, ordered=True)
+    plotting_df = plotting_df.sort_values(["Binding Mode", "RBP"])
 
-        categorical_order = ["Both"] + sorted(plotting_df["RBP"].unique().tolist())
-        plotting_df["Binding Mode"] = pd.Categorical(plotting_df["Binding Mode"], categories=categorical_order, ordered=True)
-        plotting_df = plotting_df.sort_values(["Binding Mode", "RBP"])
-
-        plotting_dict[splice_junction_position_renaming[position]] = plotting_df.copy(deep=True)
+    plotting_dict[splice_junction_position_renaming[position]] = plotting_df.copy(deep=True)
 
 
 """
@@ -138,7 +136,7 @@ if all([plotting_dict[position] is None for position in plotting_dict]) == False
     nrows = 2
     ncols = 3
 
-    fig, axes = plt.subplots(nrows=nrows,ncols=ncols, figsize=(20, 10), dpi=400,) #sharex=True, sharey=True)
+    fig, axes = plt.subplots(nrows=nrows,ncols=ncols, figsize=(20, 10), dpi=400, sharex=True)
 
     counter = 1
     for row_num in range(nrows):
@@ -153,11 +151,11 @@ if all([plotting_dict[position] is None for position in plotting_dict]) == False
                 ax.tick_params(axis='x', labelsize=16)
                 ax.tick_params(axis='y', labelsize=16)
 
-                x_text_value = 0.1    
+                x_text_value = 0.05    
                 for category in df["Binding Mode"].cat.categories:
                     category_df = df[df["Binding Mode"] == category]
-                    ax.text(x_text_value, 0.90, str(len(category_df)), transform=ax.transAxes, fontsize=15, color="red")
-                    x_text_value += 0.3
+                    ax.text(x_text_value, 0.90, str(int(len(category_df)/2)), transform=ax.transAxes, fontsize=15, color="red")
+                    x_text_value += 0.25
 
             counter += 1
 
