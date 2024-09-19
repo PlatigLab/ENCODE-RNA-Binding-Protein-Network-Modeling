@@ -39,8 +39,8 @@ find_string="${combo[${SLURM_ARRAY_TASK_ID}]}"
 
 files=($(find ../output/ -name "${find_string}" -type f | sort))
 
-# Replace "*_" with nothing in find_string
-output_file=../final_modeling_input_datasets/$(echo $find_string | sed 's/\*_//g' | sed 's/.tsv.gz/.tsv/g')
+# Replace asteriks/underscores and provide correct suffix in find_string
+output_file=../final_modeling_input_datasets/$(echo $find_string | sed 's/_//' | sed 's/\*//g' | sed 's/.tsv.gz//g')num-peaks-no-kd.tsv
 
 # Uncompress the first file in the files array
 gunzip -c "${files[0]}" | head -n1 > "$output_file"
