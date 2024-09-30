@@ -7,7 +7,7 @@ import argparse
 
 # WandB entity and project
 WANDB_ENTITY = "platiglab"
-WANDB_PROJECT = "rbp-se"
+WANDB_PROJECT = "yogi-rbp-ml-v1"
 
 SCRIPT_NAME = 'wandb_run_xgb.py'
 SLURM_JOB_NAME = 'xgb_sweep'
@@ -22,17 +22,32 @@ sweep_configuration = {
         'goal': 'maximize'
     },
     'parameters': {
-        # 'dataset.cell_line': {
-        #     'values': ['HepG2', 'K562'],
-        # },
+        'dataset.cell_line': {
+            'values': ['HepG2', 'K562'],
+        },
         'dataset.window': {
-            'values': [50, 75, 100, 125, 150, 175, 200, 225, 250],
+            'values': [50, 100, 150, 200, 250, 500, 1000],
         },
         'dataset.binding_format': {
-            'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
+            'values': ['rbp_exp', 'rbp_exp_peak'],
+        },
+        'dataset.exp_norm': {
+            'values': ['tmm', 'getmm'],
+        },
+        'dataset.exp_log': {
+            'values': [True, False],
         },
         'model.n_estimators': {
-            'values': [100, 200, 500],
+            'values': [200, 400, 1000, 5000],
+        },
+        'model.max_depth': {
+            'values': [4, 8, 12],
+        },
+        'model.learning_rate': {
+            'values': [0.05, 0.2],
+        },
+        'model.reg_alpha': {
+            'values': [0.1, 0.4, 0.7],
         },
     }
 }
