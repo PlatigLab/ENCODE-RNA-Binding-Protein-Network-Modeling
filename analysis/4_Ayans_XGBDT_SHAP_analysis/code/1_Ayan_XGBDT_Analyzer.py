@@ -439,3 +439,39 @@ class AyanXgbdtAnalyzer:
         plt.suptitle(f"{self.cell_line}: Actual vs Predicted", x=0.5, y=1.0)
 
         plt.show()
+    
+
+    def compare_chromosome_vs_psi(self): 
+
+        tmp_df = self.ctrl_only_binding_data.select(
+            ["psi", "psip", "sequence"]
+        )
+
+        tmp_df = pl.concat(
+            [
+                tmp_df.select(["psi", "sequence"]),
+                tmp_df.select(["psip", "sequence"]).rename({"psip": "psi"})
+            ]
+        )
+
+        tmp_df = tmp_df.filter(pl.col("psi")<=1.01)
+
+        unique_sequences = sorted(tmp_df["sequence"].unique())
+
+        fig, axs = plt.subplots(4, 6, sharex=True, sharey=True, figsize=(30,10), dpi=200)
+        
+        # Flatten the axs array for easier indexing
+        axs = axs.flatten()
+        
+        # Plot histograms for each unique sequence
+        for i, sequence in enumerate(unique_sequences):
+            subset = tmp_df.filter(pl.col("sequence") == sequence)
+            _=axs[i].hist(subset["psi"], bins=100)
+            _=axs[i].set_title(f'{sequence}')
+
+        fig.suptitle(f"{self.cell_line}: PSI Histograms by Chromosome", fontsize=40)
+        fig.supxlabel("PSI", fontsize=30)
+        fig.supylabel("Frequency", fontsize=30, x=-0.02)
+        
+        plt.tight_layout()
+        plt.show()
