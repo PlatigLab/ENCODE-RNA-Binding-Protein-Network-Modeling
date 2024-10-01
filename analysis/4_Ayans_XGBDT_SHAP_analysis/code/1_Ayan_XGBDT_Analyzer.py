@@ -144,11 +144,11 @@ class AyanXgbdtAnalyzer:
 
     def plot_upstream_and_downstream_exon_duplication(self): 
 
-        if pathlib.Path(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv").exists(): 
+        if pathlib.Path(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv").exists(): 
 
             logger.info(f"FROM CACHE: exon duplication CSV file for {self.cell_line} {self.distance_threshold} loaded")
 
-            tmp_df = pd.read_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t", index_col = 0)
+            tmp_df = pd.read_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv", sep=",", index_col = 0)
             
             fig, axes = plt.subplots(1, 2, figsize=(12,3))
             
@@ -170,37 +170,35 @@ class AyanXgbdtAnalyzer:
                 
             return tmp_df
 
-        else: 
+        # else: 
             
-            logger.info(f"Counting exon duplication for {self.cell_line} {self.distance_threshold}")
+        #     logger.info(f"Counting exon duplication for {self.cell_line} {self.distance_threshold}")
 
-            ense_counts = {}
-            ense_counts["Counts"] = {}
+        #     ense_counts = {}
+        #     ense_counts["Counts"] = {}
         
-            # Collect the unique values from the "ENSE" column
-            unique_ense_values = tmp_df.select(pl.col("ENSE").unique()).to_series()
+        #     # Collect the unique values from the "ENSE" column
+        #     unique_ense_values = tmp_df.select(pl.col("ENSE").unique()).to_series()
             
-            # Iterate through each unique value in the "ENSE" column
-            for ense_value in unique_ense_values:
+        #     # Iterate through each unique value in the "ENSE" column
+        #     for ense_value in unique_ense_values:
                 
-                # Count occurrences of the unique value in the "ENSE_UP" column
-                count = (tmp_df.filter(pl.col("ENSE_UP") == ense_value).height) + (tmp_df.filter(pl.col("ENSE_DN") == ense_value).height)
-                # Store the count in the dictionary
-                ense_counts["Counts"][ense_value] = count
+        #         # Count occurrences of the unique value in the "ENSE_UP" column
+        #         count = (tmp_df.filter(pl.col("ENSE_UP") == ense_value).height) + (tmp_df.filter(pl.col("ENSE_DN") == ense_value).height)
+        #         # Store the count in the dictionary
+        #         ense_counts["Counts"][ense_value] = count
         
-            tmp_df = pd.DataFrame.from_dict(ense_counts)
+        #     tmp_df = pd.DataFrame.from_dict(ense_counts)
         
-            tmp_df = tmp_df.sort_values("Counts", ascending=False)
-            tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t")
+        #     tmp_df = tmp_df.sort_values("Counts", ascending=False)
+        #     tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t")
 
-            logger.info(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
+        #     logger.info(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
 
-            return tmp_df 
+        #     return tmp_df 
 
 
     def partition_dataframe_by_PSI(self, df = None, column_name=None, psi_cutoffs=None): 
-
-        logger.info(psi_cutoffs)
 
         return {
                     f"PSI < {psi_cutoffs[0]}": 
