@@ -21,6 +21,8 @@ class AyanXgbdtAnalyzer:
     ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/3_XGBDT_SHAP_data_2024_07/"
     ayan_binding_folder = "/project/PlatigLab/data/collaborators/BWH/2_input_binding_data_and_INCORRECT_SHAP_toy_data_2024-07/input_binding_data/"
 
+    feather_cache = "../outputs/__featherv2-cache__"
+
     shap_actual_psi_column = "target"
     shap_predicted_psi_column = "psi_hat"
     binding_psi_column = "psi"
@@ -85,6 +87,13 @@ class AyanXgbdtAnalyzer:
 
         return rbp, position
     
+    
+    def _cache_to_featherv2(self, df, file_path):
+
+        if not pathlib.Path(file_path).exists():
+            logger.info(f"Caching to feather: {file_path}")
+            df.write_ipc(file_path)
+
 
     def load_ctrl_only_binding_data(self):
         
