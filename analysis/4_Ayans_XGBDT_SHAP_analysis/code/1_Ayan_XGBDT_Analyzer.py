@@ -6,7 +6,7 @@ import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib
+import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle
 
 @dataclass
 class AyanXgbdtAnalyzer:
@@ -97,24 +97,49 @@ class AyanXgbdtAnalyzer:
 
     def load_ctrl_only_binding_data(self):
         
-        logger.info(f"Loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
+        if hasattr(self, 'shap_data'):
+            self.delete_SHAP_data()
 
-        file = glob.glob(
-            f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
-        )
-        assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
+        if hasattr(self, 'ctrl_only_binding_data'):
+            logger.info(f"ALREADY LOADED {self.cell_line} {self.distance_threshold} binding data")
+            return self.ctrl_only_binding_data.head()
 
-        tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",).filter(pl.col("RBP_KD")=="NONE").collect(streaming=True)
+        else:
+            cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-ctrl_only_binding_data.feather"   
 
-        for col in tmp_df.columns: 
-            if col.endswith("_right") or col.endswith("_left"): 
-                tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+            if pathlib.Path(cache_file).exists():
+                logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
 
-        self.ctrl_only_binding_data = tmp_df
-        
-        self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
-        
-        logger.info(f"{self.cell_line} {self.distance_threshold} dataframe shape: {self.ctrl_only_binding_data.shape}")
+                self.ctrl_only_binding_data = pl.scan_ipc(cache_file).collect(streaming=True)
+                self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+
+                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+
+                return self.ctrl_only_binding_data.head()
+
+            else: 
+
+                logger.info(f"No cache... hence, loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
+
+                file = glob.glob(
+                    f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
+                )
+                assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
+
+                tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",).filter(pl.col("RBP_KD")=="NONE").collect(streaming=True)
+
+                for col in tmp_df.columns: 
+                    if col.endswith("_right") or col.endswith("_left"): 
+                        tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+
+                self.ctrl_only_binding_data = tmp_df
+                self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+
+                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+
+                self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
+
+                return self.ctrl_only_binding_data.head()
     
 
     def plot_upstream_and_downstream_exon_duplication(self): 
@@ -302,4 +327,93 @@ class AyanXgbdtAnalyzer:
         logger.info(f"Deleted {self.cell_line} {self.distance_threshold} binding data")
 
 
-    
+    def delete_SHAP_data(self):
+        del self.shap_data
+        gc.collect()
+
+        logger.info(f"Deleted {self.cell_line} {self.distance_threshold} SHAP data")
+
+
+    def load_SHAP_data(self): 
+
+        if hasattr(self, 'ctrl_only_binding_data'):
+            self.delete_binding_data()
+        
+        if hasattr(self, 'shap_data'):
+            logger.info(f"ALREADY LOADED {self.cell_line} {self.distance_threshold} SHAP data")
+            return self.shap_data.head()
+
+        else:
+            cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
+
+            if pathlib.Path(cache_file).exists():
+                logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
+
+                self.shap_data = pl.scan_ipc(cache_file).collect(streaming=True)
+                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+
+                return self.shap_data.head()
+            
+            else: 
+                logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
+
+                files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
+                assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
+
+                column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
+
+                dataframes = []
+            
+                for file in files: 
+
+                    logger.info(
+                        f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
+                    )
+                    
+                    tmp_df = pl.scan_csv(file, has_header=True, separator=",").collect(streaming=True)
+                    tmp_df = tmp_df.with_columns(
+                        pl.lit(file.split("-")[-2]).alias("Data Partition")
+                    )
+
+                    dataframes.append(tmp_df)
+
+                tmp_df = pl.concat(dataframes, how="diagonal")
+
+                for col in tmp_df.columns: 
+                    if col.endswith("_right") or col.endswith("_left"): 
+                        tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+                
+                self.shap_data = tmp_df
+
+                self.binding_columns = [col for col in self.shap_data.columns if col.endswith("_right") or col.endswith("_left")]
+                self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+
+                self._cache_to_featherv2(self.shap_data, cache_file)
+
+                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+                return self.shap_data.head()
+
+
+    def predicted_vs_actual_PSI_model(self): 
+
+        plt.figure(dpi=200, figsize=(10,10))
+        
+        joint_plot = sns.jointplot(
+            data = self.shap_data,  
+            x="target", 
+            y="psi_hat",
+            kind="hist",
+            marginal_kws = {"bins": 100}, 
+            height=5, 
+            stat="percent",
+        )
+
+        cax = joint_plot.ax_joint.inset_axes([1.3, 0.1, 0.05, 0.8])
+        plt.colorbar(
+            joint_plot.ax_joint.collections[0], ax=joint_plot.ax_joint, cax=cax, label="Percentage"
+        )
+
+        joint_plot.figure.set_dpi(150)
+        plt.suptitle(f"{self.cell_line}: Actual vs Predicted", x=0.5, y=1.0)
+
+        plt.show()
