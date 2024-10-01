@@ -274,20 +274,26 @@ class AyanXgbdtAnalyzer:
             results[key]["Bound"] = count_1 
             results[key]["Unbound"] = count_0
 
-        lists = pd.DataFrame.from_dict(results, orient="index").to_numpy().tolist()
+        contingency_table = pd.DataFrame.from_dict(results, orient="index")
         
         try: 
-            result = scipy.stats.chi2_contingency(lists)
-            return pd.DataFrame(
-                [[column, result.statistic, result.pvalue]], 
-                columns=["Feature", "Statistic", "P-Val"]
-            )
+            result = scipy.stats.chi2_contingency(contingency_table.to_numpy().tolist())
+            return {
+                    "Chi-Square Test": pd.DataFrame(
+                                            [[column, result.statistic, result.pvalue]], 
+                                            columns=["Feature", "Statistic", "P-Val"]
+                                        ), 
+                    "Contingency Table": contingency_table                
+                }
         
         except ValueError: 
-            return pd.DataFrame(
-                [[column, None, None]], 
-                columns = ["Feature", "Statistic", "P-Val"]
-            ) 
+            return {
+                    "Chi-Square Test": pd.DataFrame(
+                                            [[column, None, None]], 
+                                            columns=["Feature", "Statistic", "P-Val"]
+                                        ), 
+                    "Contingency Table": contingency_table                
+                }
         
     
     def convert_features_to_rbp_position_matrix(self, column=None):
@@ -319,7 +325,6 @@ class AyanXgbdtAnalyzer:
         plt.figure(dpi=200, figsize=(50,10))
 
         mask = heatmap_df.isnull()
-        
         cmap = sns.color_palette("Blues", as_cmap=True)
         cmap.set_bad("salmon")
 
