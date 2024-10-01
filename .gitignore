@@ -1,4 +1,5 @@
 .ipynb_checkpoints/
+__pycache__/
 
 # ignore individual counts files 
 analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/output/*
