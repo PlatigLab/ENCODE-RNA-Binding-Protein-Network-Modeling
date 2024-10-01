@@ -6,9 +6,7 @@ import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import os, json, glob, scipy, concurrent.futures, tqdm, gc
-
-
+import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib
 
 @dataclass
 class AyanXgbdtAnalyzer:
@@ -50,16 +48,15 @@ class AyanXgbdtAnalyzer:
     def __post_init__(self):
 
         self.load_rbp_ppi()
-        self.load_ctrl_only_binding_data()
 
 
     def load_rbp_ppi(self):
         
-        if os.path.exists(self.rbp_comparisons_file):
+        if pathlib.Path(self.rbp_comparisons_file).exists():
             with open(self.rbp_comparisons_file, "r") as f:
                 self.rbp_ppi = json.load(f)
         
-            logger.info("Loaded previously created RBP PPI info")
+            logger.info("FROM CACHE: RBP PPI info loaded")
 
         else: 
 
@@ -91,7 +88,7 @@ class AyanXgbdtAnalyzer:
 
     def load_ctrl_only_binding_data(self):
         
-        logger.info(f"LOADING... CTRL only binding data for {self.cell_line} {self.distance_threshold}")
+        logger.info(f"Loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
 
         file = glob.glob(
             f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
@@ -108,16 +105,16 @@ class AyanXgbdtAnalyzer:
         
         self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
         
-        logger.info(f"{self.cell_line} {self.distance_threshold} Dataframe shape: {self.ctrl_only_binding_data.shape}")
+        logger.info(f"{self.cell_line} {self.distance_threshold} dataframe shape: {self.ctrl_only_binding_data.shape}")
     
 
     def plot_upstream_and_downstream_exon_duplication(self): 
 
-        if os.path.exists(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv"): 
+        if pathlib.Path(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv").exists(): 
 
-            logger.info(f"Loading previously created exon duplication CSV file for {self.cell_line} {self.distance_threshold}")
+            logger.info(f"FROM CACHE: exon duplication CSV file for {self.cell_line} {self.distance_threshold} loaded")
 
-            tmp_df = pd.read_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv", index_col = 0)
+            tmp_df = pd.read_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t", index_col = 0)
             
             fig, axes = plt.subplots(1, 2, figsize=(12,3))
             
@@ -131,6 +128,8 @@ class AyanXgbdtAnalyzer:
             axes[1].boxplot(tmp_df['Counts'], vert=False)
             axes[1].set_title('Boxplot of Counts')
             axes[1].set_xlabel('Counts')
+
+            plt.suptitle(f"{self.cell_line}-{self.distance_threshold}: Total Times 'Middle Exon' Seen \nin Upstream + Downstream Combined", fontsize=20,)
             
             plt.tight_layout()
             plt.show()
@@ -158,47 +157,65 @@ class AyanXgbdtAnalyzer:
             tmp_df = pd.DataFrame.from_dict(ense_counts)
         
             tmp_df = tmp_df.sort_values("Counts", ascending=False)
-            tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv")
+            tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t")
+
+            logger.info(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
 
             return tmp_df 
 
 
     def partition_dataframe_by_PSI(self, df = None, column_name=None, psi_cutoffs=None): 
 
+        logger.info(psi_cutoffs)
+
         return {
-            f"PSI < {psi_cutoffs[0]}": 
-                df.filter(pl.col(column_name) < psi_cutoffs[0]),
-            f"PSI >= {psi_cutoffs[0]} & <= {psi_cutoffs[1]}": 
-                df.filter((pl.col(column_name) >= psi_cutoffs[0]) & (pl.col(column_name) <= psi_cutoffs[1])),
-            f"PSI > {psi_cutoffs[1]}":
-                df.filter(pl.col(column_name) > psi_cutoffs[1])
-        }
+                    f"PSI < {psi_cutoffs[0]}": 
+                        df.filter(pl.col(column_name) < psi_cutoffs[0]),
+
+                    f"PSI >= {psi_cutoffs[0]} & <= {psi_cutoffs[1]}": 
+                        df.filter((pl.col(column_name) >= psi_cutoffs[0]) & (pl.col(column_name) <= psi_cutoffs[1])),
+                        
+                    f"PSI > {psi_cutoffs[1]}":
+                        df.filter(pl.col(column_name) > psi_cutoffs[1])
+                }
     
 
     def run_parallel_chi_square_tests(self):
 
-        logger.info(f"Running parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
+        output_file = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_results.tsv"
 
-        feature_chi_square_results = []
+        if pathlib.Path(output_file).exists():
+            logger.info(f"FROM CACHE: chi-square results for {self.cell_line} loaded")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(self.run_chi_square_test, column=column) for column in self.binding_columns]
+            self.feature_chi_square_results = pd.read_csv(output_file, sep="\t")
+            return self.feature_chi_square_results
 
-            with tqdm.tqdm(total=len(futures)) as pbar:
+        else:
 
-                for future in concurrent.futures.as_completed(futures):
-                    feature_chi_square_results.append(future.result())
-                    pbar.update(1)
-        
-        self.feature_chi_square_results = pd.concat(feature_chi_square_results).sort_values("Statistic", ascending=False)
+            logger.info(f"Running parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
 
-        logger.info(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
-        return self.feature_chi_square_results
+            feature_chi_square_results = []
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(self.run_chi_square_test, column=column) for column in self.binding_columns]
+
+                with tqdm.tqdm(total=len(futures)) as pbar:
+
+                    for future in concurrent.futures.as_completed(futures):
+                        feature_chi_square_results.append(future.result())
+                        pbar.update(1)
+            
+            self.feature_chi_square_results = pd.concat(feature_chi_square_results).sort_values("Statistic", ascending=False)
+
+            self.feature_chi_square_results.to_csv(output_file, index=False, sep="\t")
+
+            logger.info(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
+            return self.feature_chi_square_results
     
 
     def run_chi_square_test(self, column = None):
 
-        partitions = self.partition_dataframe_by_PSI(df=self.ctrl_only_binding_data, column_name=column, psi_cutoffs=self.psi_partition_thresholds)
+        partitions = self.partition_dataframe_by_PSI(df=self.ctrl_only_binding_data, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
 
         results = {}
         for key in partitions: 
@@ -250,7 +267,7 @@ class AyanXgbdtAnalyzer:
         
         _=plt.hist(heatmap_df.to_numpy().flatten(), bins=200)
 
-        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square Statistic Histogram", pad=10, fontsize=20)
+        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Histogram", pad=10, fontsize=20)
         plt.show()
 
         plt.figure(dpi=200, figsize=(50,10))
