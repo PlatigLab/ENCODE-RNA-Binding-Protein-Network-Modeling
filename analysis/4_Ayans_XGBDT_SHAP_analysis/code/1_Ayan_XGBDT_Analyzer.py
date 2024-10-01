@@ -216,32 +216,44 @@ class AyanXgbdtAnalyzer:
 
     def run_parallel_chi_square_tests(self):
 
-        output_file = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_results.tsv"
+        chi_square_output = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_results.tsv"
+        chi_square_contingency_output = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_contingency_tables.pkl"
 
-        if pathlib.Path(output_file).exists():
+        if pathlib.Path(chi_square_output).exists() and pathlib.Path(chi_square_contingency_output).exists():
             logger.info(f"FROM CACHE: chi-square results for {self.cell_line} loaded")
 
-            self.feature_chi_square_results = pd.read_csv(output_file, sep="\t")
-            return self.feature_chi_square_results
+            self.feature_chi_square_results = pd.read_csv(chi_square_output, sep="\t")
+            self.feature_chi_square_contingency_tables = pickle.load(open(chi_square_contingency_output, "rb"))
 
+            return self.feature_chi_square_results
+        
         else:
 
             logger.info(f"Running parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
 
             feature_chi_square_results = []
+            feature_chi_square_contingency_tables = {}
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                futures = [executor.submit(self.run_chi_square_test, column=column) for column in self.binding_columns]
+                futures = {executor.submit(self.run_chi_square_test, column=column): column for column in self.binding_columns}
 
                 with tqdm.tqdm(total=len(futures)) as pbar:
 
                     for future in concurrent.futures.as_completed(futures):
-                        feature_chi_square_results.append(future.result())
+                        column = futures[future]
+                        function_results = future.result()
+
+                        feature_chi_square_results.append(function_results["Chi-Square Test"])
+                        feature_chi_square_contingency_tables[column] = function_results["Contingency Table"]
+
                         pbar.update(1)
             
             self.feature_chi_square_results = pd.concat(feature_chi_square_results).sort_values("Statistic", ascending=False)
+            self.feature_chi_square_results.to_csv(chi_square_output, index=False, sep="\t")
 
-            self.feature_chi_square_results.to_csv(output_file, index=False, sep="\t")
+            self.feature_chi_square_contingency_tables = feature_chi_square_contingency_tables
+            with open(chi_square_contingency_output, 'wb') as f:
+                pickle.dump(self.feature_chi_square_contingency_tables, f)
 
             logger.info(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
             return self.feature_chi_square_results
@@ -255,7 +267,7 @@ class AyanXgbdtAnalyzer:
         for key in partitions: 
 
             results[key] = {}
-            
+
             count_1 = partitions[key][column].sum()
             count_0 = partitions[key][column].shape[0] - count_1
 
@@ -293,7 +305,7 @@ class AyanXgbdtAnalyzer:
         return pd.DataFrame.from_dict(heatmap_df, orient="columns").sort_index(axis=0).sort_index(axis=1)
     
 
-    def plot_feature_chi_square_results(self, column=None): 
+    def plot_feature_chi_square_statistics(self, column=None): 
 
         heatmap_df = self.convert_features_to_rbp_position_matrix(column=column)
 
@@ -311,10 +323,14 @@ class AyanXgbdtAnalyzer:
         cmap = sns.color_palette("Blues", as_cmap=True)
         cmap.set_bad("salmon")
 
-        vmax = 10000
+        if column=="Statistic": 
+            vmax = 10000
+        else: 
+            vmax = None
+
         sns.heatmap(heatmap_df, cmap=cmap, mask=mask, vmax=vmax)
 
-        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square Statistic Heatmap (Capped at {vmax})", pad=40, fontsize=40)
+        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Heatmap (Capped at {vmax})", pad=40, fontsize=40)
         plt.show()
             
         return heatmap_df
