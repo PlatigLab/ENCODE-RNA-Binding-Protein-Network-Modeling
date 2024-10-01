@@ -515,3 +515,48 @@ class AyanXgbdtAnalyzer:
 
         kruskal_result = scipy.stats.kruskal(*shap_lists)
         return [col, kruskal_result.statistic, kruskal_result.pvalue]
+    
+
+    def inspect_local_SHAP_by_dataset(self): 
+                
+        for shap_feature in self.shap_columns[0:10]: 
+            fig, ax = plt.subplots(2,1, dpi=20, figsize=(10,10), sharex=True, sharey=True)
+            
+            sns.histplot(
+                data=self.shap_data, 
+                x=shap_feature, 
+                hue="Data Partition", 
+                bins=100,
+                ax=ax[0] 
+            )
+
+            sns.boxplot(
+                data=self.shap_data, 
+                x=shap_feature, 
+                hue="Data Partition", 
+                bins=100,
+                ax=ax[1] 
+            )
+
+            plt.show()
+    
+    def get_global_SHAP_matrix(self): 
+
+        # Take all local SHAP columns and get the absolute value mean (Global SHAP)
+        abs_mean_df = self.shap_data.select(
+            [pl.col(col).abs().mean().alias(col) for col in self.shap_columns]
+        )
+
+        shap_matrix = {}
+        for key, value in abs_mean_df.to_dict(as_series=False).items(): 
+
+            rbp, position = self.get_rbp_and_position(key)
+            if rbp not in shap_matrix: 
+                shap_matrix[rbp] = {}
+
+            shap_matrix[rbp][position] = value[0]
+
+        self.shap_matrix = pd.DataFrame(shap_matrix).sort_index(axis=1).sort_index(axis=0)
+        return self.shap_matrix
+
+    
