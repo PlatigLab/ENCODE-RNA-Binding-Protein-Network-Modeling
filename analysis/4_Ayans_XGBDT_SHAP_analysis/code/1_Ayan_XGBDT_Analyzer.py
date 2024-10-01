@@ -475,3 +475,43 @@ class AyanXgbdtAnalyzer:
         
         plt.tight_layout()
         plt.show()
+
+    def run_feature_specific_kruskal_wallis(self): 
+
+        output_file = f"../outputs/kruskal_wallis/feature_specific/{self.cell_line}_kruskal_wallis.tsv"
+
+        if pathlib.Path(output_file).exists():
+            logger.info(f"FROM CACHE: Kruskal-Wallis results for {self.cell_line} {self.distance_threshold} loaded")
+            self.feature_specific_kruskal_wallis = pd.read_csv(output_file, sep="\t")
+            
+            return self.feature_specific_kruskal_wallis.head()
+        
+        else: 
+
+            logger.info(f"Running Kruskal-Wallis tests for {self.cell_line} {self.distance_threshold}")
+
+            partitions = self.partition_dataframe_by_PSI(
+                df = self.shap_data, 
+                column_name = "target", 
+                psi_cutoffs=self.psi_partition_thresholds
+            )
+
+            kruskal_df = []
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {
+                    executor.submit(self.run_kruskal_wallis_test, col, partitions): col for col in self.shap_columns
+                }
+
+                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Running Kruskal-Wallis tests"):
+                    kruskal_df.append(future.result())
+
+            self.feature_specific_kruskal_wallis = pd.DataFrame(kruskal_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
+            self.feature_specific_kruskal_wallis.to_csv(output_file, sep="\t", index=False)
+        
+    def run_kruskal_wallis_test(self, col, partitions):
+
+        shap_lists = [partitions[key][col].to_list() for key in partitions]
+
+        kruskal_result = scipy.stats.kruskal(*shap_lists)
+        return [col, kruskal_result.statistic, kruskal_result.pvalue]
