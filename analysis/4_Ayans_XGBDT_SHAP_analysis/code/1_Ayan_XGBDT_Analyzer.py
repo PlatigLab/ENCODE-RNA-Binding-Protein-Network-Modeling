@@ -110,7 +110,7 @@ class AyanXgbdtAnalyzer:
             if pathlib.Path(cache_file).exists():
                 logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
 
-                self.ctrl_only_binding_data = pl.scan_ipc(cache_file).collect(streaming=True)
+                self.ctrl_only_binding_data = pl.read_ipc(cache_file)
                 self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
 
                 logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
@@ -126,7 +126,7 @@ class AyanXgbdtAnalyzer:
                 )
                 assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
 
-                tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",).filter(pl.col("RBP_KD")=="NONE").collect(streaming=True)
+                tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",).filter(pl.col("RBP_KD")=="NONE").collect()
 
                 for col in tmp_df.columns: 
                     if col.endswith("_right") or col.endswith("_left"): 
@@ -355,6 +355,8 @@ class AyanXgbdtAnalyzer:
 
     def load_SHAP_data(self): 
 
+        cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
+
         if hasattr(self, 'ctrl_only_binding_data'):
             self.delete_binding_data()
         
@@ -363,12 +365,13 @@ class AyanXgbdtAnalyzer:
             return self.shap_data.head()
 
         else:
-            cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
 
             if pathlib.Path(cache_file).exists():
                 logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
 
-                self.shap_data = pl.scan_ipc(cache_file).collect(streaming=True)
+                self.shap_data = pl.read_ipc(cache_file)
+                self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+
                 logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
 
                 return self.shap_data.head()
@@ -382,14 +385,14 @@ class AyanXgbdtAnalyzer:
                 column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
 
                 dataframes = []
-            
+
                 for file in files: 
 
                     logger.info(
                         f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
                     )
                     
-                    tmp_df = pl.scan_csv(file, has_header=True, separator=",").collect(streaming=True)
+                    tmp_df = pl.scan_csv(file, has_header=True, separator=",").collect()
                     tmp_df = tmp_df.with_columns(
                         pl.lit(file.split("-")[-2]).alias("Data Partition")
                     )
