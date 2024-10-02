@@ -6,7 +6,7 @@ import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle
+import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse
 
 @dataclass
 class AyanXgbdtAnalyzer:
@@ -358,7 +358,7 @@ class AyanXgbdtAnalyzer:
         logger.info(f"Deleted {self.cell_line} {self.distance_threshold} SHAP data")
 
 
-    def load_SHAP_data(self): 
+    def load_SHAP_data(self, column=None): 
 
         cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
 
@@ -371,54 +371,62 @@ class AyanXgbdtAnalyzer:
 
         else:
 
-            if pathlib.Path(cache_file).exists():
-                logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
+            # if pathlib.Path(cache_file).exists():
+            #     logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
 
-                self.shap_data = pl.read_ipc(cache_file)
-                self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+            #     self.shap_data = pl.read_ipc(cache_file)
+            #     self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+            #     logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
 
-                return self.shap_data.head()
+            #     return self.shap_data.head()
             
-            else: 
-                logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
+            # else: 
 
-                files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
-                assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
+            logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
 
-                column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
+            files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
+            assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
 
-                dataframes = []
+            column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
 
-                for file in files: 
+            dataframes = []
 
-                    logger.info(
-                        f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
-                    )
-                    
-                    tmp_df = pl.scan_csv(file, has_header=True, separator=",").collect()
-                    tmp_df = tmp_df.with_columns(
-                        pl.lit(file.split("-")[-2]).alias("Data Partition")
-                    )
+            for file in files: 
 
-                    dataframes.append(tmp_df)
-
-                tmp_df = pl.concat(dataframes, how="diagonal")
-
-                for col in tmp_df.columns: 
-                    if col.endswith("_right") or col.endswith("_left"): 
-                        tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+                logger.info(
+                    f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
+                )
                 
-                self.shap_data = tmp_df
 
-                self.binding_columns = [col for col in self.shap_data.columns if col.endswith("_right") or col.endswith("_left")]
-                self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+                tmp_df = pl.scan_csv(file, has_header=True, separator=",")
 
-                self._cache_to_featherv2(self.shap_data, cache_file)
+                if column is not None: 
+                    tmp_df = tmp_df.select(column, "target")
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
-                return self.shap_data.head()
+                tmp_df = tmp_df.collect(streaming=True)
+
+                tmp_df = tmp_df.with_columns(
+                    pl.lit(file.split("-")[-2]).alias("Data Partition")
+                )
+
+                dataframes.append(tmp_df)
+
+            tmp_df = pl.concat(dataframes, how="diagonal")
+
+            for col in tmp_df.columns: 
+                if col.endswith("_right") or col.endswith("_left"): 
+                    tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+            
+            self.shap_data = tmp_df
+
+            self.binding_columns = [col for col in self.shap_data.columns if col.endswith("_right") or col.endswith("_left")]
+            self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+
+            # self._cache_to_featherv2(self.shap_data, cache_file)
+
+            logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+            return self.shap_data.head()
 
 
     def predicted_vs_actual_PSI_model(self): 
@@ -481,6 +489,7 @@ class AyanXgbdtAnalyzer:
         plt.tight_layout()
         plt.show()
 
+
     def run_feature_specific_kruskal_wallis(self): 
 
         output_file = f"../outputs/kruskal_wallis/feature_specific/{self.cell_line}_kruskal_wallis.tsv"
@@ -514,6 +523,7 @@ class AyanXgbdtAnalyzer:
             self.feature_specific_kruskal_wallis = pd.DataFrame(kruskal_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
             self.feature_specific_kruskal_wallis.to_csv(output_file, sep="\t", index=False)
         
+
     def run_kruskal_wallis_test(self, col, partitions):
 
         shap_lists = [partitions[key][col].to_list() for key in partitions]
@@ -522,29 +532,51 @@ class AyanXgbdtAnalyzer:
         return [col, kruskal_result.statistic, kruskal_result.pvalue]
     
 
-    def inspect_local_SHAP_by_dataset(self): 
+    def parallel_inspect_local_SHAP_by_dataset(self, feature):
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data(column=feature)
+
+        self.plot_feature_local_SHAP_by_dataset(feature=feature)
+
+
+    def plot_feature_local_SHAP_by_dataset(self, feature=None): 
                 
-        for shap_feature in self.shap_columns[0:10]: 
-            fig, ax = plt.subplots(2,1, dpi=20, figsize=(10,10), sharex=True, sharey=True)
-            
+        assert "_shap" in feature, logger.error(f"Feature {feature} is not a SHAP feature")
+
+        plotting_df = self.shap_data.filter(pl.col(feature) != 0)
+
+        if not plotting_df.is_empty():
+            fig, ax = plt.subplots(1,2, dpi=200, figsize=(10,5),)
+
             sns.histplot(
-                data=self.shap_data, 
-                x=shap_feature, 
+                data=plotting_df, 
+                x=feature, 
                 hue="Data Partition", 
                 bins=100,
                 ax=ax[0] 
             )
 
             sns.boxplot(
-                data=self.shap_data, 
-                x=shap_feature, 
-                hue="Data Partition", 
-                bins=100,
+                data=plotting_df, 
+                y=feature, 
+                x="Data Partition", 
                 ax=ax[1] 
             )
 
-            plt.show()
+            rbp, position = self.get_rbp_and_position(feature)
+
+            plt.suptitle(f"Non-Zero Local SHAP Values by Data Partition\n{self.cell_line} {rbp} {position}: # Rows -- {plotting_df.shape[0]:,}", fontsize=20)
+
+            plt.tight_layout()
+
+            plt.savefig(f"../outputs/local_shap/plots/{self.cell_line}-{feature}.png", bbox_inches="tight"),
+            plt.close()
+
+        else: 
+            logger.info(f"{feature} has no non-zero local SHAP values")
     
+
     def get_global_SHAP_matrix(self): 
 
         # Take all local SHAP columns and get the absolute value mean (Global SHAP)
@@ -564,4 +596,20 @@ class AyanXgbdtAnalyzer:
         self.shap_matrix = pd.DataFrame(shap_matrix).sort_index(axis=1).sort_index(axis=0)
         return self.shap_matrix
 
-    
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Ayan XGBDT Analyzer")
+    parser.add_argument("--cell_line", type=str, required=True, help="Cell line to analyze")
+    parser.add_argument("--distance", type=int, required=True, help="Distance threshold")
+    parser.add_argument("--parallel-task", type=str, required=True, help="Which analysis to run")
+    parser.add_argument("--feature", type=str, required=True, help="Feature to analyze",)
+
+    args = parser.parse_args()
+
+    analyzer = AyanXgbdtAnalyzer(cell_line=args.cell_line, distance_threshold=args.distance)
+
+    match args.parallel_task:
+        case "local_shap_inspection": 
+            analyzer.parallel_inspect_local_SHAP_by_dataset(args.feature) 
+        case _:
+            logger.error(f"Unknown parallel task: {args.parallel_task}")
