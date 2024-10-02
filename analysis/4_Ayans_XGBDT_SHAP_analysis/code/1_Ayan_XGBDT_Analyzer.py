@@ -95,7 +95,7 @@ class AyanXgbdtAnalyzer:
             df.write_ipc(file_path)
 
 
-    def load_ctrl_only_binding_data(self):
+    def load_ctrl_only_binding_data(self, column=None):
         
         if hasattr(self, 'shap_data'):
             self.delete_SHAP_data()
@@ -107,39 +107,44 @@ class AyanXgbdtAnalyzer:
         else:
             cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-ctrl_only_binding_data.feather"   
 
-            if pathlib.Path(cache_file).exists():
-                logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
+            # if pathlib.Path(cache_file).exists():
+            #     logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
 
-                self.ctrl_only_binding_data = pl.read_ipc(cache_file)
-                self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+            #     self.ctrl_only_binding_data = pl.read_ipc(cache_file)
+            #     self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+            #     logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
 
-                return self.ctrl_only_binding_data.head()
+            #     return self.ctrl_only_binding_data.head()
 
-            else: 
+            # else: 
 
-                logger.info(f"No cache... hence, loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
+            logger.info(f"No cache... hence, loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
 
-                file = glob.glob(
-                    f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
-                )
-                assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
+            file = glob.glob(
+                f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
+            )
+            assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
 
-                tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",).filter(pl.col("RBP_KD")=="NONE").collect()
+            tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",)
+            
+            if column is not None:
+                tmp_df = tmp_df.select(column, "psi", "RBP_KD")
+            
+            tmp_df = tmp_df.filter(pl.col("RBP_KD")=="NONE").collect(streaming=True)
 
-                for col in tmp_df.columns: 
-                    if col.endswith("_right") or col.endswith("_left"): 
-                        tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+            for col in tmp_df.columns: 
+                if col.endswith("_right") or col.endswith("_left"): 
+                    tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
 
-                self.ctrl_only_binding_data = tmp_df
-                self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+            self.ctrl_only_binding_data = tmp_df
+            self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+            logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
 
-                self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
+            # self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
 
-                return self.ctrl_only_binding_data.head()
+            return self.ctrl_only_binding_data.head()
     
 
     def plot_upstream_and_downstream_exon_duplication(self): 
