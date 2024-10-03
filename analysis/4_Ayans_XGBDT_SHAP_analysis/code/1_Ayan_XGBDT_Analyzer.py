@@ -60,20 +60,20 @@ class AyanXgbdtAnalyzer:
         
             logger.info("FROM CACHE: RBP PPI info loaded")
 
-        else: 
+        # else: 
 
-            rbp_ppi = pd.read_excel("../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx")
-            rbp_ppi = rbp_ppi[(rbp_ppi["sumIS"]>=7.1)]
+        #     rbp_ppi = pd.read_excel("../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx")
+        #     rbp_ppi = rbp_ppi[(rbp_ppi["sumIS"]>=7.1)]
 
-            for column in ["Protein A", "Protein B", "UniProt accessions A", "UniProt accessions B"]: 
-                rbp_ppi[column] = rbp_ppi[column].str.lower()
+        #     for column in ["Protein A", "Protein B", "UniProt accessions A", "UniProt accessions B"]: 
+        #         rbp_ppi[column] = rbp_ppi[column].str.lower()
 
-            uniprot_id_mapping = pd.read_csv("../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv", sep="\t")
+        #     uniprot_id_mapping = pd.read_csv("../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv", sep="\t")
 
-            for column in uniprot_id_mapping: 
-                uniprot_id_mapping[column] = uniprot_id_mapping[column].str.lower()
+        #     for column in uniprot_id_mapping: 
+        #         uniprot_id_mapping[column] = uniprot_id_mapping[column].str.lower()
 
-            logger.info("RBP PPI data created & loaded")
+        #     logger.info("RBP PPI data created & loaded")
 
     
     def get_rbp_and_position(self, string):
