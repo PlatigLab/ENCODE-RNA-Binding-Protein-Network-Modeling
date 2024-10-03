@@ -92,7 +92,7 @@ class AyanXgbdtAnalyzer:
 
         if not pathlib.Path(file_path).exists():
             logger.info(f"Caching to feather: {file_path}")
-            df.write_ipc(file_path)
+            df.write_ipc(file_path, compression="lz4")
 
 
     def load_ctrl_only_binding_data(self, column=None):
