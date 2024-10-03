@@ -107,44 +107,45 @@ class AyanXgbdtAnalyzer:
         else:
             cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-ctrl_only_binding_data.feather"   
 
-            # if pathlib.Path(cache_file).exists():
-            #     logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
+            if pathlib.Path(cache_file).exists():
+                logger.info(f"FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
 
-            #     self.ctrl_only_binding_data = pl.read_ipc(cache_file)
-            #     self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+                ctrl_only_binding_data = pl.scan_ipc(cache_file).select(pl.all()).collect(streaming=True)
 
-            #     logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+                self.binding_columns = [col for col in ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+                ctrl_only_binding_data = ctrl_only_binding_data.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
 
-            #     return self.ctrl_only_binding_data.head()
+                self.ctrl_only_binding_data = ctrl_only_binding_data
 
-            # else: 
+                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+                return self.ctrl_only_binding_data.head()
 
-            logger.info(f"No cache... hence, loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
+            else: 
 
-            file = glob.glob(
-                f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
-            )
-            assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
+                logger.info(f"No cache... hence, loading CTRL only binding data for {self.cell_line} {self.distance_threshold}")
 
-            tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",)
-            
-            if column is not None:
-                tmp_df = tmp_df.select(column, "psi", "RBP_KD")
-            
-            tmp_df = tmp_df.filter(pl.col("RBP_KD")=="NONE").collect(streaming=True)
+                file = glob.glob(
+                    f"{self.ayan_binding_folder}/{self.cell_line}-{self.distance_threshold}-*/*.csv.gz"
+                )
+                assert len(file)==1, logger.error(f"Multiple files found for {self.cell_line} and {self.distance_threshold}: {file}")
 
-            for col in tmp_df.columns: 
-                if col.endswith("_right") or col.endswith("_left"): 
-                    tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+                tmp_df = pl.scan_csv(file[0], has_header=True, separator=",",)
 
-            self.ctrl_only_binding_data = tmp_df
-            self.binding_columns = [col for col in self.ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
+                if column is not None:
+                    tmp_df = tmp_df.select(column, "psi", "RBP_KD")
+                
+                tmp_df = tmp_df.filter(pl.col("RBP_KD")=="NONE").unique().collect(streaming=True)
+                self.binding_columns = [col for col in tmp_df.columns if col.endswith("_right") or col.endswith("_left")]
 
-            logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+                if len(self.binding_columns) > 0:
+                    tmp_df = tmp_df.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
 
-            # self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
+                self.ctrl_only_binding_data = tmp_df
+                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
 
-            return self.ctrl_only_binding_data.head()
+                self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
+
+                return self.ctrl_only_binding_data.head()
     
 
     def plot_upstream_and_downstream_exon_duplication(self): 
@@ -367,66 +368,74 @@ class AyanXgbdtAnalyzer:
         
         if hasattr(self, 'shap_data'):
             logger.info(f"ALREADY LOADED {self.cell_line} {self.distance_threshold} SHAP data")
+
+            if column is not None: 
+                self.shap_data = self.shap_data.select(column, "target", "Data Partition")
+            
             return self.shap_data.head()
 
         else:
 
-            # if pathlib.Path(cache_file).exists():
-            #     logger.info(f"LOADING FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
+            if pathlib.Path(cache_file).exists():
+                logger.info(f"FROM CACHE: {self.cell_line} {self.distance_threshold} SHAP data loaded")
 
-            #     self.shap_data = pl.read_ipc(cache_file)
-            #     self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
-
-            #     logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
-
-            #     return self.shap_data.head()
-            
-            # else: 
-
-            logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
-
-            files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
-            assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
-
-            column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
-
-            dataframes = []
-
-            for file in files: 
-
-                logger.info(
-                    f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
-                )
-                
-
-                tmp_df = pl.scan_csv(file, has_header=True, separator=",")
+                shap_data = pl.scan_ipc(cache_file).collect(streaming=True)
 
                 if column is not None: 
-                    tmp_df = tmp_df.select(column, "target")
+                    shap_data = shap_data.select(column, "target", "Data Partition")
 
-                tmp_df = tmp_df.collect(streaming=True)
+                self.shap_columns = [col for col in shap_data.columns if col.endswith("_shap")]
+                self.binding_columns = [col for col in shap_data.columns if col.endswith("_right") or col.endswith("_left")]
 
-                tmp_df = tmp_df.with_columns(
-                    pl.lit(file.split("-")[-2]).alias("Data Partition")
-                )
+                shap_data = shap_data.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
+                self.shap_data = shap_data
 
-                dataframes.append(tmp_df)
-
-            tmp_df = pl.concat(dataframes, how="diagonal")
-
-            for col in tmp_df.columns: 
-                if col.endswith("_right") or col.endswith("_left"): 
-                    tmp_df = tmp_df.with_columns(pl.col(col).cast(pl.Int8))
+                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+                return self.shap_data.head()
             
-            self.shap_data = tmp_df
+            else: 
 
-            self.binding_columns = [col for col in self.shap_data.columns if col.endswith("_right") or col.endswith("_left")]
-            self.shap_columns = [col for col in self.shap_data.columns if col.endswith("_shap")]
+                logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
 
-            # self._cache_to_featherv2(self.shap_data, cache_file)
+                files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
+                assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
 
-            logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
-            return self.shap_data.head()
+                column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
+
+                dataframes = []
+
+                for file in files: 
+
+                    logger.info(
+                        f"{file.split('/')[-1]} is missing the following expected columns: {set(pd.read_csv(file, sep=',', nrows=0).columns.to_list()).symmetric_difference(column_reference)}"
+                    )
+                    
+
+                    tmp_df = pl.scan_csv(file, has_header=True, separator=",")
+
+                    if column is not None: 
+                        tmp_df = tmp_df.select(column, "target",)
+
+                    tmp_df = tmp_df.collect(streaming=True)
+
+                    tmp_df = tmp_df.with_columns(
+                        pl.lit(file.split("-")[-2]).alias("Data Partition")
+                    )
+
+                    dataframes.append(tmp_df)
+
+                tmp_df = pl.concat(dataframes, how="diagonal")
+
+                self.binding_columns = [col for col in tmp_df.columns if col.endswith("_right") or col.endswith("_left")]
+                self.shap_columns = [col for col in tmp_df.columns if col.endswith("_shap")]
+
+                tmp_df = tmp_df.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])           
+                self.shap_data = tmp_df
+
+                self._cache_to_featherv2(self.shap_data, cache_file)
+
+                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+                return self.shap_data.head()
 
 
     def predicted_vs_actual_PSI_model(self): 
