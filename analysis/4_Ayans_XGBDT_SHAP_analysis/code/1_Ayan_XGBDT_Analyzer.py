@@ -204,6 +204,17 @@ class AyanXgbdtAnalyzer:
         #     return tmp_df 
 
 
+    def get_number_SLURM_CPUs(self):
+        slurm_cpus = os.getenv("SLURM_CPUS_PER_TASK")
+
+        if slurm_cpus is not None:
+            return int(slurm_cpus)
+        else:
+            logger.warning("SLURM_CPUS_PER_TASK environment variable not set. Defaulting to 1 CPU.")
+            return 1
+
+
+
     def partition_dataframe_by_PSI(self, df = None, column_name=None, psi_cutoffs=None): 
 
         return {
@@ -238,7 +249,7 @@ class AyanXgbdtAnalyzer:
             feature_chi_square_results = []
             feature_chi_square_contingency_tables = {}
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                 futures = {executor.submit(self.run_chi_square_test, column=column): column for column in self.binding_columns}
 
                 with tqdm.tqdm(total=len(futures)) as pbar:
@@ -521,7 +532,7 @@ class AyanXgbdtAnalyzer:
 
             kruskal_df = []
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                 futures = {
                     executor.submit(self.run_kruskal_wallis_test, col, partitions): col for col in self.shap_columns
                 }
