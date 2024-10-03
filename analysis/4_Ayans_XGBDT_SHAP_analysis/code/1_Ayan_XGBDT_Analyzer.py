@@ -311,7 +311,58 @@ class AyanXgbdtAnalyzer:
                 }
         
     
-    def convert_features_to_rbp_position_matrix(self, column=None):
+    def plot_chi_square_contingency_tables(self): 
+        
+        plot_df = []
+
+        for key in self.feature_chi_square_contingency_tables: 
+            sub_dict = self.feature_chi_square_contingency_tables[key].to_dict(orient="index")
+
+            for psi_threshold in sub_dict:
+                plot_df.append(
+                    [
+                        key,
+                        psi_threshold, 
+                        (sub_dict[psi_threshold]["Bound"])/(sub_dict[psi_threshold]["Bound"] + sub_dict[psi_threshold]["Unbound"]),
+                        self.splice_junction_position_renaming["_".join(key.split("_")[1:3])]
+                    ]
+                )
+        
+        plot_df = pd.DataFrame(plot_df, columns=["Feature", "PSI Threshold", "Percent Bound", "Position"])    
+
+
+        plt.figure(dpi=200, figsize=(15, 5))
+
+        sns.lineplot(data=plot_df, x="PSI Threshold", y="Percent Bound", hue="Position", marker="o")
+
+        plt.title(f"{self.cell_line}: Percent Bound by PSI Threshold and Position", fontsize=20)
+        plt.xlabel("PSI Threshold", fontsize=15)
+        plt.ylabel("Percent Bound", fontsize=15)
+        plt.legend(title="Position", fontsize=12)
+
+        plt.tight_layout()
+        plt.show()
+
+        plt.figure(dpi=200, figsize=(15, 5))
+
+        sns.lineplot(data=plot_df, x="PSI Threshold", y="Percent Bound", hue="Feature", marker="o")
+
+        plt.title(f"{self.cell_line}: Percent Bound by PSI Threshold and Position", fontsize=20)
+        plt.xlabel("PSI Threshold", fontsize=15)
+        plt.ylabel("Percent Bound", fontsize=15)
+        plt.legend().set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
+        return plot_df 
+
+
+
+            
+
+    
+    def chi_square_convert_features_to_rbp_position_matrix(self, column=None):
         
         heatmap_df = {}
 
@@ -328,13 +379,15 @@ class AyanXgbdtAnalyzer:
 
     def plot_feature_chi_square_statistics(self, column=None): 
 
-        heatmap_df = self.convert_features_to_rbp_position_matrix(column=column)
+        heatmap_df = self.chi_square_convert_features_to_rbp_position_matrix(column=column)
 
         plt.figure(dpi=200,figsize=(30,10))
         
         _=plt.hist(heatmap_df.to_numpy().flatten(), bins=200)
 
-        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Histogram", pad=10, fontsize=20)
+        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Histogram", pad=10, fontsize=30)
+        plt.xlabel("Chi-Square Statistic", fontsize=20)
+        plt.ylabel("Frequency", fontsize=20)
         plt.show()
 
         plt.figure(dpi=200, figsize=(50,10))
@@ -452,9 +505,11 @@ class AyanXgbdtAnalyzer:
     def predicted_vs_actual_PSI_model(self): 
 
         plt.figure(dpi=200, figsize=(10,10))
+
+        plotting_df = self.shap_data.select(["target", "psi_hat"])
         
         joint_plot = sns.jointplot(
-            data = self.shap_data,  
+            data = plotting_df,  
             x="target", 
             y="psi_hat",
             kind="hist",
@@ -510,7 +565,7 @@ class AyanXgbdtAnalyzer:
         plt.show()
 
 
-    def run_feature_specific_kruskal_wallis(self): 
+    def run_parallel_feature_specific_kruskal_wallis(self): 
 
         output_file = f"../outputs/kruskal_wallis/feature_specific/{self.cell_line}_kruskal_wallis.tsv"
 
@@ -597,24 +652,151 @@ class AyanXgbdtAnalyzer:
             logger.info(f"{feature} has no non-zero local SHAP values")
     
 
-    def get_global_SHAP_matrix(self): 
+    def convert_1D_row_to_matrix(self, df=None): 
+            
+        feature_matrix = {}
+
+        for key, value in df.to_dict(as_series=False).items(): 
+
+            rbp, position = self.get_rbp_and_position(key)
+            if rbp not in feature_matrix: 
+                feature_matrix[rbp] = {}
+
+            feature_matrix[rbp][position] = value[0]
+
+        return pd.DataFrame(feature_matrix).sort_index(axis=1).sort_index(axis=0)
+
+
+    def get_global_SHAP_matrix(self, df=None): 
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
 
         # Take all local SHAP columns and get the absolute value mean (Global SHAP)
-        abs_mean_df = self.shap_data.select(
+        abs_mean_df = df.select(
             [pl.col(col).abs().mean().alias(col) for col in self.shap_columns]
         )
 
-        shap_matrix = {}
-        for key, value in abs_mean_df.to_dict(as_series=False).items(): 
+        # plt.figure(dpi=200, figsize=(30,10))
 
-            rbp, position = self.get_rbp_and_position(key)
-            if rbp not in shap_matrix: 
-                shap_matrix[rbp] = {}
+        # sns.histplot(data=abs_mean_df.to_numpy().flatten(), bins=500)
 
-            shap_matrix[rbp][position] = value[0]
+        # plt.title(f"{self.cell_line}: Global SHAP Histogram", fontsize=30)
+        # plt.xlabel("Mean Absolute SHAP Value", fontsize=20)
+        # plt.ylabel("Frequency", fontsize=20)
 
-        self.shap_matrix = pd.DataFrame(shap_matrix).sort_index(axis=1).sort_index(axis=0)
-        return self.shap_matrix
+        # plt.show()
+
+        return self.convert_1D_row_to_matrix(df = abs_mean_df)
+
+
+    def get_total_binding_percent(self, df=None): 
+    
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        binding_percent = df.select(
+            [(pl.col(col).sum() / pl.count() * 100).alias(col) for col in self.binding_columns]
+        )
+
+        return self.convert_1D_row_to_matrix(df = binding_percent)
+
+    
+    def get_positional_preference(self, df=None): 
+        assert type(df) == pd.DataFrame, logger.error(f"Input must be a pandas DataFrame, not {type(df)}")
+
+        return df.copy(deep=True).apply(lambda x: (x / x.sum())*100)
+    
+
+    def plot_global_SHAP_vs_binding_plots(self): 
+        
+        global_SHAP_matrix = self.get_global_SHAP_matrix(df=self.shap_data)
+        total_binding_percent = self.get_total_binding_percent(df=self.shap_data)
+        
+        nrows=2
+        fig, ax = plt.subplots(nrows, 1, figsize=(25,9), dpi=200)
+
+        plt.suptitle(f"{self.cell_line}: Global SHAP vs % Events Bound", fontsize=40, x=0.5, y=1.0)
+        
+        heatmap = sns.heatmap(global_SHAP_matrix, xticklabels=True, yticklabels=True,ax=ax[0],cmap="Blues", cbar_kws={"pad": 0.01})
+        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+        ax[0].set_title("Global SHAP", fontsize=24,)
+
+        heatmap = sns.heatmap(total_binding_percent, xticklabels=True, yticklabels=True,ax=ax[1],cmap="Blues", cbar_kws={"pad": 0.01})
+        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+        ax[1].set_title("% Events Bound", fontsize=24)
+    
+        plt.tight_layout()
+        plt.show()
+
+    
+    def plot_partition_global_SHAP_vs_binding_plots(self): 
+            
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+        
+        partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
+
+        for key in partitions: 
+
+            global_SHAP_matrix = self.get_global_SHAP_matrix(df=partitions[key])
+            total_binding_percent = self.get_total_binding_percent(df=partitions[key])
+
+            nrows=2
+            fig, ax = plt.subplots(nrows, 1, figsize=(25,9), dpi=200)
+
+            plt.suptitle(f"{self.cell_line}: {key}", fontsize=40, x=0.5, y=1.0)
+
+            heatmap = sns.heatmap(global_SHAP_matrix, xticklabels=True, yticklabels=True,ax=ax[0],cmap="Blues", cbar_kws={"pad": 0.01})
+            heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+            ax[0].set_title("Global SHAP", fontsize=24,)
+
+            heatmap = sns.heatmap(total_binding_percent, xticklabels=True, yticklabels=True,ax=ax[1],cmap="Blues", cbar_kws={"pad": 0.01})
+            heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+            ax[1].set_title("% Events Bound", fontsize=24)
+
+            plt.tight_layout()
+            plt.show()
+    
+    
+    def plot_partition_percent_events_bound(self): 
+            
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
+
+        fig, axs = plt.subplots(len(partitions), 1, figsize=(30, 12), dpi=200)
+
+        plt.suptitle("Percent Events Bound by Partition", fontsize=40)
+
+        for i, key in enumerate(partitions):
+            total_binding_percent = self.get_total_binding_percent(df=partitions[key])
+            sns.heatmap(total_binding_percent, xticklabels=True, yticklabels=True, cmap="Blues", cbar_kws={"pad": 0.01}, ax=axs[i])
+            axs[i].set_title(f"{self.cell_line}: {key}", fontsize=30)
+
+        plt.tight_layout()
+        plt.show()
+        
+    
+    def plot_partition_global_SHAP(self): 
+            
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
+        fig, axs = plt.subplots(len(partitions), 1, figsize=(30, 12), dpi=200)
+
+        plt.suptitle("Global SHAP by Partition", fontsize=40)
+
+        for i, key in enumerate(partitions): 
+            global_SHAP_matrix = self.get_global_SHAP_matrix(df=partitions[key])
+            sns.heatmap(global_SHAP_matrix, xticklabels=True, yticklabels=True, cmap="Blues", cbar_kws={"pad": 0.01}, ax=axs[i])
+            axs[i].set_title(f"{self.cell_line}: {key}", fontsize=30)
+
+        plt.tight_layout()
+        plt.show()
+
 
 if __name__ == "__main__":
 
