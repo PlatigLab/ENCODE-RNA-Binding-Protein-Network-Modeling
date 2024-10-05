@@ -330,22 +330,21 @@ class AyanXgbdtAnalyzer:
         
         try: 
             result = scipy.stats.chi2_contingency(contingency_table.to_numpy().tolist())
-            return {
-                    "Chi-Square Test": pd.DataFrame(
-                                            [[column, result.statistic, result.pvalue]], 
-                                            columns=["Feature", "Statistic", "P-Val"]
-                                        ), 
-                    "Contingency Table": contingency_table                
-                }
+
+            chi_square_stat=result.statistic
+            chi_square_pval=result.pvalue
         
         except ValueError: 
-            return {
-                    "Chi-Square Test": pd.DataFrame(
-                                            [[column, None, None]], 
-                                            columns=["Feature", "Statistic", "P-Val"]
-                                        ), 
-                    "Contingency Table": contingency_table                
-                }
+            chi_square_stat=None
+            chi_square_pval=None
+            
+        return {
+                "Chi-Square Test": pd.DataFrame(
+                                        [[column, column.split("_")[0], self.splice_junction_position_renaming["_".join(column.split("_")[1:])], chi_square_stat, chi_square_pval]], 
+                                        columns=["Feature", "RBP", "Position", "Statistic", "P-Val"]
+                                    ), 
+                "Contingency Table": contingency_table                
+            }
         
     
     def plot_chi_square_contingency_tables(self): 
@@ -370,15 +369,29 @@ class AyanXgbdtAnalyzer:
 
         plt.figure(dpi=200, figsize=(15, 5))
 
-        sns.lineplot(data=plot_df, x="PSI Threshold", y="Percent Bound", hue="Position", marker="o")
+        sns.lineplot(data=plot_df, x="PSI Threshold", y="Percent Bound", hue="Position", marker="o", err_style="band", palette="tab10")
 
         plt.title(f"{self.cell_line}: Percent Bound by PSI Threshold and Position", fontsize=20)
         plt.xlabel("PSI Threshold", fontsize=15)
         plt.ylabel("Percent Bound", fontsize=15)
-        plt.legend(title="Position", fontsize=12)
+        plt.legend(title="Position", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
 
         plt.tight_layout()
         plt.show()
+
+
+        plt.figure(dpi=200, figsize=(15, 5))
+
+        sns.lineplot(data=plot_df, x="PSI Threshold", y="Percent Bound", hue="Position", marker="o", err_style=None, palette="tab10")
+
+        plt.title(f"{self.cell_line}: Percent Bound by PSI Threshold and Position", fontsize=20)
+        plt.xlabel("PSI Threshold", fontsize=15)
+        plt.ylabel("Percent Bound", fontsize=15)
+        plt.legend(title="Position", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+
+        plt.tight_layout()
+        plt.show()
+
 
         plt.figure(dpi=200, figsize=(15, 5))
 
@@ -392,18 +405,31 @@ class AyanXgbdtAnalyzer:
         plt.tight_layout()
         plt.show()
 
-        return plot_df 
+        # Calculate the difference between the first and last value for each feature
+        plot_df["PSI Threshold Rank"] = plot_df["PSI Threshold"].map({"PSI < 0.1": 0, "PSI >= 0.1 & <= 0.9": 1, "PSI > 0.9": 2})
+        feature_diffs = plot_df.sort_values(by="PSI Threshold Rank").groupby("Feature")["Percent Bound"].agg(lambda x: abs(x.iloc[-1] - x.iloc[0]))
+
+        # Get the top 15 features with the largest difference
+        top_features = feature_diffs.nlargest(15).index
+
+        # Plot the line plot for the top 15 features
+        plt.figure(dpi=200, figsize=(15, 5))
+        sns.lineplot(data=plot_df[plot_df["Feature"].isin(top_features)], x="PSI Threshold", y="Percent Bound", hue="Feature", marker="o")
+        plt.title(f"{self.cell_line}: Top 15 Features with Largest Difference in Percent Bound", fontsize=20)
+        plt.xlabel("PSI Threshold", fontsize=15)
+        plt.ylabel("Percent Bound", fontsize=15)
+        plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+        plt.tight_layout()
+        plt.show()
+
+        return plot_df
 
 
-
-            
-
-    
-    def chi_square_convert_features_to_rbp_position_matrix(self, column=None):
+    def convert_features_to_rbp_position_matrix(self, df=None, column=None):
         
         heatmap_df = {}
 
-        for index, data in self.feature_chi_square_results.iterrows(): 
+        for index, data in df.iterrows(): 
             rbp, position = self.get_rbp_and_position(data["Feature"])
             
             if rbp not in heatmap_df: 
@@ -416,7 +442,7 @@ class AyanXgbdtAnalyzer:
 
     def plot_feature_chi_square_statistics(self, column=None): 
 
-        heatmap_df = self.chi_square_convert_features_to_rbp_position_matrix(column=column)
+        heatmap_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results,column=column)
 
         plt.figure(dpi=200,figsize=(30,10))
         
@@ -442,7 +468,34 @@ class AyanXgbdtAnalyzer:
 
         plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Heatmap (Capped at {vmax})", pad=40, fontsize=40)
         plt.show()
-            
+
+        p_val_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results, column="FDR P-Val")
+        p_val_df = np.log10(p_val_df) * -1
+
+        max_value = p_val_df.replace([np.inf, -np.inf], np.nan).max().max()
+        p_val_df = p_val_df.replace([np.inf, -np.inf], max_value)
+
+        plt.figure(dpi=200, figsize=(50,10))
+
+        mask = p_val_df.isnull()
+        cmap = sns.color_palette("Blues", as_cmap=True)
+        cmap.set_bad("white")
+
+        sns.heatmap(p_val_df, cmap=cmap, mask=mask, cbar_kws={"label": "-log10(FDR P-Val)"})
+
+        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square -log10(FDR P-Val) Heatmap\nNOTE: 0 p-values were turned into the maximum value", pad=40, fontsize=40)
+        plt.show()
+
+        binary_significance_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results, column="FDR P-Val")
+        binary_significance_df = binary_significance_df.map(lambda x: 1 if x < 0.05 else 0)
+
+        plt.figure(dpi=200, figsize=(50,10))
+
+        sns.heatmap(binary_significance_df, cmap="Blues")
+
+        plt.title(f"{self.cell_line} CTRL ONLY: Binary Significance Heatmap (FDR P-Val < 0.05)", pad=40, fontsize=40)
+        plt.show()
+
         return heatmap_df
 
 
