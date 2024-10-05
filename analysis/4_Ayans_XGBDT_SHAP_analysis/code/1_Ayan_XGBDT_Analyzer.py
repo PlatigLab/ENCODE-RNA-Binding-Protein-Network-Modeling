@@ -156,6 +156,7 @@ class AyanXgbdtAnalyzer:
                 return self.ctrl_only_binding_data.head()
     
 
+#TODO need to re-do this with the newer version of the control data 
     def plot_upstream_and_downstream_exon_duplication(self): 
 
         if pathlib.Path(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv").exists(): 
@@ -926,8 +927,8 @@ class AyanXgbdtAnalyzer:
         return pd.DataFrame(feature_matrix).sort_index(axis=1).sort_index(axis=0)
 
 
-    def get_global_SHAP_matrix(self, df=None): 
-
+    def get_global_SHAP(self, df=None): 
+        
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
@@ -936,17 +937,11 @@ class AyanXgbdtAnalyzer:
             [pl.col(col).abs().mean().alias(col) for col in self.shap_columns]
         )
 
-        # plt.figure(dpi=200, figsize=(30,10))
+        return abs_mean_df
 
-        # sns.histplot(data=abs_mean_df.to_numpy().flatten(), bins=500)
 
-        # plt.title(f"{self.cell_line}: Global SHAP Histogram", fontsize=30)
-        # plt.xlabel("Mean Absolute SHAP Value", fontsize=20)
-        # plt.ylabel("Frequency", fontsize=20)
-
-        # plt.show()
-
-        return self.convert_1D_row_to_matrix(df = abs_mean_df)
+    def get_global_SHAP_matrix(self, df=None): 
+        return self.convert_1D_row_to_matrix(df = self.get_global_SHAP(df=df))
 
 
     def get_total_binding_percent(self, df=None): 
