@@ -118,7 +118,7 @@ class AyanXgbdtAnalyzer:
             if pathlib.Path(cache_file).exists():
                 logger.info(f"FROM CACHE: {self.cell_line} {self.distance_threshold} CTRL-only binding data loaded")
 
-                ctrl_only_binding_data = pl.scan_ipc(cache_file).select(pl.all()).collect(streaming=True)
+                ctrl_only_binding_data = pl.scan_ipc(cache_file).collect(streaming=True)
 
                 self.binding_columns = [col for col in ctrl_only_binding_data.columns if col.endswith("_right") or col.endswith("_left")]
                 ctrl_only_binding_data = ctrl_only_binding_data.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
