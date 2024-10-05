@@ -1,12 +1,15 @@
-from dataclasses import dataclass
-from loguru import logger 
-
 import pandas as pd
 import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
-import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse
+from dataclasses import dataclass
+from loguru import logger 
+from matplotlib.patches import Patch
+from statsmodels.stats.multitest import multipletests
+
+import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys
 
 @dataclass
 class AyanXgbdtAnalyzer:
@@ -51,6 +54,8 @@ class AyanXgbdtAnalyzer:
 
         self.load_rbp_ppi()
 
+        logger.add(sys.stdout)
+
 
     def load_rbp_ppi(self):
         
@@ -73,7 +78,7 @@ class AyanXgbdtAnalyzer:
         #     for column in uniprot_id_mapping: 
         #         uniprot_id_mapping[column] = uniprot_id_mapping[column].str.lower()
 
-        #     logger.info("RBP PPI data created & loaded")
+        #     logger.success("RBP PPI data created & loaded")
 
     
     def get_rbp_and_position(self, string):
@@ -91,8 +96,11 @@ class AyanXgbdtAnalyzer:
     def _cache_to_featherv2(self, df, file_path):
 
         if not pathlib.Path(file_path).exists():
-            logger.info(f"Caching to feather: {file_path}")
+            logger.info(f"Caching to Feather V2 (Arrow): {file_path}")
+
             df.write_ipc(file_path, compression="lz4")
+            logger.success(f"Finished creating Feather V2 (Arrow) file for {file_path}")
+
 
 
     def load_ctrl_only_binding_data(self, column=None):
@@ -141,7 +149,7 @@ class AyanXgbdtAnalyzer:
                     tmp_df = tmp_df.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
 
                 self.ctrl_only_binding_data = tmp_df
-                logger.info(f"{self.cell_line} {self.distance_threshold} binding dataframe shape: {self.ctrl_only_binding_data.shape}")
+                logger.success(f"{self.cell_line} {self.distance_threshold} binding dataframe loaded. Shape: {self.ctrl_only_binding_data.shape}")
 
                 self._cache_to_featherv2(self.ctrl_only_binding_data, cache_file)
 
@@ -199,7 +207,7 @@ class AyanXgbdtAnalyzer:
         #     tmp_df = tmp_df.sort_values("Counts", ascending=False)
         #     tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t")
 
-        #     logger.info(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
+        #     logger.success(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
 
         #     return tmp_df 
 
@@ -270,7 +278,7 @@ class AyanXgbdtAnalyzer:
             with open(chi_square_contingency_output, 'wb') as f:
                 pickle.dump(self.feature_chi_square_contingency_tables, f)
 
-            logger.info(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
+            logger.success(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
             return self.feature_chi_square_results
     
 
@@ -454,7 +462,7 @@ class AyanXgbdtAnalyzer:
                 shap_data = shap_data.with_columns([pl.col(col).cast(pl.Int8) for col in self.binding_columns])
                 self.shap_data = shap_data
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+                logger.success(f"{self.cell_line} {self.distance_threshold} SHAP dataframe loaded. Shape: {self.shap_data.shape}")
                 return self.shap_data.head()
             
             else: 
@@ -498,7 +506,7 @@ class AyanXgbdtAnalyzer:
 
                 self._cache_to_featherv2(self.shap_data, cache_file)
 
-                logger.info(f"{self.cell_line} {self.distance_threshold} SHAP dataframe shape: {self.shap_data.shape}")
+                logger.success(f"{self.cell_line} {self.distance_threshold} SHAP dataframe loaded. Shape: {self.shap_data.shape}")
                 return self.shap_data.head()
 
 
@@ -597,7 +605,8 @@ class AyanXgbdtAnalyzer:
 
             self.feature_specific_kruskal_wallis = pd.DataFrame(kruskal_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
             self.feature_specific_kruskal_wallis.to_csv(output_file, sep="\t", index=False)
-        
+            logger.success(f"{self.cell_line} {self.distance_threshold} Kruskal-Wallis tests completed and cached.")
+            return self.feature_specific_kruskal_wallis.head()
 
     def run_kruskal_wallis_test(self, col, partitions):
 
@@ -649,7 +658,7 @@ class AyanXgbdtAnalyzer:
             plt.close()
 
         else: 
-            logger.info(f"{feature} has no non-zero local SHAP values")
+            logger.warning(f"{feature} has no non-zero local SHAP values")
     
 
     def convert_1D_row_to_matrix(self, df=None): 
