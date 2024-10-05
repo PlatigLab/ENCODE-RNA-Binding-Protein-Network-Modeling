@@ -284,12 +284,28 @@ class AyanXgbdtAnalyzer:
 
                         pbar.update(1)
             
-            self.feature_chi_square_results = pd.concat(feature_chi_square_results).sort_values("Statistic", ascending=False)
+            feature_chi_square_results = pd.concat(feature_chi_square_results).sort_values("Statistic", ascending=False)
+
+            if not hasattr(self, 'shap_data'):
+                self.load_SHAP_data()
+            
+            global_shap_join_table = pd.DataFrame(
+                    self.get_global_SHAP(df = self.shap_data).to_dict(as_series=False), 
+                    index=["Global SHAP"]
+                ).T 
+            
+            global_shap_join_table.index = global_shap_join_table.index.str.split('_').str[:-1].str.join('_')
+            self.feature_chi_square_results = feature_chi_square_results.join(global_shap_join_table, on="Feature")
+
+            # Calculate the False Discovery Rate (FDR) corrected p-values
+            self.feature_chi_square_results = self.correct_pvals(df=self.feature_chi_square_results, column="P-Val")
             self.feature_chi_square_results.to_csv(chi_square_output, index=False, sep="\t")
 
             self.feature_chi_square_contingency_tables = feature_chi_square_contingency_tables
             with open(chi_square_contingency_output, 'wb') as f:
                 pickle.dump(self.feature_chi_square_contingency_tables, f)
+
+            self.load_ctrl_only_binding_data()
 
             logger.success(f"Finished parallel chi-square tests for {self.cell_line} {self.distance_threshold}")
             return self.feature_chi_square_results
@@ -616,10 +632,18 @@ class AyanXgbdtAnalyzer:
                 for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Running Kruskal-Wallis tests"):
                     kruskal_df.append(future.result())
 
-            self.feature_specific_kruskal_wallis = pd.DataFrame(kruskal_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
+            # Use the get_rbp_and_position function to convert each value in "Feature" to two separate columns called "RBP" and "Position"
+            kruskal_df = pd.DataFrame(kruskal_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
+            kruskal_df[["RBP", "Position"]] = kruskal_df["Feature"].apply(lambda x: pd.Series(self.get_rbp_and_position(x)))
+
+            kruskal_df = self.correct_pvals(df=kruskal_df, column="P-Val")
+
+            self.feature_specific_kruskal_wallis = kruskal_df
             self.feature_specific_kruskal_wallis.to_csv(output_file, sep="\t", index=False)
+
             logger.success(f"{self.cell_line} {self.distance_threshold} Kruskal-Wallis tests completed and cached.")
             return self.feature_specific_kruskal_wallis.head()
+
 
     def run_kruskal_wallis_test(self, col, partitions):
 
