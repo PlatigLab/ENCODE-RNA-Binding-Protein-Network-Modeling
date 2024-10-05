@@ -237,6 +237,19 @@ class AyanXgbdtAnalyzer:
                 }
     
 
+    def correct_pvals(self, df=None, column=None):
+        
+        input_list = np.array(df[column].to_list())
+
+        valid_p_values = input_list[~np.isnan(input_list)]
+        _, fdr_corrected_pvals, _, _ = multipletests(valid_p_values, method='fdr_bh')
+
+        df["FDR P-Val"] = np.nan
+        df.loc[~np.isnan(input_list), "FDR P-Val"] = fdr_corrected_pvals
+
+        return df
+    
+
     def run_parallel_chi_square_tests(self):
 
         chi_square_output = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_results.tsv"
