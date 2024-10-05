@@ -1056,6 +1056,424 @@ class AyanXgbdtAnalyzer:
         plt.tight_layout()
         plt.show()
 
+    
+    def plot_global_SHAP_partition_monotonicity(self): 
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
+        global_shap_matrices = {key: self.get_global_SHAP_matrix(df=partitions[key]) for key in partitions}
+
+        monotonic_df = global_shap_matrices[f"PSI < {self.psi_partition_thresholds[0]}"].copy()
+
+        for key in monotonic_df.columns:
+            for idx in monotonic_df.index:
+                low = global_shap_matrices[f"PSI < {self.psi_partition_thresholds[0]}"].loc[idx, key]
+                mid = global_shap_matrices[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"].loc[idx, key]
+                high = global_shap_matrices[f"PSI > {self.psi_partition_thresholds[1]}"].loc[idx, key]
+
+                if low < mid < high:
+                    monotonic_df.loc[idx, key] = 1
+                elif low > mid > high:
+                    monotonic_df.loc[idx, key] = -1
+                else:
+                    monotonic_df.loc[idx, key] = 0
+
+        plt.figure(dpi=200, figsize=(30, 5))
+
+        sns.heatmap(monotonic_df.astype(int), cmap="coolwarm", center=0, cbar_kws={"pad": 0.01})
+
+        plt.title(f"{self.cell_line}: Monotonocity of Global SHAP over PSI Partitions\nDO NOT confuse Global SHAP with local SHAP", fontsize=40, pad=20)
+        plt.xlabel("RBP")
+        plt.ylabel("Position")
+
+        legend_elements = [
+            Patch(facecolor='red', edgecolor='r', label='Decreasing', linewidth=2),
+            Patch(facecolor='white', edgecolor='k', label='Non-Monotonic', linewidth=2),
+            Patch(facecolor='blue', edgecolor='b', label='Increasing', linewidth=2)
+        ]
+        plt.legend(handles=legend_elements, title="Monotonicity", bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=30, title_fontsize=30)
+
+        plt.show()
+
+        # Identify features with the largest global SHAP value between the first and last partitions
+        first_partition_key = f"PSI < {self.psi_partition_thresholds[0]}"
+        last_partition_key = f"PSI > {self.psi_partition_thresholds[1]}"
+
+        first_partition_shap = self.get_global_SHAP(df=(partitions[first_partition_key])).to_pandas().iloc[0].to_dict()
+        last_partition_shap = self.get_global_SHAP(df=(partitions[last_partition_key])).to_pandas().iloc[0].to_dict()
+
+        # Convert the dictionaries to DataFrames
+        first_partition_shap_df = pd.DataFrame.from_dict(first_partition_shap, orient='index', columns=['First Partition SHAP'])
+        last_partition_shap_df = pd.DataFrame.from_dict(last_partition_shap, orient='index', columns=['Last Partition SHAP'])
+
+        # Merge the DataFrames on the index (feature names)
+        comparison_df = first_partition_shap_df.join(last_partition_shap_df)
+
+        # Calculate the difference between the first and last partition SHAP values
+        comparison_df["Difference"] = abs(comparison_df["Last Partition SHAP"] - comparison_df["First Partition SHAP"])
+
+        # Sort the DataFrame by the absolute difference in descending order and get the top 15 features
+        top_features = comparison_df.reindex(comparison_df["Difference"].abs().sort_values(ascending=False).index).head(15)
+
+        # Prepare the data for plotting
+        top_features_list = top_features.index.tolist()
+        plot_data = []
+
+        for feature in top_features_list:
+            low = first_partition_shap[feature]
+            mid = self.get_global_SHAP(df=(partitions[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"])).to_pandas().iloc[0].to_dict()[feature]
+            high = last_partition_shap[feature]
+            plot_data.append([feature, "PSI < 0.1", low])
+            plot_data.append([feature, 'PSI >= 0.1 & PSI <=0.9', mid])
+            plot_data.append([feature, 'PSI > 0.9', high])
+
+        plot_df = pd.DataFrame(plot_data, columns=['Feature', 'Partition', 'Global SHAP'])
+
+        # Plot the top 15 features with the largest difference
+        plt.figure(figsize=(15, 5), dpi=200)
+
+        sns.lineplot(data=plot_df, x='Partition', y='Global SHAP', hue='Feature', marker='o')
+
+        plt.title(f"{self.cell_line}: Top 15 Features with Largest Difference in \nGlobal SHAP between First and Last Partitions", fontsize=20)
+        plt.xlabel("Partition", fontsize=15)
+        plt.ylabel("Global SHAP", fontsize=15)
+        plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+
+        plt.tight_layout()
+        plt.show()
+
+        return monotonic_df
+    
+
+    def plot_rank_global_SHAP_vs_rank_chi_square(self): 
+            
+        if not hasattr(self, 'feature_chi_square_results'):
+            self.run_parallel_chi_square_tests()
+
+        chi_square_results_filtered = self.feature_chi_square_results.dropna(subset=["Statistic"])
+
+        global_shap_rank = chi_square_results_filtered["Global SHAP"].rank(ascending=False)
+        chi_square_rank = chi_square_results_filtered["Statistic"].rank(ascending=False)
+
+        assert len(global_shap_rank) == len(chi_square_rank), logger.error("Lengths of Global SHAP and Chi-Square ranks do not match")
+
+        plt.figure(dpi=150, figsize=(5,5))
+
+        plt.scatter(x=chi_square_rank, y=global_shap_rank, s=1)
+        plt.plot([0, max(chi_square_rank)], [0, max(global_shap_rank)], color='red', linestyle='--')
+
+        plt.title(f"{self.cell_line}: Chi Square vs Global SHAP Rank\n\nNOTE: tied values are given average rank value\nRank '1' means highest\nFeatures without Chi-Square Statistics not included", fontsize=10)
+        plt.xlabel("Rank of Chi-Square Statistic", fontsize=10)
+        plt.ylabel("Rank of Global SHAP", fontsize=10)
+
+        plt.xlim(0, max(chi_square_rank)+10)
+        plt.ylim(0, max(global_shap_rank)+10)
+
+        # Calculate the number of dots and the correlation value
+        num_dots = len(global_shap_rank)
+        correlation_value = global_shap_rank.corr(chi_square_rank)
+
+        # Add the text to the plot
+        plt.text(
+            0.5, .9, 
+            f"# Points: {num_dots},   Corr: {correlation_value:.2f}", 
+            horizontalalignment='center', 
+            verticalalignment='center', 
+            transform=plt.gca().transAxes, 
+            fontsize=12, 
+            # bbox=dict(facecolor='white', alpha=0.8)
+        )
+
+        plt.tight_layout()
+        plt.show()
+
+
+#TODO
+    def plot_positive_control_local_SHAP_features(self): 
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        srsf_and_hnrnp = list(set(
+            [col.split('_')[0] for col in self.shap_columns + self.binding_columns 
+             if col.split('_')[0].lower().startswith("srsf") or col.split('_')[0].lower().startswith("hnrnp")]
+        ))
+
+        for rbp in srsf_and_hnrnp: 
+            shap_columns = sorted([col for col in self.shap_columns if col.startswith(rbp)])
+            binding_columns = sorted([col for col in self.binding_columns if col.startswith(rbp)])
+
+            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(30, 10), dpi=200)
+
+            for shap_col, bind_col in zip(shap_columns, binding_columns):
+
+                assert shap_col == bind_col+"_shap", logger.error(f"SHAP and Binding columns do not match: {shap_col} and {bind_col}")
+
+                _, position = self.get_rbp_and_position(shap_col)
+
+                sns.histplot(
+                    data=self.shap_data,
+                    x=shap_col,
+                    hue=bind_col,
+                    bins=100,
+                    ax=ax[position // 3, position % 3]
+                )
+                ax[position // 3, position % 3].set_title(f"{shap_col} vs {bind_col}")
+    
+
+    def compare_kruskal_anova_chi_SHAP(self): 
+            
+        if not hasattr(self, 'feature_specific_kruskal_wallis'):
+            self.run_parallel_feature_specific_kruskal_wallis()
+
+        if not hasattr(self, 'feature_specific_anova'):
+            self.run_parallel_feature_specific_ANOVA()
+
+        if not hasattr(self, 'feature_chi_square_results'):
+            self.run_parallel_chi_square_tests()
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        kruskal_wallis = self.feature_specific_kruskal_wallis.copy()
+        anova = self.feature_specific_anova.copy()
+        chi_square = self.feature_chi_square_results.copy()
+
+        kruskal_wallis = self.correct_pvals(df=kruskal_wallis, column="P-Val")
+        anova = self.correct_pvals(df=anova, column="P-Val")
+
+        kruskal_wallis["Feature"] = kruskal_wallis["Feature"].str.replace("_shap", "")
+        anova["Feature"] = anova["Feature"].str.replace("_shap", "")
+        chi_square["Feature"] = chi_square["Feature"].str.replace("_shap", "")
+
+        kruskal_wallis = kruskal_wallis.set_index("Feature")
+        anova = anova.set_index("Feature")
+        chi_square = chi_square.set_index("Feature")
+
+        kruskal_wallis.columns = [f"Kruskal-Wallis {col}" for col in kruskal_wallis.columns]
+        anova.columns = [f"ANOVA {col}" for col in anova.columns]
+        chi_square.columns = [f"Chi-Square {col}" for col in chi_square.columns]
+
+        global_shap_join_table = pd.DataFrame(
+                self.get_global_SHAP(df = self.shap_data).to_dict(as_series=False), 
+                index=["Global SHAP"]
+            ).T 
+        
+        global_shap_join_table.index = global_shap_join_table.index.str.split('_').str[:-1].str.join('_')
+
+        comparison_df = chi_square.join(anova).join(kruskal_wallis).join(global_shap_join_table)
+
+        comparison_df = comparison_df.rename(
+            columns={
+                "Chi-Square RBP": "RBP",
+                "Chi-Square Position": "Position"
+            }
+        )
+
+        comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
+
+        comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=True)
+        comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=True)
+        comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=True)
+        comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=True)
+        
+        return comparison_df
+
+
+    #TODO Consider whether it makes sense to split by position but plot by rank from across all positions
+    def plot_kruskal_anova_chi_SHAP(self): 
+            
+        comparison_df = self.compare_kruskal_anova_chi_SHAP()
+
+        # positions = comparison_df["Position"].unique()
+        # nrows = len(positions)
+        # fig, axs = plt.subplots(nrows, 1, figsize=(30, nrows * 3), dpi=200)
+
+        # for i, position in enumerate(positions):
+        #     subset_df = comparison_df[comparison_df["Position"] == position]
+        #     heatmap_data = subset_df[["Chi-Square Rank", "ANOVA Rank", "Kruskal-Wallis Rank", "Global SHAP Rank"]]
+        #     heatmap_data.index = subset_df["RBP"]
+
+        #     heatmap_data = heatmap_data.T
+
+        #     mask = heatmap_data.isnull()
+        #     cmap = sns.color_palette("Blues", as_cmap=True)
+        #     # cmap.set_bad("yellow")
+
+        #     sns.heatmap(
+        #         data=heatmap_data,
+        #         cmap=cmap,
+        #         mask=mask,
+        #         cbar_kws={"label": "Rank"},
+        #         ax=axs[i]
+        #     )
+
+        #     axs[i].set_title(f"Position: {position}", fontsize=15)
+        #     axs[i].set_ylabel("Metrics", fontsize=12)
+        #     axs[i].set_xlabel("RBPs", fontsize=12)
+
+        # plt.tight_layout()
+        # plt.show()
+
+        rank_columns = [col for col in comparison_df.columns if "Rank" in col]
+        nrows = len(rank_columns)
+        fig, axs = plt.subplots(nrows, nrows, figsize=(30, 30), dpi=200)
+
+        for i, rank_col1 in enumerate(rank_columns):
+            for j, rank_col2 in enumerate(rank_columns):
+                if i != j:
+                    axs[i, j].scatter(comparison_df[rank_col1], comparison_df[rank_col2], s=1)
+                    axs[i, j].plot([0, max(comparison_df[rank_col1].max(), comparison_df[rank_col2].max())], 
+                        [0, max(comparison_df[rank_col1].max(), comparison_df[rank_col2].max())], 
+                        color='red', linestyle='--')
+                    axs[i, j].set_xlabel(rank_col1, fontsize=10)
+                    axs[i, j].set_ylabel(rank_col2, fontsize=10)
+                    axs[i, j].set_title(f"{rank_col1} vs {rank_col2}", fontsize=12)
+                else:
+                    axs[i, j].axis('off')
+
+        plt.tight_layout()
+        plt.show()
+
+        return comparison_df
+
+
+
+############################################################################################################
+################################################# NEW CLASS ################################################
+############################################################################################################
+
+
+@dataclass
+class CellLineCompareTool:
+    K562: AyanXgbdtAnalyzer
+    HepG2: AyanXgbdtAnalyzer
+
+
+    def __post_init__(self):
+        self.cell_lines = [self.K562, self.HepG2]
+        self.cell_line_names = ["K562", "HepG2"]
+
+        for cell_line in self.cell_lines:
+            cell_line.load_SHAP_data()
+
+        logger.add(sys.stdout)
+        logger.info("Ready to use cell line comparison class.")
+
+
+    def get_binding_common_features(self):
+            
+        common_features = pd.DataFrame(list(set(self.K562.binding_columns) & set(self.HepG2.binding_columns)), columns=["Feature"])
+
+        common_features[["RBP", "Position"]] = common_features["Feature"].apply(lambda x: pd.Series(self.K562.get_rbp_and_position(x)))
+        common_features = common_features.sort_values(by=["RBP", "Position"])
+
+        return common_features["Feature"].to_list()
+
+
+    def get_SHAP_common_features(self):
+
+        common_features= pd.DataFrame(list(set(self.K562.shap_columns) & set(self.HepG2.shap_columns)), columns=["Feature"])
+
+        common_features[["RBP", "Position"]] = common_features["Feature"].apply(lambda x: pd.Series(self.K562.get_rbp_and_position(x)))
+        common_features = common_features.sort_values(by=["RBP", "Position"])
+
+        return common_features["Feature"].to_list()
+    
+    
+    def plot_global_SHAP_comparison(self): 
+
+        top_n_features = 20
+
+        k562_global_SHAP = self.K562.get_global_SHAP(self.K562.shap_data).to_pandas().iloc[0].to_dict()
+        hepg2_global_SHAP = self.HepG2.get_global_SHAP(self.HepG2.shap_data).to_pandas().iloc[0].to_dict()
+        
+        differences = []
+
+        for feature in self.get_SHAP_common_features():
+            k562_value = k562_global_SHAP[feature]
+            hepg2_value = hepg2_global_SHAP[feature]
+            difference = abs(k562_value - hepg2_value)
+            differences.append((feature, k562_value, hepg2_value, difference))
+
+        # Sort by the difference and take the top 20
+        top_differences = sorted(differences, key=lambda x: x[3], reverse=True)[:top_n_features]
+
+        # Create a DataFrame for plotting
+        plot_df = pd.DataFrame({
+            "Feature": [x[0] for x in top_differences],
+            "K562": [x[1] for x in top_differences],
+            "HepG2": [-x[2] for x in top_differences]  # Negate HepG2 values for opposite direction
+        })
+
+        # Plot the bar plot
+        plt.figure(dpi=200, figsize=(15,8))
+
+        plt.barh(plot_df["Feature"], plot_df["K562"], color="blue", label="K562")
+        plt.barh(plot_df["Feature"], plot_df["HepG2"], color="orange", label="HepG2")
+
+        plt.title(f"K562 vs HepG2: Largest Global SHAP Differences\n(Top {top_n_features} Features Shown) ", fontsize=25, pad=20)
+        plt.xlabel("Global SHAP Value", fontsize=10)
+        plt.ylabel("Feature", fontsize=10)
+        plt.legend(["K562", "HepG2"], fontsize=12, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        plt.tight_layout()
+        plt.show()
+
+
+    
+    
+    def plot_chi_square_comparison(self):    
+
+        common_features = self.get_binding_common_features()
+
+        k562_chi_square = self.K562.feature_chi_square_results.set_index("Feature")["Statistic"]
+        hepg2_chi_square = self.HepG2.feature_chi_square_results.set_index("Feature")["Statistic"]
+
+        chi_square_comparison_df = pd.DataFrame({
+            "Feature": common_features,
+            "K562_Chi_Square": [k562_chi_square[feature] for feature in common_features],
+            "HepG2_Chi_Square": [hepg2_chi_square[feature] for feature in common_features]
+        })
+
+        chi_square_comparison_df["K562_Rank"] = chi_square_comparison_df["K562_Chi_Square"].rank(ascending=False)
+        chi_square_comparison_df["HepG2_Rank"] = chi_square_comparison_df["HepG2_Chi_Square"].rank(ascending=False)
+        
+        plt.figure(dpi=200, figsize=(4,4))
+
+        plt.scatter(chi_square_comparison_df["K562_Rank"], chi_square_comparison_df["HepG2_Rank"], s=2)
+        plt.plot([0, max(chi_square_comparison_df["K562_Rank"])], [0, max(chi_square_comparison_df["HepG2_Rank"])], color='red', linestyle='--')
+
+        plt.title(f"K562 vs HepG2: Chi-Square Rank Comparison\nRank '1' is the highest statistic", fontsize=10)
+        plt.xlabel("K562 Chi-Square Rank", fontsize=10)
+        plt.ylabel("HepG2 Chi-Square Rank", fontsize=10)
+
+        plt.xlim(0, max(chi_square_comparison_df["K562_Rank"]) + 10)
+        plt.ylim(0, max(chi_square_comparison_df["HepG2_Rank"]) + 10)
+
+        num_dots = len(common_features)
+        correlation_value = chi_square_comparison_df["K562_Rank"].corr(chi_square_comparison_df["HepG2_Rank"])
+
+        plt.text(
+            0.15, 0.92,
+            f"# Points: {num_dots}\nCorr: {correlation_value:.2f}",
+            horizontalalignment='center',
+            verticalalignment='center',
+            transform=plt.gca().transAxes,
+            fontsize=10,
+        )
+
+        plt.tight_layout()
+        plt.show()
+
+        return chi_square_comparison_df.sort_values(by="K562_Rank", ascending=True)
+
+
+
+
+
 
 if __name__ == "__main__":
 
@@ -1071,6 +1489,6 @@ if __name__ == "__main__":
 
     match args.parallel_task:
         case "local_shap_inspection": 
-            analyzer.parallel_inspect_local_SHAP_by_dataset(args.feature) 
+            analyzer.SLURM_inspect_local_SHAP_by_dataset(args.feature) 
         case _:
             logger.error(f"Unknown parallel task: {args.parallel_task}")
