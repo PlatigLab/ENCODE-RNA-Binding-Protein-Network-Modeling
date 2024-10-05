@@ -701,12 +701,172 @@ class AyanXgbdtAnalyzer:
     def run_kruskal_wallis_test(self, col, partitions):
 
         shap_lists = [partitions[key][col].to_list() for key in partitions]
+        if all(all(value == 0 for value in shap_list) for shap_list in shap_lists):
+            return [col, None, None]
 
         kruskal_result = scipy.stats.kruskal(*shap_lists)
         return [col, kruskal_result.statistic, kruskal_result.pvalue]
     
+    
+    def plot_kruskal_wallis_statistics(self):
+        
+        if not hasattr(self, 'feature_specific_kruskal_wallis'):
+            self.run_parallel_feature_specific_kruskal_wallis()
 
-    def parallel_inspect_local_SHAP_by_dataset(self, feature):
+        plotting_df = self.convert_features_to_rbp_position_matrix(df=self.feature_specific_kruskal_wallis, column="Statistic")
+
+        plt.figure(dpi=200, figsize=(15,3))
+
+        sns.histplot(data=plotting_df.to_numpy().flatten(), bins=500)
+
+        plt.title(f"{self.cell_line}: Kruskal-Wallis Statistic Distribution", fontsize=20)
+        plt.xlabel("Kruskal-Wallis Statistic", fontsize=15)
+        plt.ylabel("Frequency", fontsize=15)
+
+        plt.show()
+
+        plt.figure(dpi=200, figsize=(40,6))
+
+        mask = plotting_df.isnull()
+        cmap = sns.color_palette("Blues", as_cmap=True)
+        cmap.set_bad("salmon")
+
+        sns.heatmap(
+            data=plotting_df,
+            cmap=cmap,
+            mask=mask,
+            cbar_kws={"label": "Kruskal-Wallis Statistic"}
+        )
+
+        plt.title(f"{self.cell_line}: Kruskal-Wallis Statistic Heatmap", fontsize=40)
+        plt.xlabel("RBPs", fontsize=25)
+        plt.ylabel("Positions", fontsize=25)
+
+        plt.show()
+
+
+        binary_significance_df = self.convert_features_to_rbp_position_matrix(df=self.feature_specific_kruskal_wallis, column="FDR P-Val")
+        binary_significance_df = binary_significance_df.map(lambda x: 1 if x < 0.05 else 0)
+
+        plt.figure(dpi=200, figsize=(40,6))
+
+        sns.heatmap(
+            data=binary_significance_df,
+            cmap="Blues",
+            cbar_kws={"label": "Significance (FDR < 0.05)"}
+        )
+
+        plt.title(f"{self.cell_line}: Kruskal-Wallis Binary Significance Heatmap\n(FDR < 0.05)", fontsize=40, pad=20)
+        plt.xlabel("RBPs", fontsize=25)
+        plt.ylabel("Positions", fontsize=25)
+
+        plt.show()
+
+        return self.feature_specific_kruskal_wallis
+    
+
+    def run_parallel_feature_specific_ANOVA(self): 
+
+        output_file = f"../outputs/anova/feature_specific/{self.cell_line}_anova.tsv"
+
+        if pathlib.Path(output_file).exists():
+            logger.info(f"FROM CACHE: ANOVA results for {self.cell_line} {self.distance_threshold} loaded")
+            self.feature_specific_anova = pd.read_csv(output_file, sep="\t")
+            return self.feature_specific_anova.head()
+        
+        else: 
+            logger.info(f"Running ANOVA tests for {self.cell_line} {self.distance_threshold}")
+
+            partitions = self.partition_dataframe_by_PSI(
+                df = self.shap_data, 
+                column_name = "target", 
+                psi_cutoffs=self.psi_partition_thresholds
+            )
+
+            anova_df = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                futures = {
+                    executor.submit(self.run_anova_test, col, partitions): col for col in self.shap_columns
+                }
+
+                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Running ANOVA tests"):
+                    anova_df.append(future.result())
+
+            anova_df = pd.DataFrame(anova_df, columns=["Feature", "Statistic", "P-Val"]).sort_values("Statistic", ascending=False)
+            anova_df[["RBP", "Position"]] = anova_df["Feature"].apply(lambda x: pd.Series(self.get_rbp_and_position(x)))
+
+            anova_df = self.correct_pvals(df=anova_df, column="P-Val")
+
+            self.feature_specific_anova = anova_df
+            self.feature_specific_anova.to_csv(output_file, sep="\t", index=False)
+
+            logger.success(f"{self.cell_line} {self.distance_threshold} ANOVA tests completed and cached.")
+
+    
+    def run_anova_test(self, col, partitions):
+        
+        shap_lists = [partitions[key][col].to_list() for key in partitions]
+        if all(all(value == 0 for value in shap_list) for shap_list in shap_lists):
+            return [col, None, None]
+
+        anova_result = scipy.stats.f_oneway(*shap_lists)
+        return [col, anova_result.statistic, anova_result.pvalue]
+
+
+    def plot_anova_statistics(self):
+        
+        if not hasattr(self, 'feature_specific_anova'):
+            self.run_parallel_feature_specific_ANOVA()
+
+        plotting_df = self.convert_features_to_rbp_position_matrix(df=self.feature_specific_anova, column="Statistic")
+
+        plt.figure(dpi=200, figsize=(15,3))
+
+        sns.histplot(data=plotting_df.to_numpy().flatten(), bins=500)
+
+        plt.title(f"{self.cell_line}: ANOVA Statistic Distribution", fontsize=20)
+        plt.xlabel("ANOVA Statistic", fontsize=15)
+        plt.ylabel("Frequency", fontsize=15)
+
+        plt.show()
+
+        plt.figure(dpi=200, figsize=(40,6))
+
+        mask = plotting_df.isnull()
+        cmap = sns.color_palette("Blues", as_cmap=True)
+        cmap.set_bad("salmon")
+
+        sns.heatmap(
+            data=plotting_df,
+            cmap=cmap,
+            mask=mask,
+            cbar_kws={"label": "ANOVA Statistic"}
+        )
+
+        plt.title(f"{self.cell_line}: ANOVA Statistic Heatmap", fontsize=20)
+        plt.xlabel("Features", fontsize=15)
+        plt.ylabel("Positions", fontsize=15)
+
+        plt.show()
+
+        binary_significance_df = self.convert_features_to_rbp_position_matrix(df=self.feature_specific_anova, column="FDR P-Val")
+        binary_significance_df = binary_significance_df.map(lambda x: 1 if x < 0.05 else 0)
+
+        plt.figure(dpi=200, figsize=(40,6))
+
+        sns.heatmap(
+            data=binary_significance_df,
+            cmap="Blues",
+            cbar_kws={"label": "Significance (FDR < 0.05)"}
+        )
+
+        plt.title(f"{self.cell_line}: ANOVA Binary Significance Heatmap\n(FDR < 0.05)", fontsize=40)
+        plt.show()
+
+        return self.feature_specific_anova
+
+
+    def SLURM_inspect_local_SHAP_by_dataset(self, feature):
 
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data(column=feature)
