@@ -5,7 +5,7 @@
 #SBATCH -n 1
 #SBATCH --output=../SLURM_output/final_dataset_creation_output_%A_%a.txt
 #SBATCH --error=../SLURM_output/final_dataset_creation_error_%A_%a.txt
-#SBATCH --mem=20GB
+#SBATCH --mem=25GB
 #SBATCH --array=0-29
 
 

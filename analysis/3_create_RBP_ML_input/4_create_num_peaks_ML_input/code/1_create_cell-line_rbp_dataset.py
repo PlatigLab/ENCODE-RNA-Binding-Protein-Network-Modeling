@@ -85,7 +85,7 @@ rmats_file = rmats_file[0]
 assert rmats_file.split("/")[-2].split("-")[2] == cell_line
 
 # read rMATS file and subset for relevant columns
-rmats_df = pd.read_csv(rmats_file, sep="\t")[rmats_file_column_subset]
+rmats_df = pd.read_csv(rmats_file, sep="\t")
 
 
 ############################################
@@ -143,8 +143,10 @@ for row in rmats_df:
             
             if "KD" in sample: 
                 kd_ctrl_string = row["RBP_KD_Target"] 
+                associated_experiment = control_associations[row["RBP_KD_Target"]]
             elif "CTRL" in sample: 
                 kd_ctrl_string = control_associations[row["RBP_KD_Target"]]
+                associated_experiment = row["RBP_KD_Target"]
             
             unique_id = "_".join(
                 [unique_id, kd_ctrl_string, sample]
@@ -220,14 +222,23 @@ for row in rmats_df:
                     elif sample=="CTRL-2": 
                         ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_2"].split(",")[1])
                         ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_2"].split(",")[1])
-                    
-                    ML_input_data[unique_id]["Total Read Counts"] = row["Counts_" + sample]
 
+                    ML_input_data[unique_id]["Total Read Counts"] = row["Counts_" + sample]
                     ML_input_data[unique_id]["Target_PSI"] = row["PSI_"+sample] 
+
+                    ML_input_data[unique_id]["rMATS Event ID"] = row["ID"]
+                    ML_input_data[unique_id]["ENSEMBL Gene ID"] = row["GeneID"]
+                    ML_input_data[unique_id]["Gene Name"] = row["geneSymbol"]
+                    ML_input_data[unique_id]["Associated Experiment"] = associated_experiment
+                    ML_input_data[unique_id]["Inclusion Isoform Length"] = row["IncFormLen"]
+                    ML_input_data[unique_id]["Skipping Isoform Length"] = row["SkipFormLen"]
+
+                    ML_input_data[unique_id]["Raw P-Val"] = row["PValue"]
+                    ML_input_data[unique_id]["FDR"] = row["FDR"]
+                    ML_input_data[unique_id]["DeltaPSI"] = row["IncLevelDifference"]
 
                 else: 
                     all_zero_events+=1
-
 
 print(
     [{"all_zero_events": all_zero_events, "total_events": len(ML_input_data), "kd_binding_present": kd_binding_present}]
