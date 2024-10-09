@@ -211,14 +211,25 @@ class OrdinalModeler:
 
         # Use the wrapper class as the estimator
         scores = cross_validate(
-            estimator=OrderedModelWrapper(method=self.ordinal_regression_method, optimizer=self.optimizer),
+            estimator=ElasticNetCVWrapper(),
             X=binding_input,
             y=prediction_target,
-            cv=rskf,
-            scoring=self.scoring,
+            cv=skf,
+            scoring="neg_root_mean_squared_error",
             verbose=6,
             n_jobs=self.get_slurm_cpus_per_task(),
         )
+
+        # # Use the wrapper class as the estimator
+        # scores = cross_validate(
+        #     estimator=OrderedModelWrapper(method=self.ordinal_regression_method, optimizer=self.optimizer),
+        #     X=binding_input,
+        #     y=prediction_target,
+        #     cv=skf,
+        #     scoring=self.scoring,
+        #     verbose=6,
+        #     n_jobs=self.get_slurm_cpus_per_task(),
+        # )
 
         self.model_output = scores
         logger.success(f"COMPLETED: Cross-validation completed for {self.model}")
@@ -242,3 +253,20 @@ class OrderedModelWrapper(BaseEstimator, RegressorMixin):
     # def score(self, X, y):
     #     predictions = self.predict(X)
     #     return np.mean(predictions == y)
+
+class ElasticNetCVWrapper(BaseEstimator, RegressorMixin):
+
+    def __init__(self, **kwargs):
+        self.model = ElasticNetCV(**kwargs)
+
+    def fit(self, X, y):
+        self.unique_y = np.unique(y)
+        self.model.fit(X, y)
+        return self
+
+    def predict(self, X):
+        predictions = self.model.predict(X)
+        rounded_predictions = np.round(predictions)
+        clipped_predictions = np.clip(rounded_predictions, np.min(self.unique_y.min()), np.max(self.unique_y.max()))
+        return clipped_predictions
+    
