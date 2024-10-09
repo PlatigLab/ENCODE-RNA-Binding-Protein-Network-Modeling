@@ -1,13 +1,15 @@
-import sys, pandas as pd, polars as pl, glob, numpy as np, os, json
+import sys, pandas as pd, polars as pl, glob, numpy as np, os, json, time, gc
 
 from dataclasses import dataclass, field
 from loguru import logger
 from tqdm import tqdm
 from statsmodels.miscmodels.ordinal_model import OrderedModel
-from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import cross_validate
 from sklearn.metrics import make_scorer, balanced_accuracy_score, precision_score, mean_absolute_error, median_absolute_error, cohen_kappa_score, matthews_corrcoef
 from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.linear_model import ElasticNetCV
+from scipy.sparse import csr_matrix
 
 
 @dataclass
@@ -98,7 +100,7 @@ class OrdinalModeler:
         logger.info("Lazy loading dataset for downstream parallel filtering...")
 
         #TODO remove nrows 
-        data = pl.scan_csv(file[0], separator='\t', n_rows=10000)
+        data = pl.scan_csv(file[0], separator='\t', )
 
         if self.read_count_quantile is not None: 
 
