@@ -1,0 +1,33 @@
+dataset: 
+        cell_lines: 
+            [K562, HepG2]
+
+        distances: 
+            [50, 100, 150, 200, 250, 500, 1000, 5000, 10000]
+
+        control_only: 
+            [False, True]
+
+        psi_subsets: 
+            [null, [0, 1], [0.1, 0.9]]
+
+        read_count_quantiles: 
+            [null, 0.1, 0.2, 0.4,]
+
+        data_flavors: 
+            [binary, num_peaks, rbp_exp, rbp_exp_peak]
+
+        count_normalization_methods: 
+            [getmm, tmm]
+
+        log_counts: 
+            [False, True]
+
+
+modeling:
+        models: [OrdinalRegression, OrdinalGBT]
+        random_state: 17
+        splits: 5
+        repeats: 10
+        ordinal_regression_method: [logit, probit]
+        optimizer: [bfgs, nm]
