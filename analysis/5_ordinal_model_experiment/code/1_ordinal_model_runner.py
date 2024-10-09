@@ -201,8 +201,13 @@ class OrdinalModeler:
 
         skf = StratifiedKFold(n_splits=self.splits, shuffle=self.training_shuffle, random_state=self.random_state)
 
-        binding_input = self.full_data.select(self.binding_columns).to_numpy()
+        binding_input = csr_matrix(self.full_data.select(self.binding_columns).to_numpy())
         prediction_target= self.full_data["Ordinal Target"].to_numpy()
+
+        logger.info(f"Length of prediction_target: {len(prediction_target)}")
+
+        del self.full_data
+        gc.collect()
 
         # Use the wrapper class as the estimator
         scores = cross_validate(
