@@ -199,7 +199,7 @@ class OrdinalModeler:
 
         logger.info(f"Running cross-validation for model type: {self.model}")
 
-        rskf = RepeatedStratifiedKFold(n_splits=self.splits, n_repeats=self.repeats, random_state=self.random_state)
+        skf = StratifiedKFold(n_splits=self.splits, shuffle=self.training_shuffle, random_state=self.random_state)
 
         binding_input = self.full_data.select(self.binding_columns).to_numpy()
         prediction_target= self.full_data["Ordinal Target"].to_numpy()
