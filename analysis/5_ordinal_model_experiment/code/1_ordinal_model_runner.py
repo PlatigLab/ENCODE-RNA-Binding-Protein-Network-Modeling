@@ -15,6 +15,8 @@ class OrdinalModeler:
     kwargs: dict = field(default_factory=dict)
     
     def __post_init__(self):
+
+        start_time = time.time()
         
         # TODO: remove this line before running on SLURM
         # logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
@@ -35,10 +37,18 @@ class OrdinalModeler:
         }
 
         self.load_data()
-        self.create_target()
         self.run_ordinal_modeling()
 
         logger.success(f"Ordinal modeling COMPLETED for {self.cell_line} with window size {self.distance}")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        self.model_output["elapsed_time"] = elapsed_time
+
+        with open(f"{self.cell_line}_{self.distance}_{self.model}_ordinal_modeling_output.json", "w") as f:
+            model_output = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in self.model_output.items()}
+            json.dump(model_output, f, indent=6)        
 
 
     def get_slurm_cpus_per_task(self):
