@@ -25,9 +25,10 @@ dataset:
 
 
 modeling:
-        models: [OrdinalRegression, OrdinalGBT]
+        models: [LinearRegression, OrdinalRegression, OrdinalGBT]
         random_state: 17
         splits: 5
         repeats: 10
         ordinal_regression_method: [logit, probit]
         optimizer: [bfgs, nm]
+        training_shuffle: True
