@@ -54,8 +54,6 @@ class AyanXgbdtAnalyzer:
 
         self.load_rbp_ppi()
 
-        logger.add(sys.stdout)
-
 
     def load_rbp_ppi(self):
         
@@ -905,7 +903,7 @@ class AyanXgbdtAnalyzer:
 
             plt.tight_layout()
 
-            plt.savefig(f"../outputs/local_shap/plots/{self.cell_line}-{feature}.png", bbox_inches="tight"),
+            plt.savefig(f"../outputs/local_shap/plots/feature_specific/{self.cell_line}-{feature}.png", bbox_inches="tight"),
             plt.close()
 
         else: 
@@ -1185,38 +1183,106 @@ class AyanXgbdtAnalyzer:
         plt.show()
 
 
-#TODO
-    def plot_positive_control_local_SHAP_features(self): 
+    def plot_RBP_local_SHAP_distributions(self, df): 
+
+        rbp, _ = self.get_rbp_and_position(df.columns[0])
+        assert all(col.split('_')[0] == rbp for col in df.columns), "Not all columns have the same RBP"
+
+        shap_columns = sorted([col for col in df.columns if col.endswith("_shap")])
+        binding_columns = sorted([col for col in df.columns if col.endswith("_right") or col.endswith("_left")])
+
+        fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(30, 10), dpi=200, sharex=False, sharey=False)
+
+        for shap_col, bind_col in zip(shap_columns, binding_columns):
+
+            assert shap_col == bind_col+"_shap", logger.error(f"SHAP and Binding columns do not match: {shap_col} and {bind_col}")
+
+            _, position = self.get_rbp_and_position(shap_col)
+            tmp_df = df.select([shap_col, bind_col])
+
+            if tmp_df[bind_col].sum() != 0: 
+
+                sns.violinplot(
+                    data=tmp_df.to_pandas(),
+                    x=bind_col,
+                    y=shap_col,
+                    ax=ax.flatten()[position - 1],
+                    order=sorted(tmp_df[bind_col].unique()),  # Ensure consistent ordering on x-axis
+                )
+
+                # Get the counts for each category in bind_col
+                counts = tmp_df[bind_col].value_counts().to_pandas().sort_values(bind_col)
+
+                # Add the counts as text on the plot
+                for _, row in counts.iterrows():
+                    ax.flatten()[position - 1].text(
+                        x=row[bind_col],
+                        y=tmp_df[shap_col].max(),  # Position the text at the top of the plot
+                        s=f'{row["count"]}',
+                        color='red',
+                        ha='center', 
+                        fontsize=18, 
+                        fontweight='bold'
+                    )
+
+                ax.flatten()[position - 1].set_title(f"Position {position}", fontsize=20)
+
+        fig.suptitle(f"{self.cell_line}: {rbp} Local SHAP Distributions", fontsize=30, y=1.01)
+        fig.supxlabel("Binding", fontsize=25, y=-0.02)
+        fig.supylabel("Local SHAP Value", fontsize=25, x=-0.02)
+
+        for tmp_ax in ax.flatten():
+            tmp_ax.tick_params(axis='both', which='major', labelsize=20)
+
+        for tmp_ax in ax.flatten():
+            tmp_ax.set_xlabel("")
+            tmp_ax.set_ylabel("")
+        
+        plt.tight_layout()
+        plt.show()
+
+        return fig
+    
+
+    def plot_srsf_and_hnrnp_local_SHAP_features(self): 
 
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
-        srsf_and_hnrnp = list(set(
-            [col.split('_')[0] for col in self.shap_columns + self.binding_columns 
-             if col.split('_')[0].lower().startswith("srsf") or col.split('_')[0].lower().startswith("hnrnp")]
-        ))
+        output_dir = pathlib.Path("../outputs/local_shap/plots/rbp_specific/")
 
-        for rbp in srsf_and_hnrnp: 
-            shap_columns = sorted([col for col in self.shap_columns if col.startswith(rbp)])
-            binding_columns = sorted([col for col in self.binding_columns if col.startswith(rbp)])
-
-            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(30, 10), dpi=200)
-
-            for shap_col, bind_col in zip(shap_columns, binding_columns):
-
-                assert shap_col == bind_col+"_shap", logger.error(f"SHAP and Binding columns do not match: {shap_col} and {bind_col}")
-
-                _, position = self.get_rbp_and_position(shap_col)
-
-                sns.histplot(
-                    data=self.shap_data,
-                    x=shap_col,
-                    hue=bind_col,
-                    bins=100,
-                    ax=ax[position // 3, position % 3]
+        srsf_and_hnrnp = sorted(
+            list(
+                set(
+                    [col.split('_')[0] for col in self.shap_columns + self.binding_columns 
+                        if col.split('_')[0].lower().startswith("srsf") or col.split('_')[0].lower().startswith("hnrnp")]
                 )
-                ax[position // 3, position % 3].set_title(f"{shap_col} vs {bind_col}")
-    
+            )
+        )
+
+        # Check if the file exists for each RBP in srsf_and_hnrnp
+        if all( 
+            [output_dir.joinpath(f"{self.cell_line}_{rbp}.png").exists() for rbp in srsf_and_hnrnp]
+        ): 
+            #TODO finish this
+            logger.info("FROM CACHE: getting local SHAP plots for SRSF and HNRNP RBPs.")
+            # return
+
+        else: 
+            logger.info(f"Plotting local SHAP distributions across all {len(srsf_and_hnrnp)} SRSF/HNRNP RBPs.")
+
+            for rbp in srsf_and_hnrnp:
+
+                fig = self.plot_RBP_local_SHAP_distributions(
+                        self.shap_data.select(
+                            sorted([col for col in self.shap_columns + self.binding_columns if col.split("_")[0] == rbp])
+                        )
+                    )
+                
+                fig.savefig(output_dir.joinpath(f"{self.cell_line}_{rbp}.png"), bbox_inches="tight", dpi=200)
+
+            logger.success("Local SHAP distributions for SRSF and HNRNP RBPs plotted.")
+
 
     def compare_kruskal_anova_chi_SHAP(self): 
             
@@ -1481,6 +1547,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     analyzer = AyanXgbdtAnalyzer(cell_line=args.cell_line, distance_threshold=args.distance)
+    logger.add(sys.stdout)
 
     match args.parallel_task:
         case "local_shap_inspection": 
