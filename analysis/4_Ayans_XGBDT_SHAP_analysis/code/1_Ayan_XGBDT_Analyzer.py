@@ -512,7 +512,7 @@ class AyanXgbdtAnalyzer:
         logger.info(f"Deleted {self.cell_line} {self.distance_threshold} SHAP data")
 
 
-    def load_SHAP_data(self, column=None): 
+    def load_SHAP_data(self, col_list=None): 
 
         cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
 
@@ -522,8 +522,8 @@ class AyanXgbdtAnalyzer:
         if hasattr(self, 'shap_data'):
             logger.info(f"ALREADY LOADED {self.cell_line} {self.distance_threshold} SHAP data")
 
-            if column is not None: 
-                self.shap_data = self.shap_data.select(column, "target", "Data Partition")
+            if col_list is not None: 
+                self.shap_data = self.shap_data.select(col_list.extend(["target", "Data Partition"]) )
             
             return self.shap_data.head()
 
@@ -534,8 +534,8 @@ class AyanXgbdtAnalyzer:
 
                 shap_data = pl.scan_ipc(cache_file).collect(streaming=True)
 
-                if column is not None: 
-                    shap_data = shap_data.select(column, "target", "Data Partition")
+                if col_list is not None: 
+                    shap_data = shap_data.select(col_list.extend(["target", "Data Partition"]))
 
                 self.shap_columns = [col for col in shap_data.columns if col.endswith("_shap")]
                 self.binding_columns = [col for col in shap_data.columns if col.endswith("_right") or col.endswith("_left")]
@@ -566,8 +566,8 @@ class AyanXgbdtAnalyzer:
 
                     tmp_df = pl.scan_csv(file, has_header=True, separator=",")
 
-                    if column is not None: 
-                        tmp_df = tmp_df.select(column, "target",)
+                    if col_list is not None: 
+                        tmp_df = tmp_df.select(col_list.append("target"))
 
                     tmp_df = tmp_df.collect(streaming=True)
 
@@ -865,15 +865,10 @@ class AyanXgbdtAnalyzer:
         return self.feature_specific_anova
 
 
-    def SLURM_inspect_local_SHAP_by_dataset(self, feature):
+    def plot_feature_local_SHAP_by_dataset(self, feature=None): 
 
         if not hasattr(self, 'shap_data'):
-            self.load_SHAP_data(column=feature)
-
-        self.plot_feature_local_SHAP_by_dataset(feature=feature)
-
-
-    def plot_feature_local_SHAP_by_dataset(self, feature=None): 
+            self.load_SHAP_data(col_list=[feature])
                 
         assert "_shap" in feature, logger.error(f"Feature {feature} is not a SHAP feature")
 
@@ -978,6 +973,33 @@ class AyanXgbdtAnalyzer:
         heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
         ax[1].set_title("% Events Bound", fontsize=24)
     
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_global_SHAP_bound_vs_unbound(self):
+        
+        global_SHAP_matrix = self.get_global_SHAP_matrix(df=self.shap_data)
+        total_binding_percent = self.get_total_binding_percent(df=self.shap_data)
+
+        bound = total_binding_percent[total_binding_percent > 0]
+        unbound = total_binding_percent[total_binding_percent == 0]
+
+        bound_global_SHAP = global_SHAP_matrix.loc[:, bound.columns]
+        unbound_global_SHAP = global_SHAP_matrix.loc[:, unbound.columns]
+
+        fig, ax = plt.subplots(2, 1, figsize=(25, 9), dpi=200)
+
+        plt.suptitle(f"{self.cell_line}: Global SHAP by Bound and Unbound Events", fontsize=40, x=0.5, y=1.0)
+
+        heatmap = sns.heatmap(bound_global_SHAP, xticklabels=True, yticklabels=True, ax=ax[0], cmap="Blues", cbar_kws={"pad": 0.01})
+        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+        ax[0].set_title("Bound Events", fontsize=24)
+
+        heatmap = sns.heatmap(unbound_global_SHAP, xticklabels=True, yticklabels=True, ax=ax[1], cmap="Blues", cbar_kws={"pad": 0.01})
+        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
+        ax[1].set_title("Unbound Events", fontsize=24)
+
         plt.tight_layout()
         plt.show()
 
@@ -1183,73 +1205,87 @@ class AyanXgbdtAnalyzer:
         plt.show()
 
 
-    def plot_RBP_local_SHAP_distributions(self, df): 
-
-        rbp, _ = self.get_rbp_and_position(df.columns[0])
-        assert all(col.split('_')[0] == rbp for col in df.columns), "Not all columns have the same RBP"
-
-        shap_columns = sorted([col for col in df.columns if col.endswith("_shap")])
-        binding_columns = sorted([col for col in df.columns if col.endswith("_right") or col.endswith("_left")])
-
-        fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(30, 10), dpi=200, sharex=False, sharey=False)
-
-        for shap_col, bind_col in zip(shap_columns, binding_columns):
-
-            assert shap_col == bind_col+"_shap", logger.error(f"SHAP and Binding columns do not match: {shap_col} and {bind_col}")
-
-            _, position = self.get_rbp_and_position(shap_col)
-            tmp_df = df.select([shap_col, bind_col])
-
-            if tmp_df[bind_col].sum() != 0: 
-
-                sns.violinplot(
-                    data=tmp_df.to_pandas(),
-                    x=bind_col,
-                    y=shap_col,
-                    ax=ax.flatten()[position - 1],
-                    order=sorted(tmp_df[bind_col].unique()),  # Ensure consistent ordering on x-axis
-                )
-
-                # Get the counts for each category in bind_col
-                counts = tmp_df[bind_col].value_counts().to_pandas().sort_values(bind_col)
-
-                # Add the counts as text on the plot
-                for _, row in counts.iterrows():
-                    ax.flatten()[position - 1].text(
-                        x=row[bind_col],
-                        y=tmp_df[shap_col].max(),  # Position the text at the top of the plot
-                        s=f'{row["count"]}',
-                        color='red',
-                        ha='center', 
-                        fontsize=18, 
-                        fontweight='bold'
-                    )
-
-                ax.flatten()[position - 1].set_title(f"Position {position}", fontsize=20)
-
-        fig.suptitle(f"{self.cell_line}: {rbp} Local SHAP Distributions", fontsize=30, y=1.01)
-        fig.supxlabel("Binding", fontsize=25, y=-0.02)
-        fig.supylabel("Local SHAP Value", fontsize=25, x=-0.02)
-
-        for tmp_ax in ax.flatten():
-            tmp_ax.tick_params(axis='both', which='major', labelsize=20)
-
-        for tmp_ax in ax.flatten():
-            tmp_ax.set_xlabel("")
-            tmp_ax.set_ylabel("")
-        
-        plt.tight_layout()
-        plt.show()
-
-        return fig
-    
-
-    def plot_srsf_and_hnrnp_local_SHAP_features(self): 
+    def plot_RBP_local_SHAP_distributions(self, rbp): 
 
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
         output_dir = pathlib.Path("../outputs/local_shap/plots/rbp_specific/")
+
+        if pathlib.Path(file_path := output_dir.joinpath(f"{self.cell_line}_{rbp}.png")).exists():
+            logger.info(f"FROM CACHE: showing local SHAP plots for {rbp}.")
+
+            img = plt.imread(file_path)
+            plt.figure(figsize=(30,10))
+
+            plt.imshow(img)    
+
+            plt.axis('off')            
+            plt.show()
+
+        else: 
+
+            logger.info(f"Plotting local SHAP distributions for {rbp}.")
+            rbp_cols = sorted([col for col in self.shap_data.columns if col.split("_")[0] == rbp])
+        
+            shap_columns = sorted([col for col in rbp_cols if col.endswith("_shap")])
+            binding_columns = sorted([col for col in rbp_cols if col.endswith("_right") or col.endswith("_left")])
+
+            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), dpi=200, sharex=True, sharey=True)
+
+            for shap_col, bind_col in zip(shap_columns, binding_columns):
+
+                assert shap_col == bind_col+"_shap", logger.error(f"SHAP and Binding columns do not match: {shap_col} and {bind_col}")
+
+                _, position = self.get_rbp_and_position(shap_col)
+                tmp_df = self.shap_data.select([shap_col, bind_col])
+
+                if tmp_df[bind_col].sum() != 0: 
+
+                    sns.violinplot(
+                        data=tmp_df.to_pandas(),
+                        x=bind_col,
+                        y=shap_col,
+                        ax=ax.flatten()[position - 1],
+                        order=sorted(tmp_df[bind_col].unique()),  # Ensure consistent ordering on x-axis
+                    )
+
+                    # Get the counts for each category in bind_col
+                    counts = tmp_df[bind_col].value_counts().to_pandas().sort_values(bind_col)
+
+                    # Add the counts as text on the plot
+                    for _, row in counts.iterrows():
+                        ax.flatten()[position - 1].text(
+                            x=row[bind_col],
+                            y=tmp_df[shap_col].max(),  # Position the text at the top of the plot
+                            s=f'{row["count"]}',
+                            color='red',
+                            ha='center', 
+                            fontsize=18, 
+                            fontweight='bold'
+                        )
+
+                    ax.flatten()[position - 1].set_title(f"Position {position}", fontsize=20)
+
+            fig.suptitle(f"{self.cell_line}: {rbp} Local SHAP Distributions", fontsize=30, y=1.01)
+            fig.supxlabel("Binding", fontsize=25, y=-0.02)
+            fig.supylabel("Local SHAP Value", fontsize=25, x=-0.02)
+
+            for tmp_ax in ax.flatten():
+                tmp_ax.tick_params(axis='both', which='major', labelsize=20)
+
+            for tmp_ax in ax.flatten():
+                tmp_ax.set_xlabel("")
+                tmp_ax.set_ylabel("")
+            
+            plt.tight_layout()
+            fig.savefig(output_dir.joinpath(f"{self.cell_line}_{rbp}.png"), bbox_inches="tight", dpi=200)
+            plt.close()
+    
+
+    def plot_srsf_and_hnrnp_local_SHAP_features(self):
+
+        logger.info(f"Plotting local SHAP distributions for SRSF and HNRNP RBPs.") 
 
         srsf_and_hnrnp = sorted(
             list(
@@ -1260,28 +1296,8 @@ class AyanXgbdtAnalyzer:
             )
         )
 
-        # Check if the file exists for each RBP in srsf_and_hnrnp
-        if all( 
-            [output_dir.joinpath(f"{self.cell_line}_{rbp}.png").exists() for rbp in srsf_and_hnrnp]
-        ): 
-            #TODO finish this
-            logger.info("FROM CACHE: getting local SHAP plots for SRSF and HNRNP RBPs.")
-            # return
-
-        else: 
-            logger.info(f"Plotting local SHAP distributions across all {len(srsf_and_hnrnp)} SRSF/HNRNP RBPs.")
-
-            for rbp in srsf_and_hnrnp:
-
-                fig = self.plot_RBP_local_SHAP_distributions(
-                        self.shap_data.select(
-                            sorted([col for col in self.shap_columns + self.binding_columns if col.split("_")[0] == rbp])
-                        )
-                    )
-                
-                fig.savefig(output_dir.joinpath(f"{self.cell_line}_{rbp}.png"), bbox_inches="tight", dpi=200)
-
-            logger.success("Local SHAP distributions for SRSF and HNRNP RBPs plotted.")
+        for rbp in srsf_and_hnrnp: 
+            self.plot_RBP_local_SHAP_distributions(rbp)
 
 
     def compare_kruskal_anova_chi_SHAP(self): 
@@ -1420,7 +1436,6 @@ class CellLineCompareTool:
         for cell_line in self.cell_lines:
             cell_line.load_SHAP_data()
 
-        logger.add(sys.stdout)
         logger.info("Ready to use cell line comparison class.")
 
 
@@ -1484,8 +1499,6 @@ class CellLineCompareTool:
         plt.show()
 
 
-    
-    
     def plot_chi_square_comparison(self):    
 
         common_features = self.get_binding_common_features()
@@ -1533,6 +1546,9 @@ class CellLineCompareTool:
 
 
 
+############################################################################################################
+####################### IF RUNNING SCRIPT TO SLURM PARALLELIZE TASK ########################################
+############################################################################################################
 
 
 
@@ -1542,15 +1558,23 @@ if __name__ == "__main__":
     parser.add_argument("--cell_line", type=str, required=True, help="Cell line to analyze")
     parser.add_argument("--distance", type=int, required=True, help="Distance threshold")
     parser.add_argument("--parallel-task", type=str, required=True, help="Which analysis to run")
-    parser.add_argument("--feature", type=str, required=True, help="Feature to analyze",)
+    parser.add_argument("--feature", type=str, required=False, help="Feature to analyze",)
+    parser.add_argument("--rbp", type=str, required=False, help="RBP to analyze")
 
     args = parser.parse_args()
 
-    analyzer = AyanXgbdtAnalyzer(cell_line=args.cell_line, distance_threshold=args.distance)
+    logger.remove()
     logger.add(sys.stdout)
 
+    analyzer = AyanXgbdtAnalyzer(cell_line=args.cell_line, distance_threshold=args.distance)
+
     match args.parallel_task:
-        case "local_shap_inspection": 
-            analyzer.SLURM_inspect_local_SHAP_by_dataset(args.feature) 
+
+        case "feature_local_shap": 
+            analyzer.plot_feature_local_SHAP_by_dataset(feature = args.feature) 
+            
+        case "rbp_local_shap":
+            analyzer.plot_RBP_local_SHAP_distributions(rbp = args.rbp)
+
         case _:
             logger.error(f"Unknown parallel task: {args.parallel_task}")
