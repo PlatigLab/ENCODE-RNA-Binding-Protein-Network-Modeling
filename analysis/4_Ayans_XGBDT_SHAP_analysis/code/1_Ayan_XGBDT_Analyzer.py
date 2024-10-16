@@ -976,33 +976,6 @@ class AyanXgbdtAnalyzer:
         plt.tight_layout()
         plt.show()
 
-
-    def plot_global_SHAP_bound_vs_unbound(self):
-        
-        global_SHAP_matrix = self.get_global_SHAP_matrix(df=self.shap_data)
-        total_binding_percent = self.get_total_binding_percent(df=self.shap_data)
-
-        bound = total_binding_percent[total_binding_percent > 0]
-        unbound = total_binding_percent[total_binding_percent == 0]
-
-        bound_global_SHAP = global_SHAP_matrix.loc[:, bound.columns]
-        unbound_global_SHAP = global_SHAP_matrix.loc[:, unbound.columns]
-
-        fig, ax = plt.subplots(2, 1, figsize=(25, 9), dpi=200)
-
-        plt.suptitle(f"{self.cell_line}: Global SHAP by Bound and Unbound Events", fontsize=40, x=0.5, y=1.0)
-
-        heatmap = sns.heatmap(bound_global_SHAP, xticklabels=True, yticklabels=True, ax=ax[0], cmap="Blues", cbar_kws={"pad": 0.01})
-        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
-        ax[0].set_title("Bound Events", fontsize=24)
-
-        heatmap = sns.heatmap(unbound_global_SHAP, xticklabels=True, yticklabels=True, ax=ax[1], cmap="Blues", cbar_kws={"pad": 0.01})
-        heatmap.collections[0].colorbar.ax.tick_params(labelsize=18)
-        ax[1].set_title("Unbound Events", fontsize=24)
-
-        plt.tight_layout()
-        plt.show()
-
     
     def plot_partition_global_SHAP_vs_binding_plots(self): 
             
@@ -1216,7 +1189,7 @@ class AyanXgbdtAnalyzer:
             logger.info(f"FROM CACHE: showing local SHAP plots for {rbp}.")
 
             img = plt.imread(file_path)
-            plt.figure(figsize=(30,10))
+            plt.figure(figsize=(15,5))
 
             plt.imshow(img)    
 
@@ -1231,7 +1204,7 @@ class AyanXgbdtAnalyzer:
             shap_columns = sorted([col for col in rbp_cols if col.endswith("_shap")])
             binding_columns = sorted([col for col in rbp_cols if col.endswith("_right") or col.endswith("_left")])
 
-            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), dpi=200, sharex=True, sharey=True)
+            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(15, 8), dpi=200, sharex=True, sharey=True)
 
             for shap_col, bind_col in zip(shap_columns, binding_columns):
 
@@ -1415,6 +1388,133 @@ class AyanXgbdtAnalyzer:
         plt.show()
 
         return comparison_df
+
+
+    def plot_local_SHAP_summary(self): 
+
+        logger.info("Plotting local SHAP summary plots.")
+        
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        output_dir = pathlib.Path("../outputs/local_shap/plots/summary/")
+
+        if pathlib.Path(output_dir.joinpath(f"{self.cell_line}_bound.png")).exists() and pathlib.Path(
+            output_dir.joinpath(f"{self.cell_line}_unbound.png")
+        ).exists():
+
+            logger.info(f"FROM CACHE: showing local SHAP summary plots.")
+
+            for file_path in output_dir.glob(f"{self.cell_line}_*.png"):
+
+                img = plt.imread(file_path)
+                plt.figure(figsize=(30,10))
+
+                plt.imshow(img) 
+
+                plt.axis('off')            
+                plt.show()
+
+        else: 
+            logger.info(f"Plotting local SHAP summary plots.")
+
+            shap_binding_info = {"bound": {}, "unbound": {}}
+            for col in self.binding_columns:
+                rbp, _ = self.get_rbp_and_position(col)
+                
+                shap_binding_info["bound"][rbp] = {}
+                shap_binding_info["unbound"][rbp] = {}
+
+                for position in self.splice_junction_position_renaming.values():
+                    shap_binding_info["bound"][rbp][position] = {}
+                    shap_binding_info["unbound"][rbp][position] = {}
+            
+
+            def local_SHAP_parallelization_helper(bind_col):
+                shap_col = f"{bind_col}_shap"
+                rbp, position = self.get_rbp_and_position(bind_col)
+
+                result = {rbp: {position: {}}}
+
+                for binding_value in [0, 1]:
+                    subset = self.shap_data.filter(pl.col(bind_col) == binding_value)[shap_col]
+
+                    if subset.is_empty():
+                        result[rbp][position]["bound" if binding_value == 1 else "unbound"] = "Empty"
+                    else:
+                        if all(value == 0 for value in subset):
+                            result[rbp][position]["bound" if binding_value == 1 else "unbound"] = "Zero"
+                        elif all(value > 0 for value in subset):
+                            result[rbp][position]["bound" if binding_value == 1 else "unbound"] = "Positive"
+                        elif all(value < 0 for value in subset):
+                            result[rbp][position]["bound" if binding_value == 1 else "unbound"] = "Negative"
+                        else:
+                            result[rbp][position]["bound" if binding_value == 1 else "unbound"] = "Mixed"
+                    
+                return result
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                futures = {executor.submit(local_SHAP_parallelization_helper, bind_col): bind_col for bind_col in self.binding_columns}
+
+                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Local SHAP summary processing by binding status"):
+                    result = future.result()
+                    for rbp in result:
+                        for position in result[rbp]:
+                            shap_binding_info["bound"][rbp][position] = result[rbp][position].get("bound")
+                            shap_binding_info["unbound"][rbp][position] = result[rbp][position].get("unbound")
+
+            for binding_status in ["bound", "unbound"]:
+                df = pd.DataFrame(shap_binding_info[binding_status]).sort_index(axis=1).sort_index(axis=0)
+                assert not df.isnull().any().any(), "DataFrame contains NaN values"
+
+                if binding_status=="unbound":
+                    assert "Empty" not in df.values, "Empty category should not be present in unbound DataFrame"
+                
+                # Encode the categories as numbers
+                category_encoding = {
+                    "Zero": 0,
+                    "Positive": 1,
+                    "Negative": 2,
+                    "Mixed": 3, 
+                    "Empty": 4 
+                }
+
+                # Create a color map for the categories
+                category_colors = {
+                    0: "white",   # Zero
+                    1: "red",   # Positive
+                    2: "blue",    # Negative
+                    3: "purple",  # Mixed
+                    4: "yellow"  # Empty
+                }
+
+                if binding_status == "unbound": 
+                    del category_encoding["Empty"]
+                    del category_colors[4]
+
+                # Create a DataFrame with encoded values
+                encoded_df = df.map(lambda x: category_encoding[x])
+
+                # Create a custom color palette
+                custom_palette = sns.color_palette([category_colors[i] for i in range(len(category_colors))])
+
+                # Plot the heatmap with encoded values
+                plt.figure(dpi=200, figsize=(30, 10))
+                sns.heatmap(encoded_df, cmap=custom_palette, cbar=False, linewidths=.5, linecolor='black')
+
+                # Add a legend
+                handles = [Patch(color=color, label=label) for label, color in zip(category_encoding.keys(), category_colors.values())]
+                plt.legend(handles=handles, title="Categories", bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=12)
+
+                plt.title(f"{self.cell_line} Local SHAP Summary: {binding_status.upper()} Only", fontsize=40, pad=20)
+                plt.xlabel("RBPs", fontsize=30)
+                plt.ylabel("Position", fontsize=30)
+
+                plt.savefig(output_dir.joinpath(f"{self.cell_line}_{binding_status}.png"), bbox_inches="tight", dpi=200)
+                plt.close()
+
+                logger.success(f"Local SHAP summary plots created.")
+
 
 
 
