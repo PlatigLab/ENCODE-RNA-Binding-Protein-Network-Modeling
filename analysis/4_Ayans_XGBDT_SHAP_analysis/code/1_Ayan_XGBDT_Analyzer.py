@@ -632,20 +632,13 @@ class AyanXgbdtAnalyzer:
         plt.show()
     
 
+
     def compare_chromosome_vs_psi(self): 
 
-        tmp_df = self.ctrl_only_binding_data.select(
-            ["psi", "psip", "sequence"]
-        )
+        if not hasattr(self, 'ctrl_only_binding_data'):
+            self.load_ctrl_only_binding_data()
 
-        tmp_df = pl.concat(
-            [
-                tmp_df.select(["psi", "sequence"]),
-                tmp_df.select(["psip", "sequence"]).rename({"psip": "psi"})
-            ]
-        )
-
-        tmp_df = tmp_df.filter(pl.col("psi")<=1.01)
+        tmp_df = self.ctrl_only_binding_data.filter(pl.col("psi") <= 1.01)
 
         unique_sequences = sorted(tmp_df["sequence"].unique())
 
