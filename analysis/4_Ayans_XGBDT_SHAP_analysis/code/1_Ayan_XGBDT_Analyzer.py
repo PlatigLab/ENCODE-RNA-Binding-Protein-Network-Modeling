@@ -154,14 +154,17 @@ class AyanXgbdtAnalyzer:
                 return self.ctrl_only_binding_data.head()
     
 
-#TODO need to re-do this with the newer version of the control data 
     def plot_upstream_and_downstream_exon_duplication(self): 
 
-        if pathlib.Path(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv").exists(): 
+        output_file = f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv"
+
+        assert pathlib.Path(output_file).exists(), logger.error(f"File not found: {output_file}")
+
+        if pathlib.Path(output_file).exists(): 
 
             logger.info(f"FROM CACHE: exon duplication CSV file for {self.cell_line} {self.distance_threshold} loaded")
 
-            tmp_df = pd.read_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.csv", sep=",", index_col = 0)
+            tmp_df = pd.read_csv(output_file, sep="\t", index_col = 0)
             
             fig, axes = plt.subplots(1, 2, figsize=(12,3))
             
@@ -183,32 +186,34 @@ class AyanXgbdtAnalyzer:
                 
             return tmp_df
 
-        # else: 
+        else: 
             
-        #     logger.info(f"Counting exon duplication for {self.cell_line} {self.distance_threshold}")
+            logger.info(f"Counting exon duplication for {self.cell_line} {self.distance_threshold}")
 
-        #     ense_counts = {}
-        #     ense_counts["Counts"] = {}
+            self.load_ctrl_only_binding_data()
+
+            ense_counts = {}
+            ense_counts["Counts"] = {}
         
-        #     # Collect the unique values from the "ENSE" column
-        #     unique_ense_values = tmp_df.select(pl.col("ENSE").unique()).to_series()
+            # Collect the unique values from the "ENSE" column
+            unique_ense_values = self.ctrl_only_binding_data.select(pl.col("ENSE").unique()).to_series()
             
-        #     # Iterate through each unique value in the "ENSE" column
-        #     for ense_value in unique_ense_values:
-                
-        #         # Count occurrences of the unique value in the "ENSE_UP" column
-        #         count = (tmp_df.filter(pl.col("ENSE_UP") == ense_value).height) + (tmp_df.filter(pl.col("ENSE_DN") == ense_value).height)
-        #         # Store the count in the dictionary
-        #         ense_counts["Counts"][ense_value] = count
-        
-        #     tmp_df = pd.DataFrame.from_dict(ense_counts)
-        
-        #     tmp_df = tmp_df.sort_values("Counts", ascending=False)
-        #     tmp_df.to_csv(f"../outputs/middle_exon_duplication/{self.cell_line}_inspect_duplication.tsv", sep="\t")
+            # Iterate through each unique value in the "ENSE" column in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                futures = {executor.submit(lambda ense_value: (ense_value, (self.ctrl_only_binding_data.filter(pl.col("ENSE_UP") == ense_value).height) + (self.ctrl_only_binding_data.filter(pl.col("ENSE_DN") == ense_value).height)), ense_value) for ense_value in unique_ense_values}
 
-        #     logger.success(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
+                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Counting exon duplication"):
+                    ense_value, count = future.result()
+                    ense_counts["Counts"][ense_value] = count
+        
+            tmp_df = pd.DataFrame.from_dict(ense_counts)
+        
+            tmp_df = tmp_df.sort_values("Counts", ascending=False)
+            tmp_df.to_csv(output_file, sep="\t")
 
-        #     return tmp_df 
+            logger.success(f"Finished counting exon duplication for {self.cell_line} {self.distance_threshold}")
+
+            return tmp_df 
 
 
     def get_number_SLURM_CPUs(self):
@@ -219,7 +224,6 @@ class AyanXgbdtAnalyzer:
         else:
             logger.warning("SLURM_CPUS_PER_TASK environment variable not set. Defaulting to 1 CPU.")
             return 1
-
 
 
     def partition_dataframe_by_PSI(self, df = None, column_name=None, psi_cutoffs=None): 
@@ -249,7 +253,17 @@ class AyanXgbdtAnalyzer:
         return df
     
 
-    def run_parallel_chi_square_tests(self):
+    def deduplicate_total_binding(self, df = None):
+
+        logger.info(f"Deduplicating total binding data for {self.cell_line} {self.distance_threshold}")
+
+        if not hasattr(self, 'ctrl_only_binding_data'):
+            self.load_ctrl_only_binding_data()
+
+        
+
+
+    def run_parallel_feature_chi_square_tests(self):
 
         chi_square_output = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_results.tsv"
         chi_square_contingency_output = f"../outputs/chi_square/feature_specific/tables/{self.cell_line}_chi_square_contingency_tables.pkl"
@@ -270,7 +284,7 @@ class AyanXgbdtAnalyzer:
             feature_chi_square_contingency_tables = {}
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                futures = {executor.submit(self.run_chi_square_test, column=column): column for column in self.binding_columns}
+                futures = {executor.submit(self.run_feature_chi_square_test, column=column): column for column in self.binding_columns}
 
                 with tqdm.tqdm(total=len(futures)) as pbar:
 
@@ -310,7 +324,7 @@ class AyanXgbdtAnalyzer:
             return self.feature_chi_square_results
     
 
-    def run_chi_square_test(self, column = None):
+    def run_feature_chi_square_test(self, column = None):
 
         partitions = self.partition_dataframe_by_PSI(df=self.ctrl_only_binding_data, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
 
@@ -1138,7 +1152,7 @@ class AyanXgbdtAnalyzer:
     def plot_rank_global_SHAP_vs_rank_chi_square(self): 
             
         if not hasattr(self, 'feature_chi_square_results'):
-            self.run_parallel_chi_square_tests()
+            self.run_parallel_feature_chi_square_tests()
 
         chi_square_results_filtered = self.feature_chi_square_results.dropna(subset=["Statistic"])
 
@@ -1282,7 +1296,7 @@ class AyanXgbdtAnalyzer:
             self.run_parallel_feature_specific_ANOVA()
 
         if not hasattr(self, 'feature_chi_square_results'):
-            self.run_parallel_chi_square_tests()
+            self.run_parallel_feature_chi_square_tests()
 
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
