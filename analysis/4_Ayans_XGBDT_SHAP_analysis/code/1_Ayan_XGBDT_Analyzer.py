@@ -632,6 +632,18 @@ class AyanXgbdtAnalyzer:
         plt.show()
     
 
+    def plot_psi_distribution(self):
+        
+        plt.figure(dpi=200, figsize=(10, 3))
+
+        _=plt.hist(self.ctrl_only_binding_data["psi"], bins=100)
+
+        plt.title(f"{self.cell_line}: PSI Distribution", fontsize=15)
+        plt.xlabel("PSI", fontsize=7)
+        plt.ylabel("Frequency", fontsize=7)
+
+        plt.show()
+
 
     def compare_chromosome_vs_psi(self): 
 
