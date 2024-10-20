@@ -13,13 +13,11 @@ from scipy.sparse import csr_matrix
 
 
 @dataclass
-class OrdinalModeler:
+class YogiModelRunner:
     kwargs: dict = field(default_factory=dict)
     
     def __post_init__(self):
 
-        start_time = time.time()
-        
         # TODO: remove this line before running on SLURM
         # logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
         
@@ -42,9 +40,6 @@ class OrdinalModeler:
         self.run_ordinal_modeling()
 
         logger.success(f"Ordinal modeling COMPLETED for {self.cell_line} with window size {self.distance}")
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
 
         self.model_output["elapsed_time"] = elapsed_time
 
