@@ -1,25 +1,30 @@
-import sys, pandas as pd, polars as pl, glob, numpy as np, os, gc, yaml, argparse
+import sys, glob, os, gc, yaml, argparse, wandb
+import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 
 from dataclasses import dataclass, field
 from loguru import logger
 from tqdm import tqdm
-
 from sklearn.metrics import make_scorer, balanced_accuracy_score, precision_score, mean_absolute_error, median_absolute_error, cohen_kappa_score, matthews_corrcoef
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import ElasticNet
 from scipy.sparse import csr_matrix
 from sklearn.metrics import get_scorer
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from sklearn.linear_model import LinearRegression
+from collections import OrderedDict
 
 @dataclass
 class YogiModelRunner:
     yaml_file_path: str = field(default="")
+    wandb_project_name: str = field(default="")
     
     def __post_init__(self):
 
-        logger.remove()
-        # TODO: uncomment this line before running on SLURM
-        logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
+        WANDB_ENTITY = "platiglab"
+
+        # logger.remove()
+        # # TODO: uncomment this line before running on SLURM
+        # logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
 
         with open(self.yaml_file_path, 'r') as file:
             self.kwargs = yaml.safe_load(file)
@@ -33,10 +38,19 @@ class YogiModelRunner:
         #TODO remove this line when running on SLURM
         # os.remove(self.yaml_file_path)
 
+        self.wandb_logger = wandb.init(
+            entity = WANDB_ENTITY, 
+            project=self.wandb_project_name, 
+            config = self.kwargs,
+        )
+
         self.load_data()
         self.split_data()
         self.set_scoring_methods()
         self.run_modeling()
+        self.plot_predicted_vs_actual()
+
+        self.wandb_logger.finish()
 
         logger.success(f"COMPLETED SUCCESSFULLY: {self.model} for {self.cell_line} with window size {self.distance}")
 
@@ -407,4 +421,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    runner = YogiModelRunner(yaml_file_path=args.yaml_file_path)
+    runner = YogiModelRunner(
+        yaml_file_path=args.yaml_file_path, 
+        wandb_project_name=args.wandb_project_name
+    )
