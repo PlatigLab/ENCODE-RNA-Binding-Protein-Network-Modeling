@@ -3,7 +3,7 @@ dataset:
             [K562, HepG2]
 
         distances: 
-            [50, 100, 150, 200, 250, 500, 1000, 5000, 10000]
+            [50, 100, 150, 200, 250, 500]
 
         control_only: 
             [False, True]
@@ -25,10 +25,16 @@ dataset:
 
 
 modeling:
-        models: [LinearRegression, OrdinalRegression, OrdinalGBT]
-        random_state: 17
-        splits: 5
-        repeats: 10
+        models: [OLSRegression, ElasticNetContinuous, OLSOrdinalRegression, ElasticNetOrdinal, OrdinalGBT]
+        random_states: [17, 97]
         ordinal_regression_method: [logit, probit]
-        optimizer: [bfgs, nm]
-        training_shuffle: True
+        data_splitting_method: "gene"
+        train_split: 0.7
+        test_split: 0.15
+        validate_split: 0.15
+        alpha: [0.001, 0.01, 0.1, 1, 10]
+        l1_ratio: [0, 0.2, 0.4, 0.6, 0.8, 1]
+
+
+SLURM:
+        plots_folder: "../output/plots/"
