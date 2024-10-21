@@ -190,22 +190,53 @@ class YogiModelRunner:
             data = self.cast_column_data_types(data)
         
         self.full_data = data
-        logger.success(f"Data loaded successfully for {self.cell_line} with window size {self.distance}")
+        logger.success(f"Data loaded successfully for {self.cell_line} with window size {self.distance} with shape: {self.full_data.shape}")
 
 
-    def run_ordinal_modeling(self):
+    def split_data(self):
+        logger.info("Splitting data into training testing, and validation sets")
 
-        logger.info(f"Running cross-validation for model type: {self.model}")
+        assert self.data_splitting_method == "gene"
 
-        skf = StratifiedKFold(n_splits=self.splits, shuffle=self.training_shuffle, random_state=self.random_state)
+        np.random.seed(self.random_state)
+        unique_genes = self.full_data.select("Gene Name").unique().to_series().to_numpy()
+        np.random.shuffle(unique_genes)
 
-        binding_input = csr_matrix(self.full_data.select(self.binding_columns).to_numpy())
-        prediction_target= self.full_data["Ordinal Target"].to_numpy()
+        train_genes, test_genes, validate_genes = np.split(
+            unique_genes, 
+            [
+                int(len(unique_genes) * self.train_split), 
+                int(len(unique_genes) * (self.train_split + self.test_split))
+            ]
+        )
 
-        logger.info(f"Length of prediction_target: {len(prediction_target)}")
+        train_data = self.full_data.filter(pl.col("Gene Name").is_in(train_genes))
+        test_data = self.full_data.filter(pl.col("Gene Name").is_in(test_genes))
+        validate_data = self.full_data.filter(pl.col("Gene Name").is_in(validate_genes))
 
         del self.full_data
         gc.collect()
+
+        datasets = {
+            "train": train_data,
+            "test": test_data,
+            "validate": validate_data
+        }
+
+        for split_name, split_data in datasets.items():
+            target = self.create_target(split_data)
+            input_data = self.create_modeling_input(split_data)
+
+            assert len(target) == input_data.shape[0], f"Length of target ({len(target)}) does not match number of rows in input ({input_data.shape[0]})"
+
+            setattr(self, f"{split_name}_target", target)
+            setattr(self, f"{split_name}_input", input_data)
+
+        logger.info(f"Training input shape: {self.train_input.shape}")
+        logger.info(f"Testing input shape: {self.test_input.shape}")
+        logger.info(f"Validation input shape: {self.validate_input.shape}")
+
+        logger.success("Data successfully split into training, testing, and validation sets")
 
 
 #TODO get ordinal modeling running later 
