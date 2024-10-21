@@ -73,13 +73,7 @@ class YogiModelRunner:
 
     def cast_column_data_types(self, data):
 
-        for col in self.metadata_columns:
-            if data.schema[col] in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
-                data = data.with_columns(pl.col(col).cast(pl.UInt32))
-        
-        for col in self.metadata_columns:
-            if data.schema[col] == pl.Float64:
-                data = data.with_columns(pl.col(col).cast(pl.Float32))
+        logger.info(f"Converting columns to appropriate data types for {self.data_flavor} data flavor")
 
         if self.data_flavor == "binary" or self.data_flavor == "num_peaks":
             for col in self.binding_columns:
