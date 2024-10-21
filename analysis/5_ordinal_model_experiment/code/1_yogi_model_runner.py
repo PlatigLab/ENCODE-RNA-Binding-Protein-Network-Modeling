@@ -1,16 +1,15 @@
-import sys, pandas as pd, polars as pl, glob, numpy as np, os, json, time, gc
+import sys, pandas as pd, polars as pl, glob, numpy as np, os, gc, yaml, argparse
 
 from dataclasses import dataclass, field
 from loguru import logger
 from tqdm import tqdm
-from statsmodels.miscmodels.ordinal_model import OrderedModel
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import cross_validate
+
 from sklearn.metrics import make_scorer, balanced_accuracy_score, precision_score, mean_absolute_error, median_absolute_error, cohen_kappa_score, matthews_corrcoef
 from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.linear_model import ElasticNetCV
+from sklearn.linear_model import ElasticNet
 from scipy.sparse import csr_matrix
-
+from sklearn.metrics import get_scorer
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 @dataclass
 class YogiModelRunner:
@@ -87,8 +86,9 @@ class YogiModelRunner:
 
 
     def load_data(self): 
+
         INPUT_DATA_PATH="../../3_create_RBP_ML_input/4_create_num_peaks_ML_input/final_modeling_input_datasets"
-        EXPRESSION_DATA_PATH="../../3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs/"
+        EXPRESSION_DATA_PATH="../../3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs"
 
         file = glob.glob(f"{INPUT_DATA_PATH}/{self.cell_line}_{self.distance}_*")
         assert len(file)==1, file
@@ -123,8 +123,7 @@ class YogiModelRunner:
         data = data.collect(streaming=True)
 
         self.binding_columns = [col for col in data.columns if col.endswith("_binding")]
-        self.metadata_columns = [col for col in data.columns if col not in self.binding_columns]
-
+        
         logger.info("Finished filtering steps and gathered dataframe in-memory")
         logger.info(f"Converting data to '''{self.data_flavor}''' data flavor")
         
