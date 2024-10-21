@@ -46,16 +46,29 @@ class YogiModelRunner:
         return int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
 
 
-    def create_target(self): 
-        logger.info("Creating target vector")
-
-        bins = np.arange(-0.05, 1.1, 0.1)
+    def set_scoring_methods(self): 
         
-        self.full_data = self.full_data.with_columns(
-            (pl.col("Target_PSI").map_elements(lambda x: (np.digitize(x, bins) - 1), return_dtype=pl.UInt8).alias("Ordinal Target"))
-        )
+        logger.info(f"Selecting scoring methods for {self.model}")
 
-        logger.success("Target vector created successfully")
+        if self.model == "ElasticNetContinuous":
+            self.scoring = {
+                'mean_absolute_error': "neg_mean_absolute_error",
+                'mean_squared_error': 'neg_mean_squared_error',
+                'root_mean_squared_error': 'neg_root_mean_squared_error',
+                'median_absolute_error': "neg_median_absolute_error",
+                'r2_score': 'r2'
+            }
+
+        #TODO add more scores for other models
+
+        # self.scoring = {
+        #     'balanced_accuracy': make_scorer(balanced_accuracy_score),
+        #     'precision_weighted': make_scorer(precision_score, average='weighted'),
+        #     'mean_absolute_error': make_scorer(mean_absolute_error),
+        #     'median_absolute_error': make_scorer(median_absolute_error),
+        #     'quadratic_cohen_kappa': make_scorer(cohen_kappa_score, weights='quadratic'),
+        #     'matthews_corrcoef': make_scorer(matthews_corrcoef)
+        # }
 
 
     def cast_column_data_types(self, data):
