@@ -261,9 +261,13 @@ class ElasticNetCVWrapper(BaseEstimator, RegressorMixin):
         self.model.fit(X, y)
         return self
 
-    def predict(self, X):
-        predictions = self.model.predict(X)
-        rounded_predictions = np.round(predictions)
-        clipped_predictions = np.clip(rounded_predictions, np.min(self.unique_y.min()), np.max(self.unique_y.max()))
-        return clipped_predictions
-    
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run YogiModelRunner with a specified YAML configuration file and Weights & Biases Project name.")
+
+    parser.add_argument('--yaml-file-path', type=str, required=True, help='Path to the YAML configuration file.')
+    parser.add_argument('--wandb-project-name', type=str, required=True, help='Name of the Weights & Biases project.')
+
+    args = parser.parse_args()
+
+    runner = YogiModelRunner(yaml_file_path=args.yaml_file_path)
