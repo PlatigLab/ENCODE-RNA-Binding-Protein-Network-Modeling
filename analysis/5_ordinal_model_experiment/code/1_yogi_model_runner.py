@@ -14,19 +14,24 @@ from scipy.sparse import csr_matrix
 
 @dataclass
 class YogiModelRunner:
-    kwargs: dict = field(default_factory=dict)
+    yaml_file_path: str = field(default="")
     
     def __post_init__(self):
 
-        # TODO: remove this line before running on SLURM
-        # logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
+        logger.remove()
+        # TODO: uncomment this line before running on SLURM
+        logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
+
+        with open(self.yaml_file_path, 'r') as file:
+            self.kwargs = yaml.safe_load(file)
         
-        logger.info(f"Input parameters: {json.dumps(self.kwargs, indent=6)}")
+        logger.info(f"Loaded configuration: \n{yaml.dump(self.kwargs, default_flow_style=False, sort_keys=False)}")
 
         for top_key in self.kwargs.keys():
             for sub_key, value in self.kwargs[top_key].items():
                 setattr(self, sub_key, value)
 
+        #TODO remove this line when running on SLURM
         # os.remove(self.yaml_file_path)
 
         self.load_data()
