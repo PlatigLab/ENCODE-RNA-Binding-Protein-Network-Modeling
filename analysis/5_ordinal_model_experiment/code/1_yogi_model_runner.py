@@ -250,7 +250,10 @@ class YogiModelRunner:
 
     def run_modeling(self):
 
-        if self.model == "ElasticNetContinuous":
+        if self.model == "OLSRegression":
+            self.run_ols_regression()
+        
+        elif self.model == "ElasticNetContinuous":
             self.run_elasticnet_linear_regression()
 
 
@@ -290,7 +293,23 @@ class YogiModelRunner:
         final_model = ElasticNet(alpha=best_alpha, l1_ratio=best_l1_ratio, random_state=self.random_state)
         final_model.fit(self.train_input, self.train_target)
 
-        # Evaluate the model using the scoring methods
+
+    def run_ols_regression(self):
+        
+        logger.info(f"Running OLS regression for {self.cell_line} with window size {self.distance}")
+
+        self.final_model = LinearRegression(
+            n_jobs=self.get_slurm_cpus_per_task(), 
+            copy_X=False
+        )
+
+        self.final_model.fit(self.train_input, self.train_target)
+
+        self.log_scoring()
+
+        logger.success("Model evaluation completed")
+
+
         for score_name, score_func_name in self.scoring.items():
             score_func = get_scorer(score_func_name)
 
