@@ -27,25 +27,14 @@ class YogiModelRunner:
             for sub_key, value in self.kwargs[top_key].items():
                 setattr(self, sub_key, value)
 
-        self.scoring = {
-            'balanced_accuracy': make_scorer(balanced_accuracy_score),
-            'precision_weighted': make_scorer(precision_score, average='weighted'),
-            'mean_absolute_error': make_scorer(mean_absolute_error),
-            'median_absolute_error': make_scorer(median_absolute_error),
-            'quadratic_cohen_kappa': make_scorer(cohen_kappa_score, weights='quadratic'),
-            'matthews_corrcoef': make_scorer(matthews_corrcoef)
-        }
+        # os.remove(self.yaml_file_path)
 
         self.load_data()
-        self.run_ordinal_modeling()
+        self.split_data()
+        self.set_scoring_methods()
+        self.run_modeling()
 
-        logger.success(f"Ordinal modeling COMPLETED for {self.cell_line} with window size {self.distance}")
-
-        self.model_output["elapsed_time"] = elapsed_time
-
-        with open(f"{self.cell_line}_{self.distance}_{self.model}_ordinal_modeling_output.json", "w") as f:
-            model_output = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in self.model_output.items()}
-            json.dump(model_output, f, indent=6)        
+        logger.success(f"COMPLETED SUCCESSFULLY: {self.model} for {self.cell_line} with window size {self.distance}")
 
 
     def get_slurm_cpus_per_task(self):
