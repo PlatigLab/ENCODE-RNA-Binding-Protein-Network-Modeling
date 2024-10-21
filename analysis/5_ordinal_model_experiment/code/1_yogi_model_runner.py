@@ -63,7 +63,7 @@ class YogiModelRunner:
         
         logger.info(f"Selecting scoring methods for {self.model}")
 
-        if self.model == "ElasticNetContinuous":
+        if self.model == "ElasticNetContinuous" or self.model == "OLSRegression":
             self.scoring = {
                 'mean_absolute_error': "neg_mean_absolute_error",
                 'mean_squared_error': 'neg_mean_squared_error',
@@ -110,7 +110,7 @@ class YogiModelRunner:
         logger.info("Lazy loading dataset for downstream parallel filtering...")
 
         #TODO remove nrows 
-        data = pl.scan_csv(file[0], separator='\t', )
+        data = pl.scan_csv(file[0], separator='\t', n_rows=10000)
 
         if self.read_count_quantile is not None: 
 
@@ -254,7 +254,7 @@ class YogiModelRunner:
 
     def create_target(self, data):
 
-        if self.model == "ElasticNetContinuous":
+        if self.model == "ElasticNetContinuous" or self.model == "OLSRegression":
             return data["Target_PSI"].to_numpy()
         
 
@@ -304,8 +304,12 @@ class YogiModelRunner:
         )
 
         # Run the ElasticNet model again with the best parameters
-        final_model = ElasticNet(alpha=best_alpha, l1_ratio=best_l1_ratio, random_state=self.random_state)
-        final_model.fit(self.train_input, self.train_target)
+        self.final_model = ElasticNet(alpha=best_alpha, l1_ratio=best_l1_ratio, random_state=self.random_state)
+        self.final_model.fit(self.train_input, self.train_target)
+
+        self.log_scoring()
+
+        logger.success("Final model evaluation completed with the best parameters")
 
 
     def run_ols_regression(self):
@@ -324,17 +328,77 @@ class YogiModelRunner:
         logger.success("Model evaluation completed")
 
 
+    def log_scoring(self):
+
+        scoring_dict = OrderedDict()
+
         for score_name, score_func_name in self.scoring.items():
             score_func = get_scorer(score_func_name)
 
-            train_score = score_func(final_model, self.train_input, self.train_target)
-            test_score = score_func(final_model, self.test_input, self.test_target)
-            validate_score = score_func(final_model, self.validate_input, self.validate_target)
+            train_score = score_func(self.final_model, self.train_input, self.train_target)
+            test_score = score_func(self.final_model, self.test_input, self.test_target)
+            validate_score = score_func(self.final_model, self.validate_input, self.validate_target)
 
-            logger.info(f"Best model scoring: {score_name} - Train: {train_score}, Test: {test_score}, Validate: {validate_score}")
+            logger.info(f"Model scoring: {score_name} - Train: {train_score}, Test: {test_score}, Validate: {validate_score}")
 
-        logger.success("Final model evaluation completed with the best parameters")
+            scoring_dict[f"train/{score_name}"] = train_score
+            scoring_dict[f"test/{score_name}"] = test_score
+            scoring_dict[f"validate/{score_name}"] = validate_score
 
+        self.wandb_logger.log(scoring_dict)
+
+
+    def plot_predicted_vs_actual(self):
+            
+        logger.info("Plotting predicted vs actual values")
+
+        train_predictions = self.final_model.predict(self.train_input)
+        test_predictions = self.final_model.predict(self.test_input)
+        validate_predictions = self.final_model.predict(self.validate_input)
+
+        if self.model == "ElasticNetContinuous" or self.model == "OLSRegression":
+
+            for actual, predicted, dataset_name in [
+                (self.train_target, train_predictions, f"Train ({self.train_split * 100}%)"),
+                (self.test_target, test_predictions, f"Test ({self.test_split * 100}%)"),
+                (self.validate_target, validate_predictions, f"Validate ({self.validate_split * 100}%)"),
+            ]:
+                
+                assert len(actual) == len(predicted), f"Length of actual ({len(actual)}) does not match length of predicted ({len(predicted)})"
+
+                sns.set_theme(style="white", rc={"figure.dpi": 200})
+
+                joint_plot = sns.jointplot(
+                    x=actual, 
+                    y=predicted, 
+                    kind="hist", 
+                    bins=100, 
+                    height=4,
+                    marginal_kws=dict(bins=100, fill=True,),
+                    stat="percent",
+                )
+
+                joint_plot.set_axis_labels('Actual', 'Predicted', fontsize=12)
+                joint_plot.figure.suptitle(
+                    f"{self.cell_line} {self.distance} {self.model}\n{dataset_name}", 
+                    fontsize=14, 
+                    y=1.1
+                )
+                
+                self.wandb_logger.log({f"{dataset_name}_predictions_jointplot": joint_plot.figure})
+
+                fig = plt.figure(figsize=(7, 2), dpi=200)
+
+                differences = actual - predicted
+                plt.hist(differences, bins=100,)
+
+                plt.xlabel('Difference (Actual - Predicted)', fontsize=14)
+                plt.ylabel('Frequency', fontsize=10)
+                plt.title(f'{self.cell_line} {self.distance} {self.model}\n{dataset_name}', fontsize=14, pad=20)
+
+                self.wandb_logger.log({f"{dataset_name}_predictions_histogram": fig})
+
+        logger.success("Plotted predicted vs actual values")
 
 #TODO get ordinal modeling running later 
 #     def run_ordinal_modeling(self):
