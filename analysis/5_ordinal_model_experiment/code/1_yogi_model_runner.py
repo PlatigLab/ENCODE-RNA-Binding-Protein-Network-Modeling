@@ -255,6 +255,54 @@ class YogiModelRunner:
             self.run_elasticnet_linear_regression()
 
 
+    def run_elasticnet_linear_regression(self):
+
+        logger.info(f"Running ElasticNet linear regression for {self.cell_line} with window size {self.distance}")
+
+
+        def evaluate_model(alpha, l1_ratio):
+            model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=self.random_state)
+            model.fit(self.train_input, self.train_target)
+
+            train_r2 = model.score(self.train_input, self.train_target)
+            test_r2 = model.score(self.test_input, self.test_target)
+            validate_r2 = model.score(self.validate_input, self.validate_target)
+
+            avg_r2 = (test_r2 + validate_r2) / 2
+
+            logger.info(f"Alpha: {alpha}, L1 Ratio: {l1_ratio}, Train R2: {train_r2}, Test R2: {test_r2}, Validate R2: {validate_r2}, Avg R2: {avg_r2}")
+
+            return avg_r2, alpha, l1_ratio, train_r2, test_r2, validate_r2
+
+        results = []
+        with ThreadPoolExecutor(max_workers=self.get_slurm_cpus_per_task()) as executor:
+            futures = {executor.submit(evaluate_model, alpha, l1_ratio): (alpha, l1_ratio) for alpha in self.alpha for l1_ratio in self.l1_ratio}
+            
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating models", unit="model"):
+                results.append(future.result())
+
+        best_score, best_alpha, best_l1_ratio, best_train_r2, best_test_r2, best_validate_r2 = max(results, key=lambda x: x[0])
+
+        logger.success(
+            f"Results from best run ---- Alpha: {best_alpha}, L1 Ratio: {best_l1_ratio}, Avg R2: {best_score}, Train R2: {best_train_r2}, Test R2: {best_test_r2}, Validate R2: {best_validate_r2}"
+        )
+
+        # Run the ElasticNet model again with the best parameters
+        final_model = ElasticNet(alpha=best_alpha, l1_ratio=best_l1_ratio, random_state=self.random_state)
+        final_model.fit(self.train_input, self.train_target)
+
+        # Evaluate the model using the scoring methods
+        for score_name, score_func_name in self.scoring.items():
+            score_func = get_scorer(score_func_name)
+
+            train_score = score_func(final_model, self.train_input, self.train_target)
+            test_score = score_func(final_model, self.test_input, self.test_target)
+            validate_score = score_func(final_model, self.validate_input, self.validate_target)
+
+            logger.info(f"Best model scoring: {score_name} - Train: {train_score}, Test: {test_score}, Validate: {validate_score}")
+
+        logger.success("Final model evaluation completed with the best parameters")
+
 
 #TODO get ordinal modeling running later 
 #     def run_ordinal_modeling(self):
