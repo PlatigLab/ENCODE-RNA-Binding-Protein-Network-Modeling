@@ -239,6 +239,23 @@ class YogiModelRunner:
         logger.success("Data successfully split into training, testing, and validation sets")
 
 
+    def create_target(self, data):
+
+        if self.model == "ElasticNetContinuous":
+            return data["Target_PSI"].to_numpy()
+        
+
+    def create_modeling_input(self, data):
+        return csr_matrix(data.select(self.binding_columns).to_numpy())
+
+
+    def run_modeling(self):
+
+        if self.model == "ElasticNetContinuous":
+            self.run_elasticnet_linear_regression()
+
+
+
 #TODO get ordinal modeling running later 
 #     def run_ordinal_modeling(self):
 
