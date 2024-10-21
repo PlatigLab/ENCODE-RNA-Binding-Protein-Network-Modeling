@@ -12,6 +12,7 @@ from sklearn.metrics import get_scorer
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sklearn.linear_model import LinearRegression
 from collections import OrderedDict
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 @dataclass
 class YogiModelRunner:
@@ -341,9 +342,9 @@ class YogiModelRunner:
 
             logger.info(f"Model scoring: {score_name} - Train: {train_score}, Test: {test_score}, Validate: {validate_score}")
 
-            scoring_dict[f"train/{score_name}"] = train_score
-            scoring_dict[f"test/{score_name}"] = test_score
-            scoring_dict[f"validate/{score_name}"] = validate_score
+            scoring_dict[f"train_{score_name}"] = train_score
+            scoring_dict[f"test_{score_name}"] = test_score
+            scoring_dict[f"validate_{score_name}"] = validate_score
 
         self.wandb_logger.log(scoring_dict)
 
@@ -358,45 +359,112 @@ class YogiModelRunner:
 
         if self.model == "ElasticNetContinuous" or self.model == "OLSRegression":
 
-            for actual, predicted, dataset_name in [
+            ##############################################
+            # Plotting Actual vs Predicted 2D Histograms #
+            ##############################################
+
+            fig, axs = plt.subplots(1, 3, figsize=(18, 6), dpi=100, sharex=True, sharey=True)
+
+            for ax, (actual, predicted, dataset_name) in zip(axs, [
                 (self.train_target, train_predictions, f"Train ({self.train_split * 100}%)"),
                 (self.test_target, test_predictions, f"Test ({self.test_split * 100}%)"),
                 (self.validate_target, validate_predictions, f"Validate ({self.validate_split * 100}%)"),
-            ]:
+            ]):
                 
                 assert len(actual) == len(predicted), f"Length of actual ({len(actual)}) does not match length of predicted ({len(predicted)})"
 
-                sns.set_theme(style="white", rc={"figure.dpi": 200})
+                hist = sns.histplot(x=actual, y=predicted, bins=100, cmap="YlOrBr", ax=ax, stat="percent")
+                ax.set_title(f'{dataset_name}', fontsize=26, pad=20)
 
-                joint_plot = sns.jointplot(
-                    x=actual, 
-                    y=predicted, 
-                    kind="hist", 
-                    bins=100, 
-                    height=4,
-                    marginal_kws=dict(bins=100, fill=True,),
-                    stat="percent",
-                )
+            # Create a colorbar legend
+            cbar = fig.colorbar(hist.collections[0], ax=axs, cax=fig.add_axes([1.05, 0.1, 0.02, 0.8]))
+            cbar.set_label('Percentage', fontsize=16)
 
-                joint_plot.set_axis_labels('Actual', 'Predicted', fontsize=12)
-                joint_plot.figure.suptitle(
-                    f"{self.cell_line} {self.distance} {self.model}\n{dataset_name}", 
-                    fontsize=14, 
-                    y=1.1
-                )
+            fig.suptitle("2D Accuracy Histograms", fontsize = 36, y=1.02)
+            fig.supxlabel('Actual', fontsize=28)
+            fig.supylabel('Predicted', fontsize=28, x=-0.02)
+
+            self.wandb_logger.log({"actual_vs_predicted_2d_hist": wandb.Image(fig)})
+
+            #########################################################
+            # Plot Actual and Predicted Distributions Independently #
+            #########################################################
+
+            fig, axs = plt.subplots(1, 3, figsize=(18, 6), dpi=100, sharex=True, sharey=True)
+
+            # Determine the range for the bins
+            min_value = min(
+                min(self.train_target.min(), train_predictions.min()),
+                min(self.test_target.min(), test_predictions.min()),
+                min(self.validate_target.min(), validate_predictions.min())
+            )
+            max_value = max(
+                max(self.train_target.max(), train_predictions.max()),
+                max(self.test_target.max(), test_predictions.max()),
+                max(self.validate_target.max(), validate_predictions.max())
+            )
+
+            # Create 100 evenly spaced bins
+            bins = np.linspace(min_value, max_value, 100)
+
+            for ax, (actual, predicted, dataset_name) in zip(axs, [
+                (self.train_target, train_predictions, f"Train ({self.train_split * 100}%)"),
+                (self.test_target, test_predictions, f"Test ({self.test_split * 100}%)"),
+                (self.validate_target, validate_predictions, f"Validate ({self.validate_split * 100}%)"),
+            ]):
                 
-                self.wandb_logger.log({f"{dataset_name}_predictions_jointplot": joint_plot.figure})
+                assert len(actual) == len(predicted), f"Length of actual ({len(actual)}) does not match length of predicted ({len(predicted)})"
 
-                fig = plt.figure(figsize=(7, 2), dpi=200)
+                sns.histplot(actual, bins=bins, color="blue", kde=False, stat="percent", ax=ax, label="Actual", alpha=0.5, edgecolor="black", linewidth=0.8)
+                sns.histplot(predicted, bins=bins, color="orange", kde=False, stat="percent", ax=ax, label="Predicted", alpha=0.5, edgecolor="black", linewidth=0.8)
+
+                ax.set_title(f'{dataset_name}', fontsize=22, pad=20)
+
+            handles, labels = axs[0].get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=16)
+
+            fig.suptitle("PSI Distributions for Actual and Predicted", fontsize = 28, y=1.02)
+            fig.supxlabel('PSI Values', fontsize=20)
+            fig.supylabel('Percentage', fontsize=20, x=-0.02)
+
+            self.wandb_logger.log({"distribution_comparison": wandb.Image(fig)})
+
+            #########################################################################
+            # Plotting Distribution of Actual Values Subtracted by Predicted Values #
+            #########################################################################
+
+            fig, axs = plt.subplots(1, 3, figsize=(18, 6), dpi=100, sharey=True, sharex=True)
+
+            # Calculate the min and max values of the differences across all sets
+            all_differences = np.concatenate([
+                self.train_target - train_predictions,
+                self.test_target - test_predictions,
+                self.validate_target - validate_predictions
+            ])
+            min_diff = all_differences.min()
+            max_diff = all_differences.max()
+
+            # Create 100 custom bins spanning the min and max value
+            bins = np.linspace(min_diff, max_diff, 100)
+
+            for ax, (actual, predicted, dataset_name) in zip(axs, [
+                (self.train_target, train_predictions, f"Train ({self.train_split * 100}%)"),
+                (self.test_target, test_predictions, f"Test ({self.test_split * 100}%)"),
+                (self.validate_target, validate_predictions, f"Validate ({self.validate_split * 100}%)"),
+            ]):
+                
+                assert len(actual) == len(predicted), f"Length of actual ({len(actual)}) does not match length of predicted ({len(predicted)})"
 
                 differences = actual - predicted
-                plt.hist(differences, bins=100,)
+                ax.hist(differences, bins=bins, density=True, color='lime', edgecolor='black', linewidth=1)
 
-                plt.xlabel('Difference (Actual - Predicted)', fontsize=14)
-                plt.ylabel('Frequency', fontsize=10)
-                plt.title(f'{self.cell_line} {self.distance} {self.model}\n{dataset_name}', fontsize=14, pad=20)
+                ax.set_title(f'{dataset_name}', fontsize=20, pad=20)
 
-                self.wandb_logger.log({f"{dataset_name}_predictions_histogram": fig})
+            fig.suptitle('Distribution of (Actual-Predicted)', fontsize=24, y=1.02)
+            fig.supxlabel('Difference (Actual - Predicted)', fontsize=18)
+            fig.supylabel('Percent', fontsize=18, x=-0.02)
+
+            self.wandb_logger.log({"actual_minus_predicted_hist": wandb.Image(fig)})
 
         logger.success("Plotted predicted vs actual values")
 
