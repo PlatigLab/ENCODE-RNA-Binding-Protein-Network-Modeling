@@ -206,61 +206,83 @@ class YogiModelRunner:
         del self.full_data
         gc.collect()
 
-        # Use the wrapper class as the estimator
-        scores = cross_validate(
-            estimator=ElasticNetCVWrapper(),
-            X=binding_input,
-            y=prediction_target,
-            cv=skf,
-            scoring="neg_root_mean_squared_error",
-            verbose=6,
-            n_jobs=self.get_slurm_cpus_per_task(),
-        )
 
-        # # Use the wrapper class as the estimator
-        # scores = cross_validate(
-        #     estimator=OrderedModelWrapper(method=self.ordinal_regression_method, optimizer=self.optimizer),
-        #     X=binding_input,
-        #     y=prediction_target,
-        #     cv=skf,
-        #     scoring=self.scoring,
-        #     verbose=6,
-        #     n_jobs=self.get_slurm_cpus_per_task(),
-        # )
+#TODO get ordinal modeling running later 
+#     def run_ordinal_modeling(self):
 
-        self.model_output = scores
-        logger.success(f"COMPLETED: Cross-validation completed for {self.model}")
+#         logger.info(f"Running cross-validation for model type: {self.model}")
+
+#         skf = StratifiedKFold(n_splits=self.splits, shuffle=self.training_shuffle, random_state=self.random_state)
+
+#         binding_input = csr_matrix(self.full_data.select(self.binding_columns).to_numpy())
+#         prediction_target= self.full_data["Ordinal Target"].to_numpy()
+
+#         logger.info(f"Length of prediction_target: {len(prediction_target)}")
+
+#         del self.full_data
+#         gc.collect()
+
+#         # Use the wrapper class as the estimator
+#         scores = cross_validate(
+#             estimator=ElasticNetCVWrapper(),
+#             X=binding_input,
+#             y=prediction_target,
+#             cv=skf,
+#             scoring="neg_root_mean_squared_error",
+#             verbose=6,
+#             n_jobs=self.get_slurm_cpus_per_task(),
+#         )
+
+#         # # Use the wrapper class as the estimator
+#         # scores = cross_validate(
+#         #     estimator=OrderedModelWrapper(method=self.ordinal_regression_method, optimizer=self.optimizer),
+#         #     X=binding_input,
+#         #     y=prediction_target,
+#         #     cv=skf,
+#         #     scoring=self.scoring,
+#         #     verbose=6,
+#         #     n_jobs=self.get_slurm_cpus_per_task(),
+#         # )
+
+#         self.model_output = scores
+#         logger.success(f"COMPLETED: Cross-validation completed for {self.model}")
         
 
-class OrderedModelWrapper(BaseEstimator, RegressorMixin):
+# class OrderedModelWrapper(BaseEstimator, RegressorMixin):
 
-    def __init__(self, method=None, optimizer=None):
-        self.method = method
-        self.optimizer = optimizer
-        self.model_ = None
+#     def __init__(self, method=None, optimizer=None):
+#         self.method = method
+#         self.optimizer = optimizer
+#         self.model_ = None
 
-    def fit(self, X, y):
-        self.model_ = OrderedModel(y, X, distr=self.method)
-        self.result_ = self.model_.fit(method=self.optimizer, disp=False)
-        return self
+#     def fit(self, X, y):
+#         self.model_ = OrderedModel(y, X, distr=self.method)
+#         self.result_ = self.model_.fit(method=self.optimizer, disp=False)
+#         return self
 
-    def predict(self, X):
-        return self.result_.predict(X).argmax(axis=1)
+#     def predict(self, X):
+#         return self.result_.predict(X).argmax(axis=1)
 
-    # def score(self, X, y):
-    #     predictions = self.predict(X)
-    #     return np.mean(predictions == y)
+#     # def score(self, X, y):
+#     #     predictions = self.predict(X)
+#     #     return np.mean(predictions == y)
 
-class ElasticNetCVWrapper(BaseEstimator, RegressorMixin):
+# class ElasticNetCVWrapper(BaseEstimator, RegressorMixin):
 
-    def __init__(self, **kwargs):
-        self.model = ElasticNetCV(**kwargs)
+#     def __init__(self, **kwargs):
+#         self.model = ElasticNetCV(**kwargs)
 
-    def fit(self, X, y):
-        self.unique_y = np.unique(y)
-        self.model.fit(X, y)
-        return self
+#     def fit(self, X, y):
+#         self.unique_y = np.unique(y)
+#         self.model.fit(X, y)
+#         return self
 
+#     def predict(self, X):
+#         predictions = self.model.predict(X)
+#         rounded_predictions = np.round(predictions)
+#         clipped_predictions = np.clip(rounded_predictions, np.min(self.unique_y.min()), np.max(self.unique_y.max()))
+#         return clipped_predictions
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run YogiModelRunner with a specified YAML configuration file and Weights & Biases Project name.")
