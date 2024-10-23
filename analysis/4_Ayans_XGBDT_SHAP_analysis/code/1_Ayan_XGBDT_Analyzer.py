@@ -438,7 +438,7 @@ class AyanXgbdtAnalyzer:
             }
         
     
-    def plot_chi_square_contingency_tables(self): 
+    def plot_chi_square_bound_proportion_lines(self): 
         
         plot_df = []
 
@@ -450,7 +450,7 @@ class AyanXgbdtAnalyzer:
                     [
                         key,
                         psi_threshold, 
-                        (sub_dict[psi_threshold]["Bound"])/(sub_dict[psi_threshold]["Bound"] + sub_dict[psi_threshold]["Unbound"]),
+                        ((sub_dict[psi_threshold]["Bound"])/(sub_dict[psi_threshold]["Bound"] + sub_dict[psi_threshold]["Unbound"]))*100,
                         self.splice_junction_position_renaming["_".join(key.split("_")[1:3])]
                     ]
                 )
@@ -496,24 +496,61 @@ class AyanXgbdtAnalyzer:
         plt.tight_layout()
         plt.show()
 
+        # Join plot_df with chi square results to get the "Statistic" column
+        plot_df = plot_df.merge(self.feature_chi_square_results[["Feature", "Statistic"]], on="Feature")
+
         # Calculate the difference between the first and last value for each feature
         plot_df["PSI Threshold Rank"] = plot_df["PSI Threshold"].map({"PSI < 0.1": 0, "PSI >= 0.1 & <= 0.9": 1, "PSI > 0.9": 2})
-        feature_diffs = plot_df.sort_values(by="PSI Threshold Rank").groupby("Feature")["Percent Bound"].agg(lambda x: abs(x.iloc[-1] - x.iloc[0]))
+        feature_diffs = plot_df.sort_values(by="PSI Threshold Rank").groupby("Feature")["Percent Bound"].agg(lambda x: x.iloc[-1] - x.iloc[0])
 
-        # Get the top 15 features with the largest difference
-        top_features = feature_diffs.nlargest(15).index
+        top_feature_number = 15
 
-        # Plot the line plot for the top 15 features
-        plt.figure(dpi=200, figsize=(15, 5))
-        sns.lineplot(data=plot_df[plot_df["Feature"].isin(top_features)], x="PSI Threshold", y="Percent Bound", hue="Feature", marker="o")
-        plt.title(f"{self.cell_line}: Top 15 Features with Largest Difference in Percent Bound", fontsize=20)
-        plt.xlabel("PSI Threshold", fontsize=15)
-        plt.ylabel("Percent Bound", fontsize=15)
-        plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
-        plt.tight_layout()
-        plt.show()
+        # Sort the features by chi-square statistic in descending order
+        sorted_features = plot_df.sort_values(by="Statistic", ascending=False)
 
-        return plot_df
+        increasing_features = pd.DataFrame(columns=["Feature"])
+        decreasing_features = pd.DataFrame(columns=["Feature"])
+
+        for _, row in sorted_features.iterrows():
+            feature = row["Feature"]
+
+            if feature_diffs[feature] > 0 and increasing_features["Feature"].nunique() < top_feature_number:
+                increasing_features = pd.concat([increasing_features, row.to_frame().T])
+
+            elif feature_diffs[feature] < 0 and decreasing_features["Feature"].nunique() < top_feature_number:
+                decreasing_features = pd.concat([decreasing_features, row.to_frame().T])
+            
+            if increasing_features["Feature"].nunique() >= top_feature_number and decreasing_features["Feature"].nunique() >= top_feature_number:
+                break
+    
+        increasing_features = increasing_features.sort_values(by=["Feature", "PSI Threshold Rank"])
+        decreasing_features = decreasing_features.sort_values(by=["Feature", "PSI Threshold Rank"])
+
+        for features, title in [(increasing_features, "Increasing"), (decreasing_features, "Decreasing")]:
+            plt.figure(dpi=200, figsize=(15, 5))
+
+            sns.lineplot(
+                data=features, 
+                x="PSI Threshold", 
+                y="Percent Bound", 
+                hue="Feature", 
+                style="Feature",  # Different symbols for each line
+                markers=True,     # Enable markers
+                markersize=10,    # Increase marker size
+                dashes=False,     # Disable dashes for solid lines
+                palette="colorblind"  # Use color-blind friendly palette
+            )
+
+            plt.title(f"{self.cell_line}: Top {top_feature_number} Most Significant Features with {title} Percent Bound", fontsize=20)
+            plt.xlabel("PSI Threshold", fontsize=15)
+            plt.ylabel("Percent Bound", fontsize=15)
+            plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+
+            plt.tight_layout()
+            plt.show()
+        
+        self.feature_diffs = feature_diffs
+        return plot_df.sort_values(by="Statistic", ascending=False), increasing_features.sort_values(by="Statistic", ascending=False), decreasing_features.sort_values(by="Statistic", ascending=False)
 
 
     def convert_features_to_rbp_position_matrix(self, df=None, column=None):
@@ -1182,6 +1219,10 @@ class AyanXgbdtAnalyzer:
 
         plt.show()
 
+
+        # Number of features to plot 
+        top_features_number = 15
+
         # Identify features with the largest global SHAP value between the first and last partitions
         first_partition_key = f"PSI < {self.psi_partition_thresholds[0]}"
         last_partition_key = f"PSI > {self.psi_partition_thresholds[1]}"
@@ -1197,37 +1238,48 @@ class AyanXgbdtAnalyzer:
         comparison_df = first_partition_shap_df.join(last_partition_shap_df)
 
         # Calculate the difference between the first and last partition SHAP values
-        comparison_df["Difference"] = abs(comparison_df["Last Partition SHAP"] - comparison_df["First Partition SHAP"])
+        comparison_df["Difference"] = comparison_df["Last Partition SHAP"] - comparison_df["First Partition SHAP"]
 
-        # Sort the DataFrame by the absolute difference in descending order and get the top 15 features
-        top_features = comparison_df.reindex(comparison_df["Difference"].abs().sort_values(ascending=False).index).head(15)
+        # Sort the DataFrame by the difference in descending order and get the top 15 positive and top 15 negative features
+        top_positive_features = comparison_df.nlargest(top_features_number, "Difference")
+        top_negative_features = comparison_df.nsmallest(top_features_number, "Difference")
 
         # Prepare the data for plotting
-        top_features_list = top_features.index.tolist()
-        plot_data = []
+        def prepare_plot_data(features, partitions, first_partition_shap, last_partition_shap):
+            plot_data = []
+            for feature in features.index.tolist():
+                low = first_partition_shap[feature]
+                mid = self.get_global_SHAP(df=(partitions[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"])).to_pandas().iloc[0].to_dict()[feature]
+                high = last_partition_shap[feature]
+                plot_data.append([feature, "PSI < 0.1", low])
+                plot_data.append([feature, 'PSI >= 0.1 & PSI <=0.9', mid])
+                plot_data.append([feature, 'PSI > 0.9', high])
+            return pd.DataFrame(plot_data, columns=['Feature', 'Partition', 'Global SHAP'])
 
-        for feature in top_features_list:
-            low = first_partition_shap[feature]
-            mid = self.get_global_SHAP(df=(partitions[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"])).to_pandas().iloc[0].to_dict()[feature]
-            high = last_partition_shap[feature]
-            plot_data.append([feature, "PSI < 0.1", low])
-            plot_data.append([feature, 'PSI >= 0.1 & PSI <=0.9', mid])
-            plot_data.append([feature, 'PSI > 0.9', high])
+        for features, title in [(top_positive_features, "Largest Positive Difference"), (top_negative_features, "Largest Negative Difference")]:
+            plot_df = prepare_plot_data(features, partitions, first_partition_shap, last_partition_shap)
 
-        plot_df = pd.DataFrame(plot_data, columns=['Feature', 'Partition', 'Global SHAP'])
+            plt.figure(figsize=(15, 5), dpi=200)
 
-        # Plot the top 15 features with the largest difference
-        plt.figure(figsize=(15, 5), dpi=200)
+            sns.lineplot(
+                data=plot_df, 
+                x='Partition', 
+                y='Global SHAP', 
+                hue='Feature', 
+                style='Feature',  # Different symbols for each line
+                markers=True,     # Enable markers
+                markersize=10,    # Increase marker size
+                dashes=False,     # Disable dashes for solid lines
+                palette='colorblind'  # Use color-blind friendly palette
+            )
 
-        sns.lineplot(data=plot_df, x='Partition', y='Global SHAP', hue='Feature', marker='o')
+            plt.title(f"{self.cell_line}: Top {top_features_number} Features with {title} in \nGlobal SHAP between First and Last Partitions", fontsize=20)
+            plt.xlabel("Partition", fontsize=15)
+            plt.ylabel("Global SHAP", fontsize=15)
+            plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
 
-        plt.title(f"{self.cell_line}: Top 15 Features with Largest Difference in \nGlobal SHAP between First and Last Partitions", fontsize=20)
-        plt.xlabel("Partition", fontsize=15)
-        plt.ylabel("Global SHAP", fontsize=15)
-        plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
-
-        plt.tight_layout()
-        plt.show()
+            plt.tight_layout()
+            plt.show()
 
         return monotonic_df
     
