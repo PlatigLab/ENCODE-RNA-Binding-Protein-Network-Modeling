@@ -60,8 +60,10 @@ class AyanXgbdtAnalyzer:
         if pathlib.Path(self.rbp_comparisons_file).exists():
             with open(self.rbp_comparisons_file, "r") as f:
                 self.rbp_ppi = json.load(f)
+            
+            self.rbp_ppi = self.rbp_ppi[self.cell_line]
         
-            logger.info("FROM CACHE: RBP PPI info loaded")
+            logger.info(f"FROM CACHE: RBP PPI info for {self.cell_line} loaded")
 
         # else: 
 
