@@ -1704,7 +1704,7 @@ class AyanXgbdtAnalyzer:
             for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Retrieving RBP PPI events"):
                 results.append(future.result())
 
-        return pl.concat(results, how="vertical")
+        return pl.concat(results, how="vertical").unique()
 
     #TODO get Ayan to give predictions for testing set for linear models
     def compare_rbp_ppi_performance_xgboost_vs_linear_model(self): 
