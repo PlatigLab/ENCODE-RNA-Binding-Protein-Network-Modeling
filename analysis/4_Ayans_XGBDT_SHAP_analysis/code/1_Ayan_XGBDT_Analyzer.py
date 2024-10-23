@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from loguru import logger 
 from matplotlib.patches import Patch
 from statsmodels.stats.multitest import multipletests
+from sklearn.metrics import r2_score
 
 import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys
 
@@ -1681,6 +1682,95 @@ class AyanXgbdtAnalyzer:
                 logger.success(f"Local SHAP summary plots created.")
 
 
+    def retrieve_rbp_ppi_events(self, df = None): 
+
+        def parallelized_rbp_ppi_retrieval(data, rbp_ppi_pair, position_key):
+            rbp1, rbp2 = rbp_ppi_pair
+
+            search_columns = [f"{rbp1.upper()}_{position_key}", f"{rbp2.upper()}_{position_key}"]
+
+            assert all(col in data.columns for col in search_columns), logger.error(f"Columns {search_columns} not found in DataFrame")
+
+            return data.filter(
+                (pl.col(search_columns[0]) == 1) & (pl.col(search_columns[1]) == 1)
+            )
+        
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+            futures = {
+                executor.submit(parallelized_rbp_ppi_retrieval, df, rbp_ppi_pair, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi for position_key in self.splice_junction_position_renaming.keys()
+            }
+
+            for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Retrieving RBP PPI events"):
+                results.append(future.result())
+
+        return pl.concat(results, how="vertical")
+
+    #TODO get Ayan to give predictions for testing set for linear models
+    def compare_rbp_ppi_performance_xgboost_vs_linear_model(self): 
+        logger.info("Comparing RBP PPI performance between XGBoost and Linear Models.")
+        LINEAR_MODEL_PATH = "/project/PlatigLab/data/collaborators/BWH/4_linear_models_2024_10/linear-models-100-a0c52cae/"
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        #TODO remove later once Ayan provides predictions for testing set
+        shap_data = self.shap_data.filter(pl.col("Data Partition") == "validate")
+
+        linear_model_files = glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}*-data.dat")
+
+        assert len(linear_model_files) >=1
+        logger.info(f"Number of linear model files found: {len(linear_model_files)}")
+
+        linear_model_data = pl.scan_csv(linear_model_files, separator=",").collect(streaming=True)
+
+        logger.info(f"Number of rows in linear model data: {linear_model_data.shape[0]}")
+        logger.info(f"Number of rows in SHAP data: {shap_data.shape[0]}")
+
+        logger.info(f"Linear model data 'psi_hat' min value: {linear_model_data['psi_hat'].min()}")
+        logger.info(f"Linear model data 'psi_hat' max value: {linear_model_data['psi_hat'].max()}")
+
+        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=linear_model_data).select("target", "psi_hat")
+        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=shap_data).select("target", "psi_hat")
+
+        logger.info(f"Number of rows in linear model PPI predictions: {linear_model_ppi_predictions.shape[0]}")
+        logger.info(f"Number of rows in XGBoost model PPI predictions: {xgboost_model_ppi_predictions.shape[0]}")
+
+        # Assert no null or missing values in target or psi_hat columns
+        for df, col in [(linear_model_ppi_predictions, "target"), 
+            (linear_model_ppi_predictions, "psi_hat"), 
+            (xgboost_model_ppi_predictions, "target"), 
+            (xgboost_model_ppi_predictions, "psi_hat")]:
+                assert not df[col].is_null().any(), f"Null values found in {df}[{col}]"
+
+        fig, axes = plt.subplots(1, 2, figsize=(12,4), dpi=200, sharex=True, sharey=True)
+
+        for ax, data, model_type in zip(axes, [xgboost_model_ppi_predictions, linear_model_ppi_predictions], ["XGBoost", "Linear Model"]):
+            actual = data["target"]
+            predicted = data["psi_hat"]
+
+            # if model_type == "Linear Model":
+            #     predicted = predicted.clip(0,1)
+
+            h = ax.hist2d(actual, predicted, bins=100, cmap='Blues', density=True)
+            h[3].set_array(h[3].get_array() * 100)  # Convert counts to percentages
+            plt.colorbar(h[3], ax=ax, label='Percentage')
+            ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
+
+            ax.set_title(f"{model_type}")
+            ax.set_xlabel("Actual Prediction")
+            ax.set_ylabel("Model Prediction")
+
+            # Calculate R^2 value
+            r_squared = r2_score(actual, predicted)
+
+            # Add text for number of examples and R^2 value
+            ax.text(0.05, 0.95, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.2f}", transform=ax.transAxes, 
+            verticalalignment='top', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=20)
+        plt.tight_layout()
+        plt.show()
 
 
 ############################################################################################################
