@@ -1742,35 +1742,40 @@ class AyanXgbdtAnalyzer:
             (xgboost_model_ppi_predictions, "target"), 
             (xgboost_model_ppi_predictions, "psi_hat")]:
                 assert not df[col].is_null().any(), f"Null values found in {df}[{col}]"
+        
+        for clipping_method in [None, "clip"]:
 
-        fig, axes = plt.subplots(1, 2, figsize=(12,4), dpi=200, sharex=True, sharey=True)
+            fig, axes = plt.subplots(1, 2, figsize=(12,5), dpi=200, sharex=True, sharey=True)
 
-        for ax, data, model_type in zip(axes, [xgboost_model_ppi_predictions, linear_model_ppi_predictions], ["XGBoost", "Linear Model"]):
-            actual = data["target"]
-            predicted = data["psi_hat"]
+            for ax, data, model_type in zip(axes, [xgboost_model_ppi_predictions, linear_model_ppi_predictions], ["XGBoost", "Linear Model"]):
+                actual = data["target"]
+                predicted = data["psi_hat"]
 
-            # if model_type == "Linear Model":
-            #     predicted = predicted.clip(0,1)
+                if model_type == "Linear Model" and clipping_method == "clip":
+                    predicted = predicted.clip(0,1)
+                
+                ax.scatter(actual, predicted, s=1, alpha=0.1)
+                ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
 
-            h = ax.hist2d(actual, predicted, bins=100, cmap='Blues', density=True)
-            h[3].set_array(h[3].get_array() * 100)  # Convert counts to percentages
-            plt.colorbar(h[3], ax=ax, label='Percentage')
-            ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
+                ax.set_title(f"{model_type}")
+                ax.set_xlabel("Actual Prediction")
+                ax.set_ylabel("Model Prediction")
 
-            ax.set_title(f"{model_type}")
-            ax.set_xlabel("Actual Prediction")
-            ax.set_ylabel("Model Prediction")
+                # Calculate R^2 value
+                r_squared = r2_score(actual, predicted)
 
-            # Calculate R^2 value
-            r_squared = r2_score(actual, predicted)
+                # Add text for number of examples and R^2 value
+                ax.text(0.05, 0.95, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.3f}", transform=ax.transAxes, 
+                verticalalignment='top', fontsize=12,) #bbox=dict(facecolor='white', alpha=0.8))
 
-            # Add text for number of examples and R^2 value
-            ax.text(0.05, 0.95, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.2f}", transform=ax.transAxes, 
-            verticalalignment='top', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-
-        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=20)
-        plt.tight_layout()
-        plt.show()
+            if clipping_method == "clip":
+                clip_str = "NOTE: Linear Model predicted values clipped to [0,1] Range. | (i.e. > 1 is 1 and < 0 is 0)"
+            elif clipping_method is None:
+                clip_str = "NOTE: Linear Model predictions are as is | (i.e. Pred. PSI can be > 1 or < 0)"
+            
+            plt.suptitle(f"{clip_str}\n\n{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=16, y=1.05)
+            plt.tight_layout()
+            plt.show()
 
 
 ############################################################################################################
