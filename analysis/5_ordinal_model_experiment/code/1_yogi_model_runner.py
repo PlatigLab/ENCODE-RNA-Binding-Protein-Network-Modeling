@@ -23,9 +23,9 @@ class YogiModelRunner:
 
         WANDB_ENTITY = "platiglab"
 
-        # logger.remove()
-        # # TODO: uncomment this line before running on SLURM
-        # logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
+        logger.remove()
+        # TODO: uncomment this line before running on SLURM
+        logger.add(sys.stdout, level="INFO", format="{time} {level} {message}")
 
         with open(self.yaml_file_path, 'r') as file:
             self.kwargs = yaml.safe_load(file)
@@ -37,7 +37,7 @@ class YogiModelRunner:
                 setattr(self, sub_key, value)
 
         #TODO remove this line when running on SLURM
-        # os.remove(self.yaml_file_path)
+        os.remove(self.yaml_file_path)
 
         self.wandb_logger = wandb.init(
             entity = WANDB_ENTITY, 
@@ -110,8 +110,7 @@ class YogiModelRunner:
 
         logger.info("Lazy loading dataset for downstream parallel filtering...")
 
-        #TODO remove nrows 
-        data = pl.scan_csv(file[0], separator='\t', n_rows=10000)
+        data = pl.scan_csv(file[0], separator='\t')
 
         if self.read_count_quantile is not None: 
 
@@ -384,6 +383,8 @@ class YogiModelRunner:
             fig.supxlabel('Actual', fontsize=28)
             fig.supylabel('Predicted', fontsize=28, x=-0.02)
 
+            plt.tight_layout()
+
             self.wandb_logger.log({"actual_vs_predicted_2d_hist": wandb.Image(fig)})
 
             #########################################################
@@ -426,7 +427,8 @@ class YogiModelRunner:
             fig.suptitle("PSI Distributions for Actual and Predicted", fontsize = 28, y=1.02)
             fig.supxlabel('PSI Values', fontsize=20)
             fig.supylabel('Percentage', fontsize=20, x=-0.02)
-
+        
+            plt.tight_layout()
             self.wandb_logger.log({"distribution_comparison": wandb.Image(fig)})
 
             #########################################################################
@@ -464,6 +466,7 @@ class YogiModelRunner:
             fig.supxlabel('Difference (Actual - Predicted)', fontsize=18)
             fig.supylabel('Percent', fontsize=18, x=-0.02)
 
+            plt.tight_layout()
             self.wandb_logger.log({"actual_minus_predicted_hist": wandb.Image(fig)})
 
         logger.success("Plotted predicted vs actual values")
