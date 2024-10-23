@@ -1780,7 +1780,16 @@ class CellLineCompareTool:
         
         plt.figure(dpi=200, figsize=(4,4))
 
-        plt.scatter(chi_square_comparison_df["K562_Rank"], chi_square_comparison_df["HepG2_Rank"], s=2)
+        significant_both = (self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & (self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
+        significant_k562_only = (self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & ~(self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
+        significant_hepg2_only = ~(self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & (self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
+        not_significant = ~(self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & ~(self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
+
+        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_both], chi_square_comparison_df["HepG2_Rank"][significant_both], s=2, color='red', label='Significant in Both')
+        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_k562_only], chi_square_comparison_df["HepG2_Rank"][significant_k562_only], s=2, color='blue', label='Significant in K562 Only')
+        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_hepg2_only], chi_square_comparison_df["HepG2_Rank"][significant_hepg2_only], s=2, color='green', label='Significant in HepG2 Only')
+        plt.scatter(chi_square_comparison_df["K562_Rank"][not_significant], chi_square_comparison_df["HepG2_Rank"][not_significant], s=2, color='gray', label='Not Significant')
+
         plt.plot([0, max(chi_square_comparison_df["K562_Rank"])], [0, max(chi_square_comparison_df["HepG2_Rank"])], color='red', linestyle='--')
 
         plt.title(f"K562 vs HepG2: Chi-Square Rank Comparison\nRank '1' is the highest statistic", fontsize=10)
@@ -1791,17 +1800,18 @@ class CellLineCompareTool:
         plt.ylim(0, max(chi_square_comparison_df["HepG2_Rank"]) + 10)
 
         num_dots = len(common_features)
-        correlation_value = chi_square_comparison_df["K562_Rank"].corr(chi_square_comparison_df["HepG2_Rank"])
+        correlation_value = chi_square_comparison_df["K562_Rank"].corr(chi_square_comparison_df["HepG2_Rank"], method='spearman')
 
         plt.text(
             0.15, 0.92,
-            f"# Points: {num_dots}\nCorr: {correlation_value:.2f}",
+            f"# Points: {num_dots}\nSpearman: {correlation_value:.2f}",
             horizontalalignment='center',
             verticalalignment='center',
             transform=plt.gca().transAxes,
             fontsize=10,
         )
 
+        plt.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
         plt.tight_layout()
         plt.show()
 
