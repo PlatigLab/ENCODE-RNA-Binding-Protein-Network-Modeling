@@ -1296,26 +1296,40 @@ class AyanXgbdtAnalyzer:
 
         assert len(global_shap_rank) == len(chi_square_rank), logger.error("Lengths of Global SHAP and Chi-Square ranks do not match")
 
-        plt.figure(dpi=150, figsize=(5,5))
+        plt.figure(dpi=150, figsize=(8,5))
 
-        plt.scatter(x=chi_square_rank, y=global_shap_rank, s=1)
-        plt.plot([0, max(chi_square_rank)], [0, max(global_shap_rank)], color='red', linestyle='--')
+        significant = chi_square_results_filtered["FDR P-Val"] < 0.05
+        not_significant = ~significant
 
-        plt.title(f"{self.cell_line}: Chi Square vs Global SHAP Rank\n\nNOTE: tied values are given average rank value\nRank '1' means highest\nFeatures without Chi-Square Statistics not included", fontsize=10)
+        plt.scatter(x=chi_square_rank[significant], y=global_shap_rank[significant], s=5, color='red', label='Significant\n(FDR < 0.05)')
+        plt.scatter(x=chi_square_rank[not_significant], y=global_shap_rank[not_significant], s=5, color='blue', label='Not Significant')
+
+        plt.plot([0, max(chi_square_rank)], [0, max(global_shap_rank)], color='green', linestyle='--', label='y=x')
+
+        plt.title(f"{self.cell_line}: Chi Square Rank vs Global SHAP Rank\n\nNOTE: tied values are given average rank value\nRank '1' means highest\nFeatures without Chi-Square Statistics not included", fontsize=12)
         plt.xlabel("Rank of Chi-Square Statistic", fontsize=10)
         plt.ylabel("Rank of Global SHAP", fontsize=10)
+        # Create custom legend handles with larger markers
+        legend_handles = [
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Significant\n(FDR < 0.05)'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=10, label='Not Significant'),
+            plt.Line2D([0], [0], color='green', linestyle='--', label='y=x')
+        ]
+
+        plt.legend(handles=legend_handles, title = "Chi-Square Significance", fontsize=10, loc='upper left', bbox_to_anchor=(1, 1))
+
 
         plt.xlim(0, max(chi_square_rank)+10)
         plt.ylim(0, max(global_shap_rank)+10)
 
         # Calculate the number of dots and the correlation value
         num_dots = len(global_shap_rank)
-        correlation_value = global_shap_rank.corr(chi_square_rank)
+        correlation_value = global_shap_rank.corr(chi_square_rank, method='spearman')
 
         # Add the text to the plot
         plt.text(
             0.5, .9, 
-            f"# Points: {num_dots},   Corr: {correlation_value:.2f}", 
+            f"# Points: {num_dots},   Spearman: {correlation_value:.2f}", 
             horizontalalignment='center', 
             verticalalignment='center', 
             transform=plt.gca().transAxes, 
