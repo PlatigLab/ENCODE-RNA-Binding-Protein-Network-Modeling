@@ -1,23 +1,23 @@
 dataset: 
-        cell_lines: 
+        cell_line: 
             [K562, HepG2]
 
-        distances: 
+        distance: 
             [50, 100, 150, 200, 250, 500]
 
         control_only: 
             [False, True]
 
-        psi_subsets: 
+        psi_subset: 
             [null, [0, 1], [0.1, 0.9]]
 
-        read_count_quantiles: 
+        read_count_quantile: 
             [null, 0.1, 0.2, 0.4,]
 
-        data_flavors: 
+        data_flavor: 
             [binary, num_peaks, rbp_exp, rbp_exp_peak]
 
-        count_normalization_methods: 
+        count_normalization_method: 
             [getmm, tmm]
 
         log_counts: 
@@ -25,16 +25,9 @@ dataset:
 
 
 modeling:
-        models: [OLSRegression, ElasticNetContinuous, OLSOrdinalRegression, ElasticNetOrdinal, OrdinalGBT]
-        random_states: [17, 97]
-        ordinal_regression_method: [logit, probit]
+        model: [OLSRegression, ElasticNetContinuous, OLSOrdinalRegression, ElasticNetOrdinal, OrdinalGBT]
+        random_state: [17, 97]
         data_splitting_method: "gene"
         train_split: 0.7
         test_split: 0.15
         validate_split: 0.15
-        alpha: [0.001, 0.01, 0.1, 1, 10]
-        l1_ratio: [0, 0.2, 0.4, 0.6, 0.8, 1]
-
-
-SLURM:
-        plots_folder: "../output/plots/"
