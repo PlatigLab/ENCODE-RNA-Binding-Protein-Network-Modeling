@@ -1776,7 +1776,37 @@ class AyanXgbdtAnalyzer:
             plt.suptitle(f"{clip_str}\n\n{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=16, y=1.05)
             plt.tight_layout()
             plt.show()
+    def retrieve_linear_model_results(self): 
 
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        if pathlib.Path(f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather").exists():
+            
+            logger.info(f"FROM CACHE: retrieving linear model predictions for {self.cell_line} {self.distance_threshold}.")
+            return pl.scan_ipc(f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather").collect(streaming=True)
+
+        else: 
+            logger.info("Running linear regression with the exact samples used in train, test, and validate for Ayan's XGBoost model.")
+            training_data = self.shap_data.filter(pl.col("Data Partition") == "train").drop(self.shap_columns)
+
+            X_train = training_data.select(self.binding_columns).to_numpy()
+            y_train = training_data["target"].to_numpy()
+
+            model = LinearRegression(n_jobs=self.get_number_SLURM_CPUs())
+            model.fit(X_train, y_train)
+
+            evaluation_data = self.shap_data.filter(pl.col("Data Partition").is_in(["validate", "test"])).drop(self.shap_columns)
+            X_test = evaluation_data.select(self.binding_columns).to_numpy()
+
+            predictions = model.predict(X_test)
+            evaluation_data = evaluation_data.with_columns(pl.Series(name="psi_hat", values=predictions))
+
+            self._cache_to_featherv2(evaluation_data, f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather")
+
+            logger.success("Linear model predictions calculated to compare with XGBoost results.")
+            return evaluation_data
+        
 
 ############################################################################################################
 ################################################# NEW CLASS ################################################
