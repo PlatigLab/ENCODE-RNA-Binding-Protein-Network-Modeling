@@ -9,6 +9,7 @@ from loguru import logger
 from matplotlib.patches import Patch
 from statsmodels.stats.multitest import multipletests
 from sklearn.metrics import r2_score
+from sklearn.linear_model import LinearRegression
 
 import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys
 
@@ -1706,35 +1707,25 @@ class AyanXgbdtAnalyzer:
 
         return pl.concat(results, how="vertical").unique()
 
+
     #TODO get Ayan to give predictions for testing set for linear models
     def compare_rbp_ppi_performance_xgboost_vs_linear_model(self): 
         logger.info("Comparing RBP PPI performance between XGBoost and Linear Models.")
-        LINEAR_MODEL_PATH = "/project/PlatigLab/data/collaborators/BWH/4_linear_models_2024_10/linear-models-100-a0c52cae/"
-
+        
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
-        #TODO remove later once Ayan provides predictions for testing set
-        shap_data = self.shap_data.filter(pl.col("Data Partition") == "validate")
+        test_validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition").is_in(["validate", "test"]))
+        test_validate_lm_predictions = self.retrieve_linear_model_results()
 
-        linear_model_files = glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}*-data.dat")
+        assert test_validate_lm_predictions.shape[0] == test_validate_xgboost_predictions.shape[0]
+        logger.info(f"{test_validate_lm_predictions.shape[0]} examples used to evaluate each model")
 
-        assert len(linear_model_files) >=1
-        logger.info(f"Number of linear model files found: {len(linear_model_files)}")
+        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=test_validate_lm_predictions).select("target", "psi_hat")
+        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=test_validate_xgboost_predictions).select("target", "psi_hat")
 
-        linear_model_data = pl.scan_csv(linear_model_files, separator=",").collect(streaming=True)
-
-        logger.info(f"Number of rows in linear model data: {linear_model_data.shape[0]}")
-        logger.info(f"Number of rows in SHAP data: {shap_data.shape[0]}")
-
-        logger.info(f"Linear model data 'psi_hat' min value: {linear_model_data['psi_hat'].min()}")
-        logger.info(f"Linear model data 'psi_hat' max value: {linear_model_data['psi_hat'].max()}")
-
-        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=linear_model_data).select("target", "psi_hat")
-        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=shap_data).select("target", "psi_hat")
-
-        logger.info(f"Number of rows in linear model PPI predictions: {linear_model_ppi_predictions.shape[0]}")
-        logger.info(f"Number of rows in XGBoost model PPI predictions: {xgboost_model_ppi_predictions.shape[0]}")
+        assert linear_model_ppi_predictions.shape[0] == xgboost_model_ppi_predictions.shape[0]
+        logger.info(f"{linear_model_ppi_predictions.shape[0]} examples with at least 1 RBP PPI.")
 
         # Assert no null or missing values in target or psi_hat columns
         for df, col in [(linear_model_ppi_predictions, "target"), 
@@ -1758,14 +1749,12 @@ class AyanXgbdtAnalyzer:
                 ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
 
                 ax.set_title(f"{model_type}")
-                ax.set_xlabel("Actual Prediction")
-                ax.set_ylabel("Model Prediction")
 
                 # Calculate R^2 value
                 r_squared = r2_score(actual, predicted)
 
                 # Add text for number of examples and R^2 value
-                ax.text(0.05, 0.95, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.3f}", transform=ax.transAxes, 
+                ax.text(0.25 ,0.90, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.3f}", transform=ax.transAxes, 
                 verticalalignment='top', fontsize=12,) #bbox=dict(facecolor='white', alpha=0.8))
 
             if clipping_method == "clip":
@@ -1773,9 +1762,14 @@ class AyanXgbdtAnalyzer:
             elif clipping_method is None:
                 clip_str = "NOTE: Linear Model predictions are as is | (i.e. Pred. PSI can be > 1 or < 0)"
             
-            plt.suptitle(f"{clip_str}\n\n{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=16, y=1.05)
+            plt.suptitle(f"{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples\n\n{clip_str}\nNOTE 2: Test & Validate from XGBoost samples were input to linear model for predictions", fontsize=16, y=1.05)
+            fig.supxlabel("Actual Prediction")
+            fig.supylabel("Model Prediction")
+
             plt.tight_layout()
             plt.show()
+
+
     def retrieve_linear_model_results(self): 
 
         if not hasattr(self, 'shap_data'):
