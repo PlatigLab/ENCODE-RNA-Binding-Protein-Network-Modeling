@@ -572,31 +572,31 @@ class AyanXgbdtAnalyzer:
         return pd.DataFrame.from_dict(heatmap_df, orient="columns").sort_index(axis=0).sort_index(axis=1)
     
 
-    def plot_feature_chi_square_statistics(self, column=None): 
+    def get_partition_monotonicity(self, df=None, metric=None):
 
-        heatmap_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results,column=column)
+        partitions = self.partition_dataframe_by_PSI(df=df, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
 
-        plt.figure(dpi=200,figsize=(30,10))
-        
-        _=plt.hist(heatmap_df.to_numpy().flatten(), bins=200)
+        if metric == "binding":
+            monotonicity_results = {}
 
-        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Histogram", pad=10, fontsize=30)
-        plt.xlabel("Chi-Square Statistic", fontsize=20)
-        plt.ylabel("Frequency", fontsize=20)
-        plt.show()
+            for col in self.binding_columns:
+                percentages = []
+                
+                for partition_key, partition_df in partitions.items():
+                    percentage = (partition_df[col].sum() / partition_df.shape[0]) * 100
+                    percentages.append(percentage)
 
-        plt.figure(dpi=200, figsize=(50,10))
+                if all(x <= y for x, y in zip(percentages, percentages[1:])):
+                    monotonicity_results[col] = "Increasing"
+                elif all(x >= y for x, y in zip(percentages, percentages[1:])):
+                    monotonicity_results[col] = "Decreasing"
+                else:
+                    monotonicity_results[col] = "Non-Monotonic"
 
-        mask = heatmap_df.isnull()
-        cmap = sns.color_palette("Blues", as_cmap=True)
-        cmap.set_bad("salmon")
+            monotonicity_results = pd.DataFrame.from_dict(monotonicity_results, orient="index", columns=["Monotonicity"]).reset_index().rename(columns={"index": "Feature"})
+            return self.convert_features_to_rbp_position_matrix(df= monotonicity_results, column="Monotonicity")
 
-        if column=="Statistic": 
-            vmax = 10000
-        else: 
-            vmax = None
 
-        sns.heatmap(heatmap_df, cmap=cmap, mask=mask, vmax=vmax)
 
         plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Heatmap (Capped at {vmax})", pad=40, fontsize=40)
         plt.show()
