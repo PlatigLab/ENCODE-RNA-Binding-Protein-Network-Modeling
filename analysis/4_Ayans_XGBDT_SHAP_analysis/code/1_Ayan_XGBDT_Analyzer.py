@@ -863,12 +863,12 @@ class AyanXgbdtAnalyzer:
         # Plot histograms for each unique sequence
         for i, sequence in enumerate(unique_sequences):
             subset = tmp_df.filter(pl.col("sequence") == sequence)
-            _=axs[i].hist(subset["psi"], bins=100)
+            _=axs[i].hist(subset["psi"], bins=100, density=True)
             _=axs[i].set_title(f'{sequence}')
 
         fig.suptitle(f"{self.cell_line}: PSI Histograms by Chromosome", fontsize=40)
         fig.supxlabel("PSI", fontsize=30)
-        fig.supylabel("Frequency", fontsize=30, x=-0.02)
+        fig.supylabel("Density (Percentage)", fontsize=30, x=-0.02)
         
         plt.tight_layout()
         plt.show()
