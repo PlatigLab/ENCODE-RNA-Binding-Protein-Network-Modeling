@@ -609,7 +609,9 @@ class AyanXgbdtAnalyzer:
                     percentage = global_shap_values[partition_key][col]
                     percentages.append(percentage)
 
-                if all(x <= y for x, y in zip(percentages, percentages[1:])):
+                if all(value == 0.0 for value in percentages):
+                    monotonicity_results[col] = "Zero"
+                elif all(x <= y for x, y in zip(percentages, percentages[1:])):
                     monotonicity_results[col] = "Increasing"
                 elif all(x >= y for x, y in zip(percentages, percentages[1:])):
                     monotonicity_results[col] = "Decreasing"
@@ -1293,40 +1295,55 @@ class AyanXgbdtAnalyzer:
             self.load_SHAP_data()
 
         partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
-        global_shap_matrices = {key: self.get_global_SHAP_matrix(df=partitions[key]) for key in partitions}
+        
+        monotonic_df = self.get_partition_monotonicity(df=self.shap_data, metric="Global SHAP")
+        
+        # Define the mapping from string values to integers
+        monotonicity_mapping = {
+            "Increasing": 1,
+            "Decreasing": -1,
+            "Non-Monotonic": 0,
+            "Zero": 2
+        }
 
-        #TODO remove this code after creating monotonic function
-        monotonic_df = global_shap_matrices[f"PSI < {self.psi_partition_thresholds[0]}"].copy()
+        # Apply the mapping to the DataFrame
+        monotonic_df_mapped = monotonic_df.replace(monotonicity_mapping)
 
-        for key in monotonic_df.columns:
-            for idx in monotonic_df.index:
-                low = global_shap_matrices[f"PSI < {self.psi_partition_thresholds[0]}"].loc[idx, key]
-                mid = global_shap_matrices[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"].loc[idx, key]
-                high = global_shap_matrices[f"PSI > {self.psi_partition_thresholds[1]}"].loc[idx, key]
+        linkage_method = "ward"
+        linkage_matrix = linkage(monotonic_df_mapped.T, method=linkage_method)
 
-                if low < mid < high:
-                    monotonic_df.loc[idx, key] = 1
-                elif low > mid > high:
-                    monotonic_df.loc[idx, key] = -1
-                else:
-                    monotonic_df.loc[idx, key] = 0
+        ordered_columns = monotonic_df_mapped.columns[leaves_list(linkage_matrix)]
+        clustered_monotonic_df_mapped = monotonic_df_mapped[ordered_columns]
 
-        plt.figure(dpi=200, figsize=(30, 5))
+        # Define the color map
+        cmap = {
+            1: "red",        # Increasing
+            -1: "blue",      # Decreasing
+            0: "purple",     # Non-Monotonic
+            2: "white"       # Zero
+        }
 
-        sns.heatmap(monotonic_df.astype(int), cmap="coolwarm", center=0, cbar_kws={"pad": 0.01})
+        # Create a custom color palette
+        custom_palette = sns.color_palette([cmap[i] for i in sorted(cmap.keys())])
 
-        plt.title(f"{self.cell_line}: Monotonocity of Global SHAP over PSI Partitions\nDO NOT confuse Global SHAP with local SHAP", fontsize=40, pad=20)
-        plt.xlabel("RBP")
-        plt.ylabel("Position")
+        for df, title_suffix in [(monotonic_df_mapped, ""), (clustered_monotonic_df_mapped, f"\n(Hierarchically Clustered w/ {linkage_method.capitalize()} Method)")]:
+            plt.figure(dpi=200, figsize=(30, 6))
 
-        legend_elements = [
-            Patch(facecolor='red', edgecolor='r', label='Decreasing', linewidth=2),
-            Patch(facecolor='white', edgecolor='k', label='Non-Monotonic', linewidth=2),
-            Patch(facecolor='blue', edgecolor='b', label='Increasing', linewidth=2)
-        ]
-        plt.legend(handles=legend_elements, title="Monotonicity", bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=30, title_fontsize=30)
+            sns.heatmap(df, cmap=custom_palette, cbar=False, linewidths=.5, linecolor='black')
 
-        plt.show()
+            plt.title(f"{self.cell_line}: Monotonicity of Global SHAP over PSI Partitions{title_suffix}", fontsize=45, pad=40)
+            plt.xlabel("RBP", fontsize=35)
+            plt.ylabel("Position", fontsize=35)
+
+            legend_elements = [
+                Patch(facecolor='red', edgecolor='black', label='Increasing', linewidth=2),
+                Patch(facecolor='blue', edgecolor='black', label='Decreasing', linewidth=2),
+                Patch(facecolor='purple', edgecolor='black', label='Non-Monotonic', linewidth=2),
+                Patch(facecolor='white', edgecolor='black', label='Zero', linewidth=2)
+            ]
+            plt.legend(handles=legend_elements, title="Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=25, title_fontsize=25)
+
+            plt.show()
 
 
         # Number of features to plot 
