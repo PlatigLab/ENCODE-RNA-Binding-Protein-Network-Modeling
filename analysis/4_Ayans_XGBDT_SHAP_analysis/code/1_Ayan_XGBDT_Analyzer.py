@@ -575,16 +575,37 @@ class AyanXgbdtAnalyzer:
 
     def get_partition_monotonicity(self, df=None, metric=None):
 
-        partitions = self.partition_dataframe_by_PSI(df=df, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
+        monotonicity_results = {}
 
         if metric == "binding":
-            monotonicity_results = {}
+            partitions = self.partition_dataframe_by_PSI(df=df, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
 
             for col in self.binding_columns:
                 percentages = []
                 
                 for partition_key, partition_df in partitions.items():
                     percentage = (partition_df[col].sum() / partition_df.shape[0]) * 100
+                    percentages.append(percentage)
+
+                if all(x <= y for x, y in zip(percentages, percentages[1:])):
+                    monotonicity_results[col] = "Increasing"
+                elif all(x >= y for x, y in zip(percentages, percentages[1:])):
+                    monotonicity_results[col] = "Decreasing"
+                else:
+                    monotonicity_results[col] = "Non-Monotonic"
+
+            monotonicity_results = pd.DataFrame.from_dict(monotonicity_results, orient="index", columns=["Monotonicity"]).reset_index().rename(columns={"index": "Feature"})
+            return self.convert_features_to_rbp_position_matrix(df= monotonicity_results, column="Monotonicity")
+        
+        elif metric == "Global SHAP": 
+            partitions = self.partition_dataframe_by_PSI(df=df, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
+            global_shap_values = {key: self.get_global_SHAP(df=partitions[key]).to_pandas().iloc[0].to_dict() for key in partitions}
+
+            for col in self.shap_columns:
+                percentages = []
+                
+                for partition_key in partitions.keys():
+                    percentage = global_shap_values[partition_key][col]
                     percentages.append(percentage)
 
                 if all(x <= y for x, y in zip(percentages, percentages[1:])):
