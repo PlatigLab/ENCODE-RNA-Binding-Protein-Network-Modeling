@@ -726,7 +726,7 @@ class AyanXgbdtAnalyzer:
         handles = [Patch(facecolor=color, label=label, edgecolor="black") for label, color in zip(category_colors.keys(), category_colors.values())]
         plt.legend(handles=handles, title="Significance; Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, fancybox=True, edgecolor='black')
 
-        plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity\nNOTE: RBPs clustered with {linkage_method} method", fontsize=50, pad=40,)
+        plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity\nNOTE: RBPs clustered with {linkage_method.capitalize()} method", fontsize=50, pad=40,)
         plt.xlabel("RBPs", fontsize=40)
         plt.ylabel("Position", fontsize=40, labelpad=10)
 
