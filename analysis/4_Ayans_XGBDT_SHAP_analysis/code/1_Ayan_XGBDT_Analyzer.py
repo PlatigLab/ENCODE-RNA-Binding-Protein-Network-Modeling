@@ -461,7 +461,7 @@ class AyanXgbdtAnalyzer:
                 )
         
         plot_df = pd.DataFrame(plot_df, columns=["Feature", "PSI Threshold", "Percent Bound", "Position"])    
-
+        plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ {self.get_rbp_and_position(x)[1]}")
 
         plt.figure(dpi=200, figsize=(15, 5))
 
@@ -503,12 +503,8 @@ class AyanXgbdtAnalyzer:
 
         # Join plot_df with chi square results to get the "Statistic" column
         plot_df = plot_df.merge(self.feature_chi_square_results[["Feature", "Statistic"]], on="Feature")
-
         # Calculate the difference between the first and last value for each feature
         plot_df["PSI Threshold Rank"] = plot_df["PSI Threshold"].map({"PSI < 0.1": 0, "PSI >= 0.1 & <= 0.9": 1, "PSI > 0.9": 2})
-        feature_diffs = plot_df.sort_values(by="PSI Threshold Rank").groupby("Feature")["Percent Bound"].agg(lambda x: x.iloc[-1] - x.iloc[0])
-
-        top_feature_number = 15
 
         # Sort the features by chi-square statistic in descending order
         sorted_features = plot_df.sort_values(by="Statistic", ascending=False)
@@ -516,16 +512,22 @@ class AyanXgbdtAnalyzer:
         increasing_features = pd.DataFrame(columns=["Feature"])
         decreasing_features = pd.DataFrame(columns=["Feature"])
 
-        for _, row in sorted_features.iterrows():
-            feature = row["Feature"]
+        top_feature_number = 15
 
-            if feature_diffs[feature] > 0 and increasing_features["Feature"].nunique() < top_feature_number:
-                increasing_features = pd.concat([increasing_features, row.to_frame().T])
+        for feature in sorted_features["Feature"].unique():
+            feature_data = plot_df[plot_df["Feature"] == feature].sort_values(by="PSI Threshold Rank")
+            percent_bound_values = feature_data["Percent Bound"].values
 
-            elif feature_diffs[feature] < 0 and decreasing_features["Feature"].nunique() < top_feature_number:
-                decreasing_features = pd.concat([decreasing_features, row.to_frame().T])
+            if all(value ==0 for value in percent_bound_values):
+                continue
             
-            if increasing_features["Feature"].nunique() >= top_feature_number and decreasing_features["Feature"].nunique() >= top_feature_number:
+            elif all(x <= y for x, y in zip(percent_bound_values, percent_bound_values[1:])) and increasing_features["Feature"].nunique() < top_feature_number:
+                increasing_features = pd.concat([increasing_features, feature_data])
+
+            elif all(x >= y for x, y in zip(percent_bound_values, percent_bound_values[1:])) and decreasing_features["Feature"].nunique() < top_feature_number:
+                decreasing_features = pd.concat([decreasing_features, feature_data])
+
+            if increasing_features["Feature"].nunique() == top_feature_number and decreasing_features["Feature"].nunique() == top_feature_number:
                 break
     
         increasing_features = increasing_features.sort_values(by=["Feature", "PSI Threshold Rank"])
@@ -538,23 +540,22 @@ class AyanXgbdtAnalyzer:
                 data=features, 
                 x="PSI Threshold", 
                 y="Percent Bound", 
-                hue="Feature", 
-                style="Feature",  # Different symbols for each line
+                hue="RBP & Position", 
+                style="RBP & Position",  # Different symbols for each line
                 markers=True,     # Enable markers
                 markersize=10,    # Increase marker size
                 dashes=False,     # Disable dashes for solid lines
                 palette="colorblind"  # Use color-blind friendly palette
             )
 
-            plt.title(f"{self.cell_line}: Top {top_feature_number} Most Significant Features with {title} Percent Bound", fontsize=20)
+            plt.title(f"{self.cell_line}: Top {top_feature_number} Most Significant Features w/ Monotonically {title} Percent Bound", fontsize=20, pad=20)
             plt.xlabel("PSI Threshold", fontsize=15)
             plt.ylabel("Percent Bound", fontsize=15)
-            plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+            plt.legend(title="RBP @ Position", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1), title_fontsize = 16)
 
             plt.tight_layout()
             plt.show()
         
-        self.feature_diffs = feature_diffs
         return plot_df.sort_values(by="Statistic", ascending=False), increasing_features.sort_values(by="Statistic", ascending=False), decreasing_features.sort_values(by="Statistic", ascending=False)
 
 
