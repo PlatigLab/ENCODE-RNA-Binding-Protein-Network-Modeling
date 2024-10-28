@@ -10,6 +10,7 @@ from matplotlib.patches import Patch
 from statsmodels.stats.multitest import multipletests
 from sklearn.metrics import r2_score
 from sklearn.linear_model import LinearRegression
+from scipy.cluster.hierarchy import linkage, leaves_list
 
 import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys
 
@@ -617,11 +618,11 @@ class AyanXgbdtAnalyzer:
         max_value = p_val_df.replace([np.inf, -np.inf], np.nan).max().max()
         p_val_df = p_val_df.replace([np.inf, -np.inf], max_value)
 
-        plt.figure(dpi=200, figsize=(50,10))
-
         mask = p_val_df.isnull()
         cmap = sns.color_palette("Blues", as_cmap=True)
         cmap.set_bad("white")
+
+        plt.figure(dpi=200, figsize=(50,10))
 
         sns.heatmap(p_val_df, cmap=cmap, mask=mask, cbar_kws={"label": "-log10(FDR P-Val)"})
 
@@ -638,7 +639,78 @@ class AyanXgbdtAnalyzer:
         plt.title(f"{self.cell_line} CTRL ONLY: Binary Significance Heatmap (FDR P-Val < 0.05)", pad=40, fontsize=40)
         plt.show()
 
-        return heatmap_df
+        binding_monotonicity = self.get_partition_monotonicity(df = self.ctrl_only_binding_data, metric="binding")
+
+        combined_df = pd.DataFrame(index=binding_monotonicity.index, columns=binding_monotonicity.columns)
+
+        for col in combined_df.columns:
+            for idx in combined_df.index:
+
+                if binary_significance_df.loc[idx, col] == 1:
+                    if binding_monotonicity.loc[idx, col] == "Increasing":
+                        combined_df.loc[idx, col] = "Significant; Increasing"
+                    elif binding_monotonicity.loc[idx, col] == "Decreasing":
+                        combined_df.loc[idx, col] = "Significant; Decreasing"
+                    elif binding_monotonicity.loc[idx, col] == "Non-Monotonic":
+                        combined_df.loc[idx, col] = "Significant; Non-Monotonic"
+                else:
+                    combined_df.loc[idx, col] = "Not Significant"
+
+        # Assert no null or missing values in combined_df
+        assert not combined_df.isnull().any().any()
+
+        # Create a color map for the categories
+        category_colors = {
+            "Significant; Increasing": "red",
+            "Significant; Decreasing": "blue",
+            "Significant; Non-Monotonic": "purple",
+            "Not Significant": "white"
+        }
+
+        # Create a DataFrame with encoded values
+        encoded_df = combined_df.map(lambda x: list(category_colors.keys()).index(x))
+        # Create a custom color palette
+        custom_palette = sns.color_palette([category_colors[key] for key in category_colors.keys()])
+
+        # Plot the heatmap with encoded values
+        plt.figure(dpi=200, figsize=(45,8))
+
+        sns.heatmap(encoded_df, cmap=custom_palette, cbar=False, linewidths=.5, linecolor='black')
+
+        # Add a legend
+        handles = [Patch(facecolor=color, label=label, edgecolor="black") for label, color in category_colors.items()]
+        plt.legend(handles=handles, title="Significance; Partition Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, shadow=True, fancybox=True, edgecolor='black')
+
+        plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity", fontsize=60, pad=20)
+        plt.xlabel("RBPs", fontsize=40)
+        plt.ylabel("Position", fontsize=40, labelpad=10)
+
+        plt.show()
+
+        linkage_method = "ward"
+        # Perform hierarchical clustering on the columns (RBPs)
+        linkage_matrix = linkage(encoded_df.T, method=linkage_method)
+        ordered_columns = encoded_df.columns[leaves_list(linkage_matrix)]
+
+        # Reorder the DataFrame columns based on the clustering
+        encoded_df = encoded_df[ordered_columns]
+
+        # Plot the heatmap with encoded values
+        plt.figure(dpi=200, figsize=(45,8))
+
+        sns.heatmap(encoded_df, cmap=custom_palette, cbar=False, linewidths=.5, linecolor='black')
+
+        # Add a legend
+        handles = [Patch(facecolor=color, label=label, edgecolor="black") for label, color in zip(category_colors.keys(), category_colors.values())]
+        plt.legend(handles=handles, title="Significance; Partition Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, fancybox=True, edgecolor='black')
+
+        plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity\nNOTE: RBPs clustered with {linkage_method} method", fontsize=50, pad=40,)
+        plt.xlabel("RBPs", fontsize=40)
+        plt.ylabel("Position", fontsize=40, labelpad=10)
+
+        plt.show()
+
+        return combined_df
 
 
     def delete_binding_data(self): 
@@ -1201,6 +1273,7 @@ class AyanXgbdtAnalyzer:
         partitions = self.partition_dataframe_by_PSI(df=self.shap_data, column_name="target", psi_cutoffs=self.psi_partition_thresholds)
         global_shap_matrices = {key: self.get_global_SHAP_matrix(df=partitions[key]) for key in partitions}
 
+        #TODO remove this code after creating monotonic function
         monotonic_df = global_shap_matrices[f"PSI < {self.psi_partition_thresholds[0]}"].copy()
 
         for key in monotonic_df.columns:
@@ -1759,6 +1832,8 @@ class AyanXgbdtAnalyzer:
                 ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
 
                 ax.set_title(f"{model_type}")
+                ax.set_xlabel("Actual Prediction")
+                ax.set_ylabel("Model Prediction")
 
                 # Calculate R^2 value
                 r_squared = r2_score(actual, predicted)
@@ -1772,10 +1847,7 @@ class AyanXgbdtAnalyzer:
             elif clipping_method is None:
                 clip_str = "NOTE: Linear Model predictions are as is | (i.e. Pred. PSI can be > 1 or < 0)"
             
-            plt.suptitle(f"{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples\n\n{clip_str}\nNOTE 2: Test & Validate from XGBoost samples were input to linear model for predictions", fontsize=16, y=1.05)
-            fig.supxlabel("Actual Prediction")
-            fig.supylabel("Model Prediction")
-
+            plt.suptitle(f"{clip_str}\n\n{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=16, y=1.05)
             plt.tight_layout()
             plt.show()
 
