@@ -676,7 +676,7 @@ class AyanXgbdtAnalyzer:
                     elif binding_monotonicity.loc[idx, col] == "Non-Monotonic":
                         combined_df.loc[idx, col] = "Significant; Non-Monotonic"
                 else:
-                    combined_df.loc[idx, col] = "Not Significant"
+                    combined_df.loc[idx, col] = "Not Significant/Null"
 
         # Assert no null or missing values in combined_df
         assert not combined_df.isnull().any().any()
@@ -686,7 +686,7 @@ class AyanXgbdtAnalyzer:
             "Significant; Increasing": "red",
             "Significant; Decreasing": "blue",
             "Significant; Non-Monotonic": "purple",
-            "Not Significant": "white"
+            "Not Significant/Null": "white"
         }
 
         # Create a DataFrame with encoded values
@@ -701,7 +701,7 @@ class AyanXgbdtAnalyzer:
 
         # Add a legend
         handles = [Patch(facecolor=color, label=label, edgecolor="black") for label, color in category_colors.items()]
-        plt.legend(handles=handles, title="Significance; Partition Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, shadow=True, fancybox=True, edgecolor='black')
+        plt.legend(handles=handles, title="Significance; Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, shadow=True, fancybox=True, edgecolor='black')
 
         plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity", fontsize=60, pad=20)
         plt.xlabel("RBPs", fontsize=40)
@@ -724,7 +724,7 @@ class AyanXgbdtAnalyzer:
 
         # Add a legend
         handles = [Patch(facecolor=color, label=label, edgecolor="black") for label, color in zip(category_colors.keys(), category_colors.values())]
-        plt.legend(handles=handles, title="Significance; Partition Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, fancybox=True, edgecolor='black')
+        plt.legend(handles=handles, title="Significance; Monotonicity", bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=30, title_fontsize=30, fancybox=True, edgecolor='black')
 
         plt.title(f"{self.cell_line}: Chi-Square Significance & Bound Proportion Monotonicity\nNOTE: RBPs clustered with {linkage_method} method", fontsize=50, pad=40,)
         plt.xlabel("RBPs", fontsize=40)
