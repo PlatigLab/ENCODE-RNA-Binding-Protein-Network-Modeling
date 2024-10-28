@@ -597,8 +597,18 @@ class AyanXgbdtAnalyzer:
             return self.convert_features_to_rbp_position_matrix(df= monotonicity_results, column="Monotonicity")
 
 
+    def plot_feature_chi_square_statistics(self,): 
 
-        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square {column} Heatmap (Capped at {vmax})", pad=40, fontsize=40)
+        statistic_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results,column="Statistic")
+
+        plt.figure(dpi=200,figsize=(30,7))
+        
+        _=plt.hist(statistic_df.to_numpy().flatten(), bins=200)
+
+        plt.title(f"{self.cell_line} CTRL ONLY: Per-Feature Chi-Square Statistic Histogram", pad=10, fontsize=30)
+        plt.xlabel("Chi-Square Statistic", fontsize=20)
+        plt.ylabel("Frequency", fontsize=20)
+
         plt.show()
 
         p_val_df = self.convert_features_to_rbp_position_matrix(df=self.feature_chi_square_results, column="FDR P-Val")
