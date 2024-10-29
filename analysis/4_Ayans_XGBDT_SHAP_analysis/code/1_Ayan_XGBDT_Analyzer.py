@@ -1618,10 +1618,10 @@ class AyanXgbdtAnalyzer:
 
         comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
 
-        comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=True)
-        comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=True)
-        comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=True)
-        comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=True)
+        comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=False)
+        comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=False)
+        comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=False)
+        comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=False)
         
         return comparison_df.drop(columns=drop_columns)
 
