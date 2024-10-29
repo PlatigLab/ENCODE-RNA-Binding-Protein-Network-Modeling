@@ -1345,9 +1345,8 @@ class AyanXgbdtAnalyzer:
 
             plt.show()
 
-
         # Number of features to plot 
-        top_features_number = 15
+        top_features_number = 10
 
         # Identify features with the largest global SHAP value between the first and last partitions
         first_partition_key = f"PSI < {self.psi_partition_thresholds[0]}"
@@ -1378,12 +1377,15 @@ class AyanXgbdtAnalyzer:
                 mid = self.get_global_SHAP(df=(partitions[f"PSI >= {self.psi_partition_thresholds[0]} & <= {self.psi_partition_thresholds[1]}"])).to_pandas().iloc[0].to_dict()[feature]
                 high = last_partition_shap[feature]
                 plot_data.append([feature, "PSI < 0.1", low])
-                plot_data.append([feature, 'PSI >= 0.1 & PSI <=0.9', mid])
+                plot_data.append([feature, 'PSI >= 0.1 & PSI <= 0.9', mid])
                 plot_data.append([feature, 'PSI > 0.9', high])
             return pd.DataFrame(plot_data, columns=['Feature', 'Partition', 'Global SHAP'])
 
         for features, title in [(top_positive_features, "Largest Positive Difference"), (top_negative_features, "Largest Negative Difference")]:
             plot_df = prepare_plot_data(features, partitions, first_partition_shap, last_partition_shap)
+
+            plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ {self.get_rbp_and_position(x)[1]}")
+            plot_df = plot_df.sort_values(by=["Feature", "Partition"], key=lambda col: col if col.name == "Feature" else col.map({"PSI < 0.1": 0, "PSI >= 0.1 & PSI <= 0.9": 1, "PSI > 0.9": 2}))
 
             plt.figure(figsize=(15, 5), dpi=200)
 
@@ -1391,8 +1393,8 @@ class AyanXgbdtAnalyzer:
                 data=plot_df, 
                 x='Partition', 
                 y='Global SHAP', 
-                hue='Feature', 
-                style='Feature',  # Different symbols for each line
+                hue='RBP & Position', 
+                style='RBP & Position',  # Different symbols for each line
                 markers=True,     # Enable markers
                 markersize=10,    # Increase marker size
                 dashes=False,     # Disable dashes for solid lines
@@ -1400,9 +1402,9 @@ class AyanXgbdtAnalyzer:
             )
 
             plt.title(f"{self.cell_line}: Top {top_features_number} Features with {title} in \nGlobal SHAP between First and Last Partitions", fontsize=20)
-            plt.xlabel("Partition", fontsize=15)
-            plt.ylabel("Global SHAP", fontsize=15)
-            plt.legend(title="Feature", fontsize=12, loc='upper left', bbox_to_anchor=(1, 1))
+            plt.xlabel("Partition", fontsize=20)
+            plt.ylabel("Global SHAP", fontsize=20)
+            plt.legend(title="Feature", fontsize=12, title_fontsize=15, loc='upper left', bbox_to_anchor=(1.02, 1))
 
             plt.tight_layout()
             plt.show()
