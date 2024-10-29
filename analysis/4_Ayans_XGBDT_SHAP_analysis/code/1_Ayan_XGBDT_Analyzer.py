@@ -1566,65 +1566,78 @@ class AyanXgbdtAnalyzer:
 
     def compare_kruskal_anova_chi_SHAP(self): 
 
-        # columns that will be duplicated after joining all dataframes and need to be dropped 
-        drop_columns = ["Chi-Square Global SHAP", "ANOVA RBP", "ANOVA Position", "Kruskal-Wallis RBP", "Kruskal-Wallis Position"]
+        output_file = f"../outputs/compare_all_ranks/{self.cell_line}_comparison.tsv"
+
+        if pathlib.Path(output_file).exists():
+            logger.info(f"FROM CACHE: Rank comparisons across metrics/tests for {self.cell_line}")
+            return pd.read_csv(output_file, sep="\t", index_col="Feature")
+
+        else: 
+
+            logger.info(f"Comparing ranks across metrics/tests for {self.cell_line}")
+
+            # columns that will be duplicated after joining all dataframes and need to be dropped 
+            drop_columns = ["Chi-Square Global SHAP", "ANOVA RBP", "ANOVA Position", "Kruskal-Wallis RBP", "Kruskal-Wallis Position"]
+                
+            if not hasattr(self, 'feature_specific_kruskal_wallis'):
+                self.run_parallel_feature_specific_kruskal_wallis()
+
+            if not hasattr(self, 'feature_specific_anova'):
+                self.run_parallel_feature_specific_ANOVA()
+
+            if not hasattr(self, 'feature_chi_square_results'):
+                self.run_parallel_feature_chi_square_tests()
+
+            if not hasattr(self, 'shap_data'):
+                self.load_SHAP_data()
+
+            kruskal_wallis = self.feature_specific_kruskal_wallis.copy()
+            anova = self.feature_specific_anova.copy()
+            chi_square = self.feature_chi_square_results.copy()
+
+            kruskal_wallis = self.correct_pvals(df=kruskal_wallis, column="P-Val")
+            anova = self.correct_pvals(df=anova, column="P-Val")
+
+            kruskal_wallis["Feature"] = kruskal_wallis["Feature"].str.replace("_shap", "")
+            anova["Feature"] = anova["Feature"].str.replace("_shap", "")
+            chi_square["Feature"] = chi_square["Feature"].str.replace("_shap", "")
+
+            kruskal_wallis = kruskal_wallis.set_index("Feature")
+            anova = anova.set_index("Feature")
+            chi_square = chi_square.set_index("Feature")
+
+            kruskal_wallis.columns = [f"Kruskal-Wallis {col}" for col in kruskal_wallis.columns]
+            anova.columns = [f"ANOVA {col}" for col in anova.columns]
+            chi_square.columns = [f"Chi-Square {col}" for col in chi_square.columns]
+
+            global_shap_join_table = pd.DataFrame(
+                    self.get_global_SHAP(df = self.shap_data).to_dict(as_series=False), 
+                    index=["Global SHAP"]
+                ).T 
             
-        if not hasattr(self, 'feature_specific_kruskal_wallis'):
-            self.run_parallel_feature_specific_kruskal_wallis()
+            global_shap_join_table.index = global_shap_join_table.index.str.split('_').str[:-1].str.join('_')
 
-        if not hasattr(self, 'feature_specific_anova'):
-            self.run_parallel_feature_specific_ANOVA()
+            comparison_df = chi_square.join(anova).join(kruskal_wallis).join(global_shap_join_table)
 
-        if not hasattr(self, 'feature_chi_square_results'):
-            self.run_parallel_feature_chi_square_tests()
+            comparison_df = comparison_df.rename(
+                columns={
+                    "Chi-Square RBP": "RBP",
+                    "Chi-Square Position": "Position"
+                }
+            )
 
-        if not hasattr(self, 'shap_data'):
-            self.load_SHAP_data()
+            comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
 
-        kruskal_wallis = self.feature_specific_kruskal_wallis.copy()
-        anova = self.feature_specific_anova.copy()
-        chi_square = self.feature_chi_square_results.copy()
+            comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=False)
+            comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=False)
+            comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=False)
+            comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=False)
+            
+            comparison_df = comparison_df.drop(columns=drop_columns)
+            comparison_df.to_csv(output_file, sep="\t", index=True)
 
-        kruskal_wallis = self.correct_pvals(df=kruskal_wallis, column="P-Val")
-        anova = self.correct_pvals(df=anova, column="P-Val")
-
-        kruskal_wallis["Feature"] = kruskal_wallis["Feature"].str.replace("_shap", "")
-        anova["Feature"] = anova["Feature"].str.replace("_shap", "")
-        chi_square["Feature"] = chi_square["Feature"].str.replace("_shap", "")
-
-        kruskal_wallis = kruskal_wallis.set_index("Feature")
-        anova = anova.set_index("Feature")
-        chi_square = chi_square.set_index("Feature")
-
-        kruskal_wallis.columns = [f"Kruskal-Wallis {col}" for col in kruskal_wallis.columns]
-        anova.columns = [f"ANOVA {col}" for col in anova.columns]
-        chi_square.columns = [f"Chi-Square {col}" for col in chi_square.columns]
-
-        global_shap_join_table = pd.DataFrame(
-                self.get_global_SHAP(df = self.shap_data).to_dict(as_series=False), 
-                index=["Global SHAP"]
-            ).T 
-        
-        global_shap_join_table.index = global_shap_join_table.index.str.split('_').str[:-1].str.join('_')
-
-        comparison_df = chi_square.join(anova).join(kruskal_wallis).join(global_shap_join_table)
-
-        comparison_df = comparison_df.rename(
-            columns={
-                "Chi-Square RBP": "RBP",
-                "Chi-Square Position": "Position"
-            }
-        )
-
-        comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
-
-        comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=False)
-        comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=False)
-        comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=False)
-        comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=False)
-        
-        return comparison_df.drop(columns=drop_columns)
-
+            logger.success(f"Rank comparisons across metrics/tests for {self.cell_line} completed and cached.")
+            return comparison_df
 
     #TODO Consider whether it makes sense to split by position but plot by rank from across all positions
     def plot_kruskal_anova_chi_SHAP(self): 
