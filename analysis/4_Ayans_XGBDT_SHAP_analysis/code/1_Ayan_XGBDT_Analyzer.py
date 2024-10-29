@@ -1937,10 +1937,10 @@ class CellLineCompareTool:
 
 
     def __post_init__(self):
-        self.cell_lines = [self.K562, self.HepG2]
-        self.cell_line_names = ["K562", "HepG2"]
+        self.cell_line_objs = [self.K562, self.HepG2]
+        self.cell_lines = ["K562", "HepG2"]
 
-        for cell_line in self.cell_lines:
+        for cell_line in self.cell_line_objs:
             cell_line.load_SHAP_data()
 
         logger.info("Ready to use cell line comparison class.")
@@ -2006,35 +2006,51 @@ class CellLineCompareTool:
         plt.show()
 
 
-    def plot_chi_square_comparison(self):    
+    def plot_chi_square_comparison(self): 
 
-        common_features = self.get_binding_common_features()
+        for cell_line in self.cell_line_objs:
+            if not hasattr(cell_line, 'feature_chi_square_results'):
+                cell_line.run_parallel_feature_chi_square_tests()
 
-        k562_chi_square = self.K562.feature_chi_square_results.set_index("Feature")["Statistic"]
-        hepg2_chi_square = self.HepG2.feature_chi_square_results.set_index("Feature")["Statistic"]
+        k562_chi_square_results = self.K562.feature_chi_square_results.set_index("Feature")
+        hepg2_chi_square_results = self.HepG2.feature_chi_square_results.set_index("Feature")
 
-        chi_square_comparison_df = pd.DataFrame({
-            "Feature": common_features,
-            "K562_Chi_Square": [k562_chi_square[feature] for feature in common_features],
-            "HepG2_Chi_Square": [hepg2_chi_square[feature] for feature in common_features]
-        })
-
-        chi_square_comparison_df["K562_Rank"] = chi_square_comparison_df["K562_Chi_Square"].rank(ascending=False)
-        chi_square_comparison_df["HepG2_Rank"] = chi_square_comparison_df["HepG2_Chi_Square"].rank(ascending=False)
+        chi_square_comparison_df = k562_chi_square_results.join(
+            hepg2_chi_square_results, 
+            lsuffix="_K562", 
+            rsuffix="_HepG2", 
+            how="inner"
+        ).reset_index()
         
-        plt.figure(dpi=200, figsize=(4,4))
+        for cell_line in ["K562", "HepG2"]:
+            chi_square_comparison_df[f"{cell_line}_Rank"] = chi_square_comparison_df[f"Statistic_{cell_line}"].rank(ascending=False)
 
-        significant_both = (self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & (self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
-        significant_k562_only = (self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & ~(self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
-        significant_hepg2_only = ~(self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & (self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
-        not_significant = ~(self.K562.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05) & ~(self.HepG2.feature_chi_square_results.set_index("Feature")["FDR P-Val"] < 0.05)
+        significance_labels = {
+            "Significant in Both": (chi_square_comparison_df["FDR P-Val_K562"] < 0.05) & (chi_square_comparison_df["FDR P-Val_HepG2"] < 0.05),
+            "Significant in K562 Only": (chi_square_comparison_df["FDR P-Val_K562"] < 0.05) & ~(chi_square_comparison_df["FDR P-Val_HepG2"] < 0.05),
+            "Significant in HepG2 Only": ~(chi_square_comparison_df["FDR P-Val_K562"] < 0.05) & (chi_square_comparison_df["FDR P-Val_HepG2"] < 0.05),
+            "Not Significant": ~(chi_square_comparison_df["FDR P-Val_K562"] < 0.05) & ~(chi_square_comparison_df["FDR P-Val_HepG2"] < 0.05)
+        }
 
-        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_both], chi_square_comparison_df["HepG2_Rank"][significant_both], s=2, color='red', label='Significant in Both')
-        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_k562_only], chi_square_comparison_df["HepG2_Rank"][significant_k562_only], s=2, color='blue', label='Significant in K562 Only')
-        plt.scatter(chi_square_comparison_df["K562_Rank"][significant_hepg2_only], chi_square_comparison_df["HepG2_Rank"][significant_hepg2_only], s=2, color='green', label='Significant in HepG2 Only')
-        plt.scatter(chi_square_comparison_df["K562_Rank"][not_significant], chi_square_comparison_df["HepG2_Rank"][not_significant], s=2, color='gray', label='Not Significant')
+        colors = {
+            "Significant in Both": 'red',
+            "Significant in K562 Only": 'blue',
+            "Significant in HepG2 Only": 'green',
+            "Not Significant": 'fuchsia'
+        }
 
-        plt.plot([0, max(chi_square_comparison_df["K562_Rank"])], [0, max(chi_square_comparison_df["HepG2_Rank"])], color='red', linestyle='--')
+        plt.figure(dpi=200, figsize=(8,4))
+
+        for label, condition in significance_labels.items():
+            plt.scatter(
+                chi_square_comparison_df[condition]["K562_Rank"],
+                chi_square_comparison_df[condition]["HepG2_Rank"],
+                s=2.5,
+                color=colors[label],
+                label=label
+            )
+
+        plt.plot([0, max(chi_square_comparison_df["K562_Rank"])], [0, max(chi_square_comparison_df["HepG2_Rank"])], color='orange', linestyle='--')
 
         plt.title(f"K562 vs HepG2: Chi-Square Rank Comparison\nRank '1' is the highest statistic", fontsize=10)
         plt.xlabel("K562 Chi-Square Rank", fontsize=10)
@@ -2043,11 +2059,11 @@ class CellLineCompareTool:
         plt.xlim(0, max(chi_square_comparison_df["K562_Rank"]) + 10)
         plt.ylim(0, max(chi_square_comparison_df["HepG2_Rank"]) + 10)
 
-        num_dots = len(common_features)
+        num_dots = len(chi_square_comparison_df)
         correlation_value = chi_square_comparison_df["K562_Rank"].corr(chi_square_comparison_df["HepG2_Rank"], method='spearman')
 
         plt.text(
-            0.15, 0.92,
+            1.2, 0.5,
             f"# Points: {num_dots}\nSpearman: {correlation_value:.2f}",
             horizontalalignment='center',
             verticalalignment='center',
@@ -2055,7 +2071,7 @@ class CellLineCompareTool:
             fontsize=10,
         )
 
-        plt.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
+        plt.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1), title_fontsize=10, title="Significance (FDR < 0.05)")
         plt.tight_layout()
         plt.show()
 
