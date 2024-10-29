@@ -1565,6 +1565,9 @@ class AyanXgbdtAnalyzer:
 
 
     def compare_kruskal_anova_chi_SHAP(self): 
+
+        # columns that will be duplicated after joining all dataframes and need to be dropped 
+        drop_columns = ["Chi-Square Global SHAP", "ANOVA RBP", "ANOVA Position", "Kruskal-Wallis RBP", "Kruskal-Wallis Position"]
             
         if not hasattr(self, 'feature_specific_kruskal_wallis'):
             self.run_parallel_feature_specific_kruskal_wallis()
@@ -1620,7 +1623,7 @@ class AyanXgbdtAnalyzer:
         comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=True)
         comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=True)
         
-        return comparison_df
+        return comparison_df.drop(columns=drop_columns)
 
 
     #TODO Consider whether it makes sense to split by position but plot by rank from across all positions
