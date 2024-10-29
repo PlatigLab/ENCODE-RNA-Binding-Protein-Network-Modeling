@@ -1639,58 +1639,46 @@ class AyanXgbdtAnalyzer:
             logger.success(f"Rank comparisons across metrics/tests for {self.cell_line} completed and cached.")
             return comparison_df
 
-    #TODO Consider whether it makes sense to split by position but plot by rank from across all positions
+
     def plot_kruskal_anova_chi_SHAP(self): 
             
         comparison_df = self.compare_kruskal_anova_chi_SHAP()
 
-        # positions = comparison_df["Position"].unique()
-        # nrows = len(positions)
-        # fig, axs = plt.subplots(nrows, 1, figsize=(30, nrows * 3), dpi=200)
+        fig, axes = plt.subplots(4, 4, figsize=(15, 10), dpi=200, sharey=True, sharex=True)
+        rank_columns = ["Chi-Square Rank", "ANOVA Rank", "Kruskal-Wallis Rank", "Global SHAP Rank"]
 
-        # for i, position in enumerate(positions):
-        #     subset_df = comparison_df[comparison_df["Position"] == position]
-        #     heatmap_data = subset_df[["Chi-Square Rank", "ANOVA Rank", "Kruskal-Wallis Rank", "Global SHAP Rank"]]
-        #     heatmap_data.index = subset_df["RBP"]
+        for j, col_col in enumerate(rank_columns):
+            for i, row_col in enumerate(rank_columns): 
+            
+                if j > i: 
+                    axes[i, j].axis('off')
+                    continue
 
-        #     heatmap_data = heatmap_data.T
+                x = comparison_df[col_col]
+                y = comparison_df[row_col]
 
-        #     mask = heatmap_data.isnull()
-        #     cmap = sns.color_palette("Blues", as_cmap=True)
-        #     # cmap.set_bad("yellow")
+                # Remove NaN values from x and y
+                mask = x.notna() & y.notna()
+                x = x[mask]
+                y = y[mask]
 
-        #     sns.heatmap(
-        #         data=heatmap_data,
-        #         cmap=cmap,
-        #         mask=mask,
-        #         cbar_kws={"label": "Rank"},
-        #         ax=axs[i]
-        #     )
+                axes[i, j].scatter(x, y, s=5, alpha=0.5, c="deepskyblue")
+                axes[i, j].plot([0, max(x)], [0, max(y)], color='red', linestyle='--', linewidth=2)
 
-        #     axs[i].set_title(f"Position: {position}", fontsize=15)
-        #     axs[i].set_ylabel("Metrics", fontsize=12)
-        #     axs[i].set_xlabel("RBPs", fontsize=12)
+                # Calculate Spearman correlation
+                spearman_corr = x.corr(y, method='spearman')
 
-        # plt.tight_layout()
-        # plt.show()
+                # Add text for number of points and Spearman correlation
+                axes[i, j].text(0.02, 0.95, f"{len(x)} Points -- Spearman: {spearman_corr:.2f}",
+                    transform=axes[i, j].transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8)
+                    )
+                
+                if i == len(rank_columns) - 1:
+                    axes[i, j].set_xlabel(col_col.replace(" Rank", ""), fontsize=20, labelpad=20, color="green")
+                if j == 0:
+                    axes[i, j].set_ylabel(row_col.replace(" Rank", ""), fontsize=18, labelpad=20, color="green")
 
-        rank_columns = [col for col in comparison_df.columns if "Rank" in col]
-        nrows = len(rank_columns)
-        fig, axs = plt.subplots(nrows, nrows, figsize=(30, 30), dpi=200)
-
-        for i, rank_col1 in enumerate(rank_columns):
-            for j, rank_col2 in enumerate(rank_columns):
-                if i != j:
-                    axs[i, j].scatter(comparison_df[rank_col1], comparison_df[rank_col2], s=1)
-                    axs[i, j].plot([0, max(comparison_df[rank_col1].max(), comparison_df[rank_col2].max())], 
-                        [0, max(comparison_df[rank_col1].max(), comparison_df[rank_col2].max())], 
-                        color='red', linestyle='--')
-                    axs[i, j].set_xlabel(rank_col1, fontsize=10)
-                    axs[i, j].set_ylabel(rank_col2, fontsize=10)
-                    axs[i, j].set_title(f"{rank_col1} vs {rank_col2}", fontsize=12)
-                else:
-                    axs[i, j].axis('off')
-
+        plt.suptitle(f"{self.cell_line}: Rank Comparison Across Metrics/Tests\n\nNOTE: All axes are ranks and \nrank '1' is highest value", fontsize=28, x=0.65, y=0.8)
         plt.tight_layout()
         plt.show()
 
@@ -2117,6 +2105,7 @@ if __name__ == "__main__":
 
     analyzer = AyanXgbdtAnalyzer(cell_line=args.cell_line, distance_threshold=args.distance)
 
+    #TODO adapt the interacting RBP PPI script to be a parallel task flag here.
     match args.parallel_task:
 
         case "feature_local_shap": 
