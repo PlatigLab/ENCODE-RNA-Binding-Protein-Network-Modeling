@@ -12,7 +12,7 @@ from sklearn.metrics import r2_score
 from sklearn.linear_model import LinearRegression
 from scipy.cluster.hierarchy import linkage, leaves_list
 
-import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys
+import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, argparse, sys, re
 
 @dataclass
 class AyanXgbdtAnalyzer:
@@ -24,7 +24,7 @@ class AyanXgbdtAnalyzer:
     # General (non-class specific) variables #
     ##########################################
 
-    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/3_XGBDT_SHAP_data_2024_07/"
+    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/bdt-xgb-models-2024-10/"
     ayan_binding_folder = "/project/PlatigLab/data/collaborators/BWH/2_input_binding_data_and_INCORRECT_SHAP_toy_data_2024-07/input_binding_data/"
 
     feather_cache = "../outputs/__featherv2-cache__"
@@ -792,7 +792,7 @@ class AyanXgbdtAnalyzer:
 
                 logger.info(f"No Cache... hence, loading SHAP data for {self.cell_line} {self.distance_threshold}")
 
-                files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat")])
+                files = sorted([file for file in glob.glob(f"{self.ayan_shap_folder}/*-{self.cell_line}-{self.distance_threshold}-*/*-data.dat") if re.search(r'-(validate|test|train)-data\.dat$', file)])
                 assert len(files)==3, logger.error([file.split("/")[-1] for file in files])
 
                 column_reference = set(pd.read_csv(files[0], sep=",", nrows=0).columns.to_list())
