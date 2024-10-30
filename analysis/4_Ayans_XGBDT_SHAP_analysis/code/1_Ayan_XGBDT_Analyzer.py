@@ -753,6 +753,9 @@ class AyanXgbdtAnalyzer:
 
     def load_SHAP_data(self, col_list=None): 
 
+        if col_list is not None:
+            col_list.extend(["target", "Data Partition"])
+
         cache_file = f"{self.feather_cache}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
 
         if hasattr(self, 'ctrl_only_binding_data'):
@@ -762,7 +765,7 @@ class AyanXgbdtAnalyzer:
             logger.info(f"ALREADY LOADED {self.cell_line} {self.distance_threshold} SHAP data")
 
             if col_list is not None: 
-                self.shap_data = self.shap_data.select(col_list.extend(["target", "Data Partition"]) )
+                self.shap_data = self.shap_data.select(col_list)
             
             return self.shap_data.head()
 
@@ -774,7 +777,7 @@ class AyanXgbdtAnalyzer:
                 shap_data = pl.scan_ipc(cache_file).collect(streaming=True)
 
                 if col_list is not None: 
-                    shap_data = shap_data.select(col_list.extend(["target", "Data Partition"]))
+                    shap_data = shap_data.select(col_list)
 
                 self.shap_columns = [col for col in shap_data.columns if col.endswith("_shap")]
                 self.binding_columns = [col for col in shap_data.columns if col.endswith("_right") or col.endswith("_left")]
@@ -806,7 +809,7 @@ class AyanXgbdtAnalyzer:
                     tmp_df = pl.scan_csv(file, has_header=True, separator=",")
 
                     if col_list is not None: 
-                        tmp_df = tmp_df.select(col_list.append("target"))
+                        tmp_df = tmp_df.select(col_list)
 
                     tmp_df = tmp_df.collect(streaming=True)
 
