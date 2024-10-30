@@ -1119,7 +1119,8 @@ class AyanXgbdtAnalyzer:
                 
         assert "_shap" in feature, logger.error(f"Feature {feature} is not a SHAP feature")
 
-        plotting_df = self.shap_data.filter(pl.col(feature) != 0)
+        plotting_df = self.shap_data
+        assert plotting_df.is_empty() == False, logger.error(f"Dataframe is empty")
 
         if not plotting_df.is_empty():
             fig, ax = plt.subplots(1,2, dpi=200, figsize=(10,5),)
@@ -1129,7 +1130,8 @@ class AyanXgbdtAnalyzer:
                 x=feature, 
                 hue="Data Partition", 
                 bins=100,
-                ax=ax[0] 
+                ax=ax[0], 
+                stat="percent"
             )
 
             sns.boxplot(
@@ -1141,15 +1143,11 @@ class AyanXgbdtAnalyzer:
 
             rbp, position = self.get_rbp_and_position(feature)
 
-            plt.suptitle(f"Non-Zero Local SHAP Values by Data Partition\n{self.cell_line} {rbp} {position}: # Rows -- {plotting_df.shape[0]:,}", fontsize=20)
+            plt.suptitle(f"Local SHAP Values by Data Partition\n{self.cell_line} {rbp} {position}: # Rows -- {plotting_df.shape[0]:,}", fontsize=20)
 
             plt.tight_layout()
-
             plt.savefig(f"../outputs/local_shap/plots/feature_specific/{self.cell_line}-{feature}.png", bbox_inches="tight"),
             plt.close()
-
-        else: 
-            logger.warning(f"{feature} has no non-zero local SHAP values")
     
 
     def convert_1D_row_to_matrix(self, df=None): 
@@ -1714,7 +1712,6 @@ class AyanXgbdtAnalyzer:
                 plt.show()
 
         else: 
-            logger.info(f"Plotting local SHAP summary plots.")
 
             shap_binding_info = {"bound": {}, "unbound": {}}
             for col in self.binding_columns:
