@@ -1565,12 +1565,12 @@ class AyanXgbdtAnalyzer:
             self.plot_RBP_local_SHAP_distributions(rbp)
 
 
-    def compare_kruskal_anova_chi_SHAP(self): 
+    def compare_kruskal_anova_chi_SHAP_linreg(self): 
 
         output_file = f"../outputs/compare_all_ranks/{self.cell_line}_comparison.tsv"
 
         if pathlib.Path(output_file).exists():
-            logger.info(f"FROM CACHE: Rank comparisons across metrics/tests for {self.cell_line}")
+            logger.info(f"FROM CACHE: Rank comparisons across metrics/tests for {self.cell_line} {self.distance_threshold} loaded.")
             return pd.read_csv(output_file, sep="\t", index_col="Feature")
 
         else: 
@@ -1578,7 +1578,7 @@ class AyanXgbdtAnalyzer:
             logger.info(f"Comparing ranks across metrics/tests for {self.cell_line}")
 
             # columns that will be duplicated after joining all dataframes and need to be dropped 
-            drop_columns = ["Chi-Square Global SHAP", "ANOVA RBP", "ANOVA Position", "Kruskal-Wallis RBP", "Kruskal-Wallis Position"]
+            drop_columns = ["Chi-Square Global SHAP", "ANOVA RBP", "ANOVA Position", "Kruskal-Wallis RBP", "Kruskal-Wallis Position", "Chi-Square RBP", "Chi-Square Position"]
                 
             if not hasattr(self, 'feature_specific_kruskal_wallis'):
                 self.run_parallel_feature_specific_kruskal_wallis()
@@ -1592,9 +1592,13 @@ class AyanXgbdtAnalyzer:
             if not hasattr(self, 'shap_data'):
                 self.load_SHAP_data()
 
+            if not hasattr(self, 'linear_coefficients'):
+                self.load_linear_model_results()    
+
             kruskal_wallis = self.feature_specific_kruskal_wallis.copy()
             anova = self.feature_specific_anova.copy()
             chi_square = self.feature_chi_square_results.copy()
+            coefficients = self.linear_coefficients.copy()
 
             kruskal_wallis = self.correct_pvals(df=kruskal_wallis, column="P-Val")
             anova = self.correct_pvals(df=anova, column="P-Val")
@@ -1610,47 +1614,46 @@ class AyanXgbdtAnalyzer:
             kruskal_wallis.columns = [f"Kruskal-Wallis {col}" for col in kruskal_wallis.columns]
             anova.columns = [f"ANOVA {col}" for col in anova.columns]
             chi_square.columns = [f"Chi-Square {col}" for col in chi_square.columns]
+            coefficients.columns = [f"Linear Regression {col}" for col in coefficients.columns]
 
             global_shap_join_table = pd.DataFrame(
                     self.get_global_SHAP(df = self.shap_data).to_dict(as_series=False), 
                     index=["Global SHAP"]
                 ).T 
-            
             global_shap_join_table.index = global_shap_join_table.index.str.split('_').str[:-1].str.join('_')
 
-            comparison_df = chi_square.join(anova).join(kruskal_wallis).join(global_shap_join_table)
-
-            comparison_df = comparison_df.rename(
-                columns={
-                    "Chi-Square RBP": "RBP",
-                    "Chi-Square Position": "Position"
-                }
-            )
-
-            comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
+            comparison_df = global_shap_join_table.join(chi_square).join(kruskal_wallis).join(anova).join(coefficients)
 
             comparison_df["Chi-Square Rank"] = comparison_df["Chi-Square Statistic"].rank(ascending=False)
             comparison_df["ANOVA Rank"] = comparison_df["ANOVA Statistic"].rank(ascending=False)
             comparison_df["Kruskal-Wallis Rank"] = comparison_df["Kruskal-Wallis Statistic"].rank(ascending=False)
             comparison_df["Global SHAP Rank"] = comparison_df["Global SHAP"].rank(ascending=False)
+            comparison_df["Beta Coefficient Rank"] = comparison_df["Linear Regression beta"].rank(ascending=False)
             
             comparison_df = comparison_df.drop(columns=drop_columns)
-            comparison_df.to_csv(output_file, sep="\t", index=True)
+
+            comparison_df["RBP"] = comparison_df.index.map(lambda x: self.get_rbp_and_position(x)[0])
+            comparison_df["Position"] = comparison_df.index.map(lambda x: self.get_rbp_and_position(x)[1])
+            comparison_df = comparison_df[["RBP", "Position"] + [col for col in comparison_df.columns if col not in ["RBP", "Position"]]]
+            comparison_df = comparison_df.sort_values(by=["RBP", "Position"])
+
+            comparison_df = comparison_df.reset_index().rename(columns={"index": "Feature"})
+            comparison_df.to_csv(output_file, sep="\t", index=False)
 
             logger.success(f"Rank comparisons across metrics/tests for {self.cell_line} completed and cached.")
             return comparison_df
 
 
-    def plot_kruskal_anova_chi_SHAP(self): 
+    def plot_kruskal_anova_chi_SHAP_linreg(self): 
             
-        comparison_df = self.compare_kruskal_anova_chi_SHAP()
+        comparison_df = self.compare_kruskal_anova_chi_SHAP_linreg()
 
-        fig, axes = plt.subplots(4, 4, figsize=(15, 10), dpi=200, sharey=True, sharex=True)
-        rank_columns = ["Chi-Square Rank", "ANOVA Rank", "Kruskal-Wallis Rank", "Global SHAP Rank"]
+        fig, axes = plt.subplots(5, 5, figsize=(15, 9), dpi=200, sharey=True, sharex=True)
+        rank_columns = ["Chi-Square Rank", "ANOVA Rank", "Kruskal-Wallis Rank", "Global SHAP Rank", "Beta Coefficient Rank"]
 
         for j, col_col in enumerate(rank_columns):
             for i, row_col in enumerate(rank_columns): 
-            
+
                 if j > i: 
                     axes[i, j].axis('off')
                     continue
@@ -1671,15 +1674,25 @@ class AyanXgbdtAnalyzer:
 
                 # Add text for number of points and Spearman correlation
                 axes[i, j].text(0.02, 0.95, f"{len(x)} Points -- Spearman: {spearman_corr:.2f}",
-                    transform=axes[i, j].transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8)
+                    transform=axes[i, j].transAxes, verticalalignment='top', fontsize=10,
                     )
                 
                 if i == len(rank_columns) - 1:
-                    axes[i, j].set_xlabel(col_col.replace(" Rank", ""), fontsize=20, labelpad=20, color="green")
+                    axes[i, j].set_xlabel(col_col.replace(" Rank", ""), fontsize=22, labelpad=20, color="green")
                 if j == 0:
-                    axes[i, j].set_ylabel(row_col.replace(" Rank", ""), fontsize=18, labelpad=20, color="green")
+                    y_label = row_col.replace(" Rank", "")
 
-        plt.suptitle(f"{self.cell_line}: Rank Comparison Across Metrics/Tests\n\nNOTE: All axes are ranks and \nrank '1' is highest value", fontsize=28, x=0.65, y=0.8)
+                    if "-" in row_col:
+                        y_label = "\n".join(y_label.split("-"))
+                    elif " " in row_col: 
+                        y_label = "\n".join(y_label.split(" "))
+                    else: 
+                        y_label = row_col
+                    
+                    axes[i, j].set_ylabel(y_label, fontsize=16, labelpad=20, color="green")
+
+        plt.suptitle(f"{self.cell_line}: Rank Comparison Across Metrics/Tests\n\nNOTE: All axes are ranks and \nrank '1' is highest value", fontsize=30, x=0.67, y=0.75)
+        
         plt.tight_layout()
         plt.show()
 
