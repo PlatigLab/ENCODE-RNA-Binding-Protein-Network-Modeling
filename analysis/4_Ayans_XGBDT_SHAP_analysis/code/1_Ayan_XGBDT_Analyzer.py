@@ -1897,37 +1897,146 @@ class AyanXgbdtAnalyzer:
             plt.show()
 
 
-    def retrieve_linear_model_results(self): 
+    def load_linear_model_results(self): 
+        logger.info("Retrieving linear model predictions.")
+
+        LINEAR_MODEL_PATH="/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/linear-models-2024-10/linear-models-100-3a00c07e/"
+        
+        linear_coefficients_file = glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}-{self.distance_threshold}-*-linear-model-beta.dat")
+        assert len(linear_coefficients_file) == 1
+
+        linear_coefficients = pd.read_csv(linear_coefficients_file[0], sep=",", index_col=0)
+        linear_coefficients.index.name = "Feature"
+        self.linear_coefficients = linear_coefficients
+
+        files = sorted([file for file in glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}-{self.distance_threshold}-*-data.dat") if re.search(r'-(validate|test|train)-data\.dat$', file)])
+        assert len(files) == 3, logger.error([file.split("/")[-1] for file in files])
+
+        dataframes = []
+
+        CACHE_FILE = f"../outputs/__featherv2-cache__/{self.cell_line}_{self.distance_threshold}_linear_model_results.feather"
+
+        if pathlib.Path(CACHE_FILE).exists():
+
+            logger.info(f"FROM CACHE: Loading linear model results for {self.cell_line} {self.distance_threshold} from cache.")
+
+            linear_model_results = pl.scan_ipc(CACHE_FILE).collect(streaming=True)
+            self.linear_model_results = linear_model_results.select(pl.all())
+
+            return self.linear_model_results.head()
+
+        else: 
+
+            for file in files:
+                logger.info(f"Loading file: {file.split('/')[-1]}")
+
+                tmp_df = pl.scan_csv(file, has_header=True, separator=",").rename({"": "index"}).collect(streaming=True)
+
+                partition = file.split("-")[-2]
+                assert partition in ["validate", "test", "train"], logger.error(f"Partition {partition} not recognized.")
+
+                tmp_df = tmp_df.with_columns(pl.lit(partition).alias("Data Partition"))
+                dataframes.append(tmp_df)
+
+            self.linear_model_results = pl.concat(dataframes, how="vertical")
+            self._cache_to_featherv2(self.linear_model_results, CACHE_FILE)
+
+            return self.linear_model_results.head()
+
+
+    def plot_linear_model_results(self):
+    
+        if not hasattr(self, 'linear_model_results'):
+            self.load_linear_model_results()
+
+        plotting_df = self.linear_model_results.filter(pl.col("Data Partition").is_in(["validate", "test"])).select(["target", "psi_hat", "Data Partition"]).to_pandas()
+
+        joint_plot = sns.jointplot(
+            data=plotting_df,
+            x="target",
+            y="psi_hat",
+            kind="hist",
+            hue="Data Partition",
+            marginal_kws={"bins": 100, "stat": "percent"},
+            height=5,
+            stat="percent",
+            palette={"validate": "red", "test": "green"}, 
+        )
+
+        cax = joint_plot.ax_joint.inset_axes([1.22, 0.1, 0.05, 0.8])
+        plt.colorbar(
+            joint_plot.ax_joint.collections[0], ax=joint_plot.ax_joint, cax=cax, label="Percentage"
+        )
+        joint_plot.figure.set_dpi(200)
+        joint_plot.figure.set_size_inches(6,4)
+
+        plt.suptitle(f"{self.cell_line}: Actual vs Predicted (Linear Model)", x=0.5, y=1.0)
+
+        plt.show()
+
+
+    def plot_beta_coefficients_vs_global_SHAP(self): 
+            
+        if not hasattr(self, 'linear_coefficients'):
+            self.load_linear_model_results()
 
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
-        if pathlib.Path(f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather").exists():
-            
-            logger.info(f"FROM CACHE: retrieving linear model predictions for {self.cell_line} {self.distance_threshold}.")
-            return pl.scan_ipc(f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather").collect(streaming=True)
+        global_shap = self.get_global_SHAP(self.shap_data).to_pandas().T
+        global_shap.columns=["Global SHAP"]
+        global_shap.index = global_shap.index.str.replace("_shap", "")
 
-        else: 
-            logger.info("Running linear regression with the exact samples used in train, test, and validate for Ayan's XGBoost model.")
-            training_data = self.shap_data.filter(pl.col("Data Partition") == "train").drop(self.shap_columns)
+        merged_df = self.linear_coefficients.join(global_shap, how="inner")
 
-            X_train = training_data.select(self.binding_columns).to_numpy()
-            y_train = training_data["target"].to_numpy()
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4), dpi=200)
 
-            model = LinearRegression(n_jobs=self.get_number_SLURM_CPUs())
-            model.fit(X_train, y_train)
-
-            evaluation_data = self.shap_data.filter(pl.col("Data Partition").is_in(["validate", "test"])).drop(self.shap_columns)
-            X_test = evaluation_data.select(self.binding_columns).to_numpy()
-
-            predictions = model.predict(X_test)
-            evaluation_data = evaluation_data.with_columns(pl.Series(name="psi_hat", values=predictions))
-
-            self._cache_to_featherv2(evaluation_data, f"../outputs/standard_ols_linear_regression_results/{self.cell_line}_{self.distance_threshold}_standard_OLS_linear_regression_results.feather")
-
-            logger.success("Linear model predictions calculated to compare with XGBoost results.")
-            return evaluation_data
+        # Left subplot: Scatter plot
+        colors = merged_df["adj_pvalue"].apply(lambda p: 'red' if p < 0.05 else 'blue')
+        axes[0].scatter(merged_df["beta"], merged_df["Global SHAP"], c=colors, s=10, alpha=0.3)
         
+        # Add 1D histograms for each axis
+        ax_histx = axes[0].inset_axes([0, 1.05, 1, 0.2], sharex=axes[0])
+        ax_histy = axes[0].inset_axes([1.05, 0, 0.2, 1], sharey=axes[0])
+
+        ax_histx.hist(merged_df["beta"], bins=100, color='purple', alpha=0.9)
+        ax_histy.hist(merged_df["Global SHAP"], bins=100, color='purple', alpha=0.9, orientation='horizontal')
+
+        ax_histx.set_yticks([])
+        ax_histy.set_xticks([])
+
+        axes[0].set_xlabel("Linear Regression Beta")
+        axes[0].set_ylabel("Global SHAP")
+        axes[0].set_title("Global SHAP vs Linear Regression Beta", fontsize=10)
+
+        # Calculate Spearman correlation for left subplot
+        spearman_corr = merged_df["beta"].corr(merged_df["Global SHAP"], method='spearman')
+        num_points = len(merged_df)
+        axes[0].text(0.05, 0.95, f"# Points: {num_points}\nSpearman: {spearman_corr:.2f}", transform=axes[0].transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+        # Right subplot: Rank plot
+        merged_df["Beta Rank"] = merged_df["beta"].rank(ascending=False)
+        merged_df["SHAP Rank"] = merged_df["Global SHAP"].rank(ascending=False)
+
+        axes[1].scatter(merged_df["Beta Rank"], merged_df["SHAP Rank"], c=colors, s=10, alpha=0.3)
+        axes[1].plot([0, max(merged_df["Beta Rank"])], [0, max(merged_df["SHAP Rank"])], color='green', linestyle='--', linewidth=2)
+
+        axes[1].set_xlabel("Rank(Linear Regression Beta)")
+        axes[1].set_ylabel("Rank(Global SHAP)")
+        axes[1].set_title("Rank(Global SHAP) vs Rank(Linear Regression Beta)", fontsize=10)
+        
+        # Create custom legend handles with larger markers
+        legend_handles = [
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Yes'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=10, label='No')
+        ]
+
+        plt.legend(handles=legend_handles, title="Significance\n(FDR < 0.05)", fontsize=10, loc='upper left', bbox_to_anchor=(1, 1),)
+        plt.suptitle(f"{self.cell_line}: Linear Regression Beta vs Global SHAP", fontsize=16, y=1.0)
+
+        plt.tight_layout()
+        plt.show()
+
 
 ############################################################################################################
 ################################################# NEW CLASS ################################################
