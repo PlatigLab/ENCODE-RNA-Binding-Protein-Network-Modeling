@@ -461,7 +461,7 @@ class AyanXgbdtAnalyzer:
                 )
         
         plot_df = pd.DataFrame(plot_df, columns=["Feature", "PSI Threshold", "Percent Bound", "Position"])    
-        plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ {self.get_rbp_and_position(x)[1]}")
+        plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ Pos. {self.get_rbp_and_position(x)[1]}")
 
         plt.figure(dpi=200, figsize=(15, 5))
 
@@ -1385,7 +1385,7 @@ class AyanXgbdtAnalyzer:
         for features, title in [(top_positive_features, "Largest Positive Difference"), (top_negative_features, "Largest Negative Difference")]:
             plot_df = prepare_plot_data(features, partitions, first_partition_shap, last_partition_shap)
 
-            plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ {self.get_rbp_and_position(x)[1]}")
+            plot_df["RBP & Position"] = plot_df["Feature"].apply(lambda x: f"{self.get_rbp_and_position(x)[0]} @ Pos. {self.get_rbp_and_position(x)[1]}")
             plot_df = plot_df.sort_values(by=["Feature", "Partition"], key=lambda col: col if col.name == "Feature" else col.map({"PSI < 0.1": 0, "PSI >= 0.1 & PSI <= 0.9": 1, "PSI > 0.9": 2}))
 
             plt.figure(figsize=(15, 5), dpi=200)
@@ -2051,9 +2051,13 @@ class AyanXgbdtAnalyzer:
         plt.show()
 
 
+
 ############################################################################################################
 ################################################# NEW CLASS ################################################
 ############################################################################################################
+
+
+
 
 
 @dataclass
@@ -2162,7 +2166,7 @@ class CellLineCompareTool:
             "Significant in Both": 'red',
             "Significant in K562 Only": 'blue',
             "Significant in HepG2 Only": 'green',
-            "Not Significant": 'fuchsia'
+            "Not Significant": 'black'
         }
 
         plt.figure(dpi=200, figsize=(8,4))
