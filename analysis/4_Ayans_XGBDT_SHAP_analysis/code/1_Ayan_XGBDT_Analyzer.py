@@ -1824,29 +1824,59 @@ class AyanXgbdtAnalyzer:
                 logger.success(f"Local SHAP summary plots created.")
 
 
-    def retrieve_rbp_ppi_events(self, df = None): 
+    def retrieve_rbp_ppi_events_and_controls(self, df = None): 
 
-        def parallelized_rbp_ppi_retrieval(data, rbp_ppi_pair, position_key):
+        def parallelized_rbp_ppi_retrieval(data, rbp_ppi_pair, position1, position2):
             rbp1, rbp2 = rbp_ppi_pair
 
-            search_columns = [f"{rbp1.upper()}_{position_key}", f"{rbp2.upper()}_{position_key}"]
+            search_columns = [f"{rbp1.upper()}_{position1}", f"{rbp2.upper()}_{position2}"]
 
             assert all(col in data.columns for col in search_columns), logger.error(f"Columns {search_columns} not found in DataFrame")
 
             return data.filter(
                 (pl.col(search_columns[0]) == 1) & (pl.col(search_columns[1]) == 1)
-            )
+            ).select("index")
         
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-            futures = {
-                executor.submit(parallelized_rbp_ppi_retrieval, df, rbp_ppi_pair, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi for position_key in self.splice_junction_position_renaming.keys()
+            true_ppi = {
+                executor.submit(parallelized_rbp_ppi_retrieval, df, rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi for position_key in self.splice_junction_position_renaming.keys()
             }
 
-            for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Retrieving RBP PPI events"):
+            for future in tqdm.tqdm(concurrent.futures.as_completed(true_ppi), total=len(true_ppi), desc="True PPI Events"):
+                results.append(future.result())
+        
+        true_ppi = pl.concat(results, how="vertical").unique()
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+            futures = []
+            for rbp1, rbp2 in self.rbp_ppi:
+
+                for position1 in self.splice_junction_position_renaming.keys():
+                    for position2 in self.splice_junction_position_renaming.keys():
+                        if position1 != position2:
+
+                            futures.append(executor.submit(parallelized_rbp_ppi_retrieval, df, (rbp1, rbp2), position1, position2))
+
+            for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Mismatched PPI Events"):
                 results.append(future.result())
 
-        return pl.concat(results, how="vertical").unique()
+        mismatched_ppi = pl.concat(results, how="vertical").unique()
+
+        true_ppi = set(true_ppi["index"].to_list())
+        mismatched_ppi = set(mismatched_ppi["index"].to_list())
+
+        mismatched_ppi = mismatched_ppi.difference(true_ppi)
+
+        ppi_types_results =  {
+            "True PPI": df.filter(pl.col("index").is_in(true_ppi)),
+            "Mismatched PPI": df.filter(pl.col("index").is_in(mismatched_ppi)),
+            "Non-PPI": df.filter(~pl.col("index").is_in(true_ppi.union(mismatched_ppi)))
+        }
+
+        logger.info(f"True PPI: {ppi_types_results['True PPI'].shape[0]} | Mismatched PPI: {ppi_types_results['Mismatched PPI'].shape[0]} | Non-PPI: {ppi_types_results['Non-PPI'].shape[0]}")
+        return ppi_types_results
 
 
     #TODO get Ayan to give predictions for testing set for linear models
