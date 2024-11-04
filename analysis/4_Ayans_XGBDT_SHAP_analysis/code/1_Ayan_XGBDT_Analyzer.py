@@ -1981,17 +1981,17 @@ class AyanXgbdtAnalyzer:
         if not hasattr(self, 'linear_model_results'):
             self.load_linear_model_results()
 
-        validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "validate")
-        validate_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "validate")
+        test_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "test")
+        test_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "test")
 
-        r2_validate_lm = r2_score(validate_lm_predictions["target"], validate_lm_predictions["psi_hat"])
-        r2_validate_xgboost = r2_score(validate_xgboost_predictions["target"], validate_xgboost_predictions["psi_hat"])
+        r2_test_lm = r2_score(test_lm_predictions["target"], test_lm_predictions["psi_hat"])
+        r2_test_xgboost = r2_score(test_xgboost_predictions["target"], test_xgboost_predictions["psi_hat"])
 
-        assert validate_lm_predictions.shape[0] == validate_xgboost_predictions.shape[0]
-        logger.info(f"{validate_lm_predictions.shape[0]} examples used to evaluate each model")
+        assert test_lm_predictions.shape[0] == test_xgboost_predictions.shape[0]
+        logger.info(f"{test_lm_predictions.shape[0]} examples used to evaluate each model")
 
-        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=validate_lm_predictions)
-        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=validate_xgboost_predictions)
+        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=test_lm_predictions)
+        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=test_xgboost_predictions)
 
         for key in linear_model_ppi_predictions.keys():
             assert linear_model_ppi_predictions[key].shape[0] == xgboost_model_ppi_predictions[key].shape[0]
@@ -2034,7 +2034,7 @@ class AyanXgbdtAnalyzer:
                     num_points = len(predictions)
                     ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
 
-                plt.suptitle(f"{self.cell_line} {self.distance_threshold} Validation Set: {key}", fontsize=20)
+                plt.suptitle(f"{self.cell_line} {self.distance_threshold} Test Set: {key}", fontsize=20)
                 plt.tight_layout()
                 plt.show()
 
@@ -2044,10 +2044,10 @@ class AyanXgbdtAnalyzer:
 
         sns.barplot(data=r2_scores, y="PPI Category", x="R2 Score", hue="Model", palette=["tomato", "royalblue"], orient="h", width=0.6)
 
-        plt.axvline(x=r2_validate_lm, color='tomato', linestyle='-', linewidth=2, label=f'Linear Model R2: {r2_validate_lm:.2f}')
-        plt.axvline(x=r2_validate_xgboost, color='royalblue', linestyle='-.', linewidth=2, label=f'XGBoost R2: {r2_validate_xgboost:.2f}')
+        plt.axvline(x=r2_test_lm, color='tomato', linestyle='-', linewidth=2, label=f'Linear Model R2: {r2_test_lm:.2f}')
+        plt.axvline(x=r2_test_xgboost, color='royalblue', linestyle='-.', linewidth=2, label=f'XGBoost R2: {r2_test_xgboost:.2f}')
 
-        plt.title(f"{self.cell_line} {self.distance_threshold}: Validation Set R2 Scores\nby PPI Category/Model", fontsize=16, pad=20)
+        plt.title(f"{self.cell_line} {self.distance_threshold}: Test Set R2 Scores\nby PPI Category/Model", fontsize=16, pad=20)
         plt.ylabel("PPI Category", fontsize=12, labelpad=10)
         plt.xlabel("R2 Score", fontsize=12, labelpad=10)
         plt.legend(title="Model/R2 Scores", fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
@@ -2226,15 +2226,15 @@ class AyanXgbdtAnalyzer:
         if not hasattr(self, 'linear_model_results'):
             self.load_linear_model_results()
 
-        validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "validate")
-        validate_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "validate")
+        test_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "test")
+        test_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "test")
 
-        assert validate_lm_predictions.shape[0] == validate_xgboost_predictions.shape[0]
-        logger.info(f"{validate_lm_predictions.shape[0]} examples used to evaluate each model")
+        assert test_lm_predictions.shape[0] == test_xgboost_predictions.shape[0]
+        logger.info(f"{test_lm_predictions.shape[0]} examples used to evaluate each model")
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200)
 
-        for ax, (title, predictions) in zip(axes, [("Linear Regression", validate_lm_predictions), ("XGBoost", validate_xgboost_predictions)]):
+        for ax, (title, predictions) in zip(axes, [("Linear Regression", test_lm_predictions), ("XGBoost", test_xgboost_predictions)]):
             ax.scatter(predictions["target"], predictions["psi_hat"], facecolors='none', edgecolors='blue', alpha=0.01, s=0.1)
 
             ax.set_title(title)
@@ -2251,13 +2251,13 @@ class AyanXgbdtAnalyzer:
             num_points = len(predictions)
             ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
 
-        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Validation Set Prediction Performance (Linear vs XGBoost Models)", fontsize=16)
+        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Test Set Prediction Performance (Linear vs XGBoost Models)", fontsize=16)
         plt.tight_layout()
         plt.show()
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200, sharex=True,)
 
-        for ax, (title, predictions) in zip(axes, [("Linear Regression", validate_lm_predictions), ("XGBoost", validate_xgboost_predictions)]):
+        for ax, (title, predictions) in zip(axes, [("Linear Regression", test_lm_predictions), ("XGBoost", test_xgboost_predictions)]):
             hb = ax.hist2d(predictions["target"], predictions["psi_hat"], bins=100, cmap='Blues', norm=mcolors.LogNorm())
             cbar = plt.colorbar(hb[3], ax=ax)
             cbar.set_label('Logarithm Density')
@@ -2276,7 +2276,7 @@ class AyanXgbdtAnalyzer:
             num_points = len(predictions)
             ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
 
-        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Validation Set Prediction Performance (Linear vs XGBoost Models)\nNOTE: logarithmic density used for coloring", fontsize=16, y=1.01)
+        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Test Set Prediction Performance (Linear vs XGBoost Models)\nNOTE: logarithmic density used for coloring", fontsize=16, y=1.01)
 
         plt.tight_layout()
         plt.show()
