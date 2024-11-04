@@ -2101,6 +2101,26 @@ class AyanXgbdtAnalyzer:
             self._cache_to_featherv2(self.linear_model_results, CACHE_FILE)
 
             return self.linear_model_results.head()
+        
+
+    def assert_missing_linear_model_coefficients_are_zero_binding(self): 
+
+        if not hasattr(self, 'linear_coefficients'):
+            self.load_linear_model_results()
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        shap_features = set(self.binding_columns)
+        linear_features = set(self.linear_coefficients.index) - {"const"}
+
+        assert linear_features.issubset(shap_features), logger.error("Linear model features not a subset of SHAP binding features")
+
+        missing_features = shap_features.difference(linear_features)
+
+        for feature in missing_features:
+            print(feature, self.shap_data[feature].sum())
+            # assert self.shap_data[feature].sum() == 0, logger.error(f"Feature {feature} is not an all 0 column")
 
 
     def plot_linear_model_results(self):
