@@ -1,6 +1,7 @@
 import pandas as pd
 import polars as pl
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 import numpy as np
 
@@ -257,6 +258,97 @@ class AyanXgbdtAnalyzer:
 
         return df
     
+    
+
+    # def calculate_duplicate_binding_subtraction_factor(self, df=None, exon_id=None): 
+
+    #     total_sum = 0
+
+    #     for direction, suffixes in [("ENSE_UP", ["_5_left", "_5_right"]), ("ENSE_DN", ["_3_left", "_3_right"])]:
+    #         subset = df.filter(pl.col(direction) == exon_id)
+
+    #         for suffix in suffixes:
+    #             columns = [col for col in subset.columns if col.endswith(suffix)]
+    #             total_sum += subset.select(columns).sum().sum_horizontal()[0]
+
+    #     assert total_sum >=0, logger.error(f"Negative sum for {exon_id}")
+
+    #     return total_sum
+    
+    
+    # def run_chi_square_total_dataset(self):
+        
+    #     if not hasattr(self, 'ctrl_only_binding_data'):
+    #         self.load_ctrl_only_binding_data()
+
+    #     chi_square_output = f"../outputs/chi_square/total_dataset/{self.cell_line}_total_dataset_chi_square_results.tsv"
+    #     chi_square_contingency_output = f"../outputs/chi_square/total_dataset/{self.cell_line}_total_dataset_chi_square_contingency_table.tsv"
+
+    #     if pathlib.Path(chi_square_output).exists() and pathlib.Path(chi_square_contingency_output).exists():
+    #         logger.info(f"FROM CACHE: Total table chi-square results for {self.cell_line} loaded")
+
+    #         total_dataset_chi_square_results = pd.read_csv(chi_square_output, sep="\t")
+    #         total_dataset_chi_square_contingency_tables = pd.read_csv(chi_square_contingency_output, sep="\t", index_col=0)
+
+    #         return total_dataset_chi_square_results, total_dataset_chi_square_contingency_tables
+    
+    #     else:
+
+    #         logger.info(f"Running TOTAL DATASET chi-square tests for {self.cell_line} {self.distance_threshold}")
+
+    #         if not hasattr(self, 'ctrl_only_binding_data'):
+    #             self.load_ctrl_only_binding_data()
+
+    #         partitions = self.partition_dataframe_by_PSI(df=self.ctrl_only_binding_data, column_name="psi", psi_cutoffs=self.psi_partition_thresholds)
+
+    #         results = None
+    #         contingency_table = {}
+
+    #         for partition_key, partition_df in partitions.items():
+    #             unique_ense_values = partition_df.select(pl.col("ENSE").unique()).to_series()
+
+    #             with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+    #                 futures = {executor.submit(self.calculate_duplicate_binding_subtraction_factor, df=partition_df, exon_id=ense_value): ense_value for ense_value in unique_ense_values}
+
+    #                 bound_sites = sum(future.result() for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc=f"Calculating duplicate 'bound' sites for {partition_key}"))
+
+    #             total_bound_sites = partition_df.select(self.binding_columns).sum().sum_horizontal()[0]
+    #             bound_sites = total_bound_sites - bound_sites
+
+    #             unbound_sites = sum(partition_df.filter(pl.col(col) == 0).shape[0] for col in self.binding_columns)
+
+    #             contingency_table[partition_key] = {"Bound": bound_sites, "Unbound": unbound_sites}
+
+    #         contingency_table = pd.DataFrame.from_dict(contingency_table, orient="index")
+    #         contingency_table.to_csv(chi_square_contingency_output, sep="\t", index=True)
+
+    #         chi2, p, _, _ = scipy.stats.chi2_contingency(contingency_table.to_numpy().tolist())
+    #         chi_square_results = [[chi2, p]]
+
+    #         results = pd.DataFrame(chi_square_results, columns=["Chi-Square Statistic", "P-Value"])
+    #         results.to_csv(chi_square_output, sep="\t", index=False)
+
+    #         # Calculate row proportions
+    #         row_proportions = contingency_table.div(contingency_table.sum(axis=1), axis=0)
+
+    #         # Plot the row proportions for the "Bound" column
+    #         plt.figure(dpi=200, figsize=(10, 5))
+
+    #         sns.lineplot(data=row_proportions.reset_index(), x="index", y="Bound", marker="o")
+
+    #         plt.title(f"{self.cell_line}: Row Proportions of 'Bound' by Partition", fontsize=20)
+            
+    #         plt.xlabel("Partition", fontsize=15)
+    #         plt.ylabel("Row Proportion (Bound)", fontsize=15)
+    #         plt.xticks(rotation=45)
+
+    #         plt.tight_layout()
+    #         plt.show()
+
+    #         return results, contingency_table
+
+
+
 
     # def calculate_duplicate_binding_subtraction_factor(self, df=None, exon_id=None): 
 
@@ -2103,6 +2195,73 @@ class AyanXgbdtAnalyzer:
 
         plt.tight_layout()
         plt.show()
+
+    
+    def compare_xgboost_and_linear_model_predictions(self): 
+        logger.info("Plotting XGBoost vs Linear Model prediction performance.")
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        if not hasattr(self, 'linear_model_results'):
+            self.load_linear_model_results()
+
+        validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "validate")
+        validate_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "validate")
+
+        assert validate_lm_predictions.shape[0] == validate_xgboost_predictions.shape[0]
+        logger.info(f"{validate_lm_predictions.shape[0]} examples used to evaluate each model")
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200)
+
+        for ax, (title, predictions) in zip(axes, [("Linear Regression", validate_lm_predictions), ("XGBoost", validate_xgboost_predictions)]):
+            ax.scatter(predictions["target"], predictions["psi_hat"], facecolors='none', edgecolors='blue', alpha=0.01, s=0.1)
+
+            ax.set_title(title)
+            ax.set_xlabel("Actual")
+            ax.set_ylabel("Predicted")
+
+            # Calculate R2 score
+            r2 = r2_score(predictions["target"], predictions["psi_hat"])
+
+            # Add y=x line
+            ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
+
+            # Add number of points and R2 score to the plot
+            num_points = len(predictions)
+            ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Validation Set Prediction Performance (Linear vs XGBoost Models)", fontsize=16)
+        plt.tight_layout()
+        plt.show()
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200, sharex=True,)
+
+        for ax, (title, predictions) in zip(axes, [("Linear Regression", validate_lm_predictions), ("XGBoost", validate_xgboost_predictions)]):
+            hb = ax.hist2d(predictions["target"], predictions["psi_hat"], bins=100, cmap='Blues', norm=mcolors.LogNorm())
+            cbar = plt.colorbar(hb[3], ax=ax)
+            cbar.set_label('Logarithm Density')
+
+            ax.set_title(title)
+            ax.set_xlabel("Actual")
+            ax.set_ylabel("Predicted")
+
+            # Calculate R2 score
+            r2 = r2_score(predictions["target"], predictions["psi_hat"])
+
+            # Add y=x line
+            ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
+
+            # Add number of points and R2 score to the plot
+            num_points = len(predictions)
+            ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Validation Set Prediction Performance (Linear vs XGBoost Models)\nNOTE: logarithmic density used for coloring", fontsize=16, y=1.01)
+
+        plt.tight_layout()
+        plt.show()
+
+
 
 
 
