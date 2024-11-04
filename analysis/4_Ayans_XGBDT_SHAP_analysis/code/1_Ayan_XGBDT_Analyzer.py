@@ -1886,58 +1886,82 @@ class AyanXgbdtAnalyzer:
         if not hasattr(self, 'shap_data'):
             self.load_SHAP_data()
 
-        test_validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition").is_in(["validate", "test"]))
-        test_validate_lm_predictions = self.retrieve_linear_model_results()
+        if not hasattr(self, 'linear_model_results'):
+            self.load_linear_model_results()
 
-        assert test_validate_lm_predictions.shape[0] == test_validate_xgboost_predictions.shape[0]
-        logger.info(f"{test_validate_lm_predictions.shape[0]} examples used to evaluate each model")
+        validate_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "validate")
+        validate_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "validate")
 
-        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=test_validate_lm_predictions).select("target", "psi_hat")
-        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events(df=test_validate_xgboost_predictions).select("target", "psi_hat")
+        r2_validate_lm = r2_score(validate_lm_predictions["target"], validate_lm_predictions["psi_hat"])
+        r2_validate_xgboost = r2_score(validate_xgboost_predictions["target"], validate_xgboost_predictions["psi_hat"])
 
-        assert linear_model_ppi_predictions.shape[0] == xgboost_model_ppi_predictions.shape[0]
-        logger.info(f"{linear_model_ppi_predictions.shape[0]} examples with at least 1 RBP PPI.")
+        assert validate_lm_predictions.shape[0] == validate_xgboost_predictions.shape[0]
+        logger.info(f"{validate_lm_predictions.shape[0]} examples used to evaluate each model")
 
-        # Assert no null or missing values in target or psi_hat columns
-        for df, col in [(linear_model_ppi_predictions, "target"), 
-            (linear_model_ppi_predictions, "psi_hat"), 
-            (xgboost_model_ppi_predictions, "target"), 
-            (xgboost_model_ppi_predictions, "psi_hat")]:
-                assert not df[col].is_null().any(), f"Null values found in {df}[{col}]"
+        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=validate_lm_predictions)
+        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=validate_xgboost_predictions)
+
+        for key in linear_model_ppi_predictions.keys():
+            assert linear_model_ppi_predictions[key].shape[0] == xgboost_model_ppi_predictions[key].shape[0]
+
+        r2_scores = {
+            "Model": [],
+            "PPI Category": [],
+            "R2 Score": []
+        }
         
-        for clipping_method in [None, "clip"]:
+        for key in linear_model_ppi_predictions.keys():
 
-            fig, axes = plt.subplots(1, 2, figsize=(12,5), dpi=200, sharex=True, sharey=True)
+            for plot_type in ["hist", "scatter"]:
 
-            for ax, data, model_type in zip(axes, [xgboost_model_ppi_predictions, linear_model_ppi_predictions], ["XGBoost", "Linear Model"]):
-                actual = data["target"]
-                predicted = data["psi_hat"]
+                fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200,)
 
-                if model_type == "Linear Model" and clipping_method == "clip":
-                    predicted = predicted.clip(0,1)
-                
-                ax.scatter(actual, predicted, s=1, alpha=0.1)
-                ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red', linestyle='--')
+                for ax, (title, predictions) in zip(axes, [("Linear Regression", linear_model_ppi_predictions[key]), ("XGBoost", xgboost_model_ppi_predictions[key])]):
+                    
+                    if plot_type == "hist":
+                        hb = ax.hist2d(predictions["target"], predictions["psi_hat"], bins=100, cmap='Blues', norm=mcolors.LogNorm())
+                        cbar = plt.colorbar(hb[3], ax=ax)
+                        cbar.set_label('Logarithm Density')
+                    elif plot_type == "scatter":
+                        ax.scatter(predictions["target"], predictions["psi_hat"], facecolors='none', edgecolors='blue', alpha=0.1, s=0.5)
 
-                ax.set_title(f"{model_type}")
-                ax.set_xlabel("Actual Prediction")
-                ax.set_ylabel("Model Prediction")
+                    ax.set_title(title)
+                    ax.set_xlabel("Actual")
+                    ax.set_ylabel("Predicted")
 
-                # Calculate R^2 value
-                r_squared = r2_score(actual, predicted)
+                    ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
 
-                # Add text for number of examples and R^2 value
-                ax.text(0.25 ,0.90, f"# Examples: {len(actual)}\n$R^2$: {r_squared:.3f}", transform=ax.transAxes, 
-                verticalalignment='top', fontsize=12,) #bbox=dict(facecolor='white', alpha=0.8))
+                    # Calculate R2 score
+                    r2 = r2_score(predictions["target"], predictions["psi_hat"])
+                    
+                    r2_scores["Model"].append(title)
+                    r2_scores["PPI Category"].append(key)
+                    r2_scores["R2 Score"].append(r2)
 
-            if clipping_method == "clip":
-                clip_str = "NOTE: Linear Model predicted values clipped to [0,1] Range. | (i.e. > 1 is 1 and < 0 is 0)"
-            elif clipping_method is None:
-                clip_str = "NOTE: Linear Model predictions are as is | (i.e. Pred. PSI can be > 1 or < 0)"
-            
-            plt.suptitle(f"{clip_str}\n\n{self.cell_line} {self.distance_threshold}: XGBoost vs Linear Model Predictions for RBP PPI Examples", fontsize=16, y=1.05)
-            plt.tight_layout()
-            plt.show()
+                    # Add number of points and R2 score to the plot
+                    num_points = len(predictions)
+                    ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+                plt.suptitle(f"{self.cell_line} {self.distance_threshold} Validation Set: {key}", fontsize=20)
+                plt.tight_layout()
+                plt.show()
+
+        r2_scores = pd.DataFrame.from_dict(r2_scores, orient="columns")
+
+        plt.figure(dpi=200, figsize=(8,3))
+
+        sns.barplot(data=r2_scores, y="PPI Category", x="R2 Score", hue="Model", palette=["tomato", "royalblue"], orient="h", width=0.6)
+
+        plt.axvline(x=r2_validate_lm, color='tomato', linestyle='-', linewidth=2, label=f'Linear Model R2: {r2_validate_lm:.2f}')
+        plt.axvline(x=r2_validate_xgboost, color='royalblue', linestyle='-.', linewidth=2, label=f'XGBoost R2: {r2_validate_xgboost:.2f}')
+
+        plt.title(f"{self.cell_line} {self.distance_threshold}: Validation Set R2 Scores\nby PPI Category/Model", fontsize=16, pad=20)
+        plt.ylabel("PPI Category", fontsize=12, labelpad=10)
+        plt.xlabel("R2 Score", fontsize=12, labelpad=10)
+        plt.legend(title="Model/R2 Scores", fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
+
+        plt.tight_layout()
+        plt.show()
 
 
     def load_linear_model_results(self): 
