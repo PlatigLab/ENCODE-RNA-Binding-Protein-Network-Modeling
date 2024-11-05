@@ -18,3 +18,6 @@ analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/SLURM_output/*
 
 # ignore SLURM output
 SLURM_logs/
+
+# ignore weights & biases output
+wandb/
