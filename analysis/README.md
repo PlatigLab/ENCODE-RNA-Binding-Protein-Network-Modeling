@@ -21,3 +21,13 @@ Steps are as follows:
 2. Normalize the raw counts matrices by multiple methods. 
 3. Take `eCLIP` peaks and assign them to the closest `RNA splice junction`. 
 4. Create a precursor for ML input data by outputting, per cell line and distance threshold, the number of peaks of an RBP within a set distance threshold of a splice junction. 
+
+📂 `4_Ayans_XGBDT_SHAP_analysis/`
+
+Analysis of Ayan's `XGBDT` and `Linear Regression` models to better understand: 
+* Performance of models 
+* Univariate associations of models to `Percent Spliced In (PSI)`. 
+* Global feature importance metrics 
+* Local feature importance metrics 
+* Comparison of different metrics and tests to look for concordance. 
+* Comparison across cell lines (for matching RBPs). 

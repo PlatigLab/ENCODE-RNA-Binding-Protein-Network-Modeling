@@ -5,15 +5,13 @@
 #SBATCH -n 1
 #SBATCH --output=../SLURM_output/final_dataset_creation_output_%A_%a.txt
 #SBATCH --error=../SLURM_output/final_dataset_creation_error_%A_%a.txt
-#SBATCH --mem=20GB
-#SBATCH --array=0-13
+#SBATCH --mem=25GB
+#SBATCH --array=0-29
 
 
-thresholds=(50 100 500 1000 2000 5000 10000)
+thresholds=(25 50 75 100 125 150 175 200 225 250 500 1000 2000 5000 10000)
 cell_lines=(HepG2 K562)
 # data_value_variations=("binary-binding-only" "num-peaks-only" "expression-getmm_no-log_dose-dependent-expression" "expression-getmm_no-log_dose-independent-expression" "expression-getmm_yes-log_dose-dependent-expression" "expression-getmm_yes-log_dose-independent-expression" "expression-tmm_no-log_dose-dependent-expression" "expression-tmm_no-log_dose-independent-expression" "expression-tmm_yes-log_dose-dependent-expression" "expression-tmm_yes-log_dose-independent-expression")
-
-data_value_variations=("num-peaks-only")
 
 
 combo=()
@@ -24,12 +22,7 @@ do
     for threshold in "${thresholds[@]}"
     do
 
-        for data_value_variation in "${data_value_variations[@]}"
-        do
-
-            combo+=("${cell_line}_*_${threshold}_${data_value_variation}.tsv.gz")
-
-        done 
+        combo+=("${cell_line}_*_${threshold}_*.tsv.gz")
 
     done
 
@@ -46,8 +39,8 @@ find_string="${combo[${SLURM_ARRAY_TASK_ID}]}"
 
 files=($(find ../output/ -name "${find_string}" -type f | sort))
 
-# Replace "*_" with nothing in find_string
-output_file=../final_modeling_input_datasets/$(echo $find_string | sed 's/\*_//g' | sed 's/.tsv.gz/.tsv/g')
+# Replace asteriks/underscores and provide correct suffix in find_string
+output_file=../final_modeling_input_datasets/$(echo $find_string | sed 's/_//' | sed 's/\*//g' | sed 's/.tsv.gz//g')num-peaks-no-kd.tsv
 
 # Uncompress the first file in the files array
 gunzip -c "${files[0]}" | head -n1 > "$output_file"

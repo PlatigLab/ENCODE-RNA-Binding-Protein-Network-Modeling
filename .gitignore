@@ -1,4 +1,5 @@
 .ipynb_checkpoints/
+__pycache__/
 
 # ignore individual counts files 
 analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/output/*
@@ -11,3 +12,9 @@ analysis/3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs/*
 analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/final_modeling_input_datasets/*
 analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/output/*
 analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/SLURM_output/*
+
+# ignore cache files 
+*.feather
+
+# ignore SLURM output
+SLURM_logs/
