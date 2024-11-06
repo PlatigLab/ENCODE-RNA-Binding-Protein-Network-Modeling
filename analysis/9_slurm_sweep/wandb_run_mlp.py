@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from platiglib.model.model_evaluation import PytorchModelEvaluation
+from platiglib.model.model_evaluation import PytorchModelEvaluation, get_default_params
 from platiglib.data.rbpse_dataset import RBPSEDataset                  # here for dynamic class loading
 
 # Configure logging
@@ -30,26 +30,11 @@ param_set = {
             'name': 'Adam',
             'lr': 0.001,
         },
-        'data_split': {
-            'method': "set_defs",
-            'train_set': ["chr1", "chr3", "chr5", "chr7", "chr9", "chr11", "chr13", "chr15", "chr17", "chr19", "chr21", "chrY"],
-            'validate_set': ["chr4", "chr6", "chr10", "chr14", "chr18", "chr22"],
-            'test_set': ["chr2", "chr8", "chr12", "chr16", "chr20", "chrX"],
-        },
-        'scoring': ['r2_score', 'mean_squared_error'],
-        'wandb': {
-            'track': True,
-        }
+        'data_split': get_default_params('data_split'),
+        'profile': get_default_params('profile'),
+        'wandb': get_default_params('wandb'),
     },
-    'dataset': {
-        'name': 'RBPSEDataset',
-        'cell_line': 'HepG2',
-        'window': 100,
-        'binding_format': 'binary',
-        'exp_norm': 'tmm',
-        'exp_log': True,
-        #'df_filter': 'df["RBP_KD"] == "NONE"'
-    }
+    'dataset': get_default_params('dataset'),
 }
 
 

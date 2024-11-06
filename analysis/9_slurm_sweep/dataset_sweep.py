@@ -9,11 +9,12 @@ import argparse
 WANDB_ENTITY = "platiglab"
 WANDB_PROJECT = "rbp-se"
 
-SCRIPT_NAME = 'wandb_run_xgb.py'
-SLURM_JOB_NAME = 'xgb_sweep'
+MODEL_NAME = 'hiervq'
+SCRIPT_NAME = f'wandb_run_{MODEL_NAME}.py'
+SWEEP_NAME = f'{MODEL_NAME}_sweep'
 MEMORY_GB = 128
 CPUS = 8
-USE_GPU = False
+USE_GPU = True
 
 sweep_configuration = {
     'method': 'grid',
@@ -25,15 +26,39 @@ sweep_configuration = {
         # 'dataset.cell_line': {
         #     'values': ['HepG2', 'K562'],
         # },
-        'dataset.window': {
-            'values': [50, 75, 100, 125, 150, 175, 200, 225, 250],
+        #'dataset.min_read_count': {
+            #'values': [None, 10, 20, 40, 100, 200, 400],
+        #},
+        #'dataset.window': {
+            #'values': [50, 75, 100, 125, 150, 175, 200, 225, 250],
+        #},
+        #'dataset.binding_format': {
+            #'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
+        #},
+        # 'model.n_estimators': {
+        #     'values': [100, 200, 500],
+        # },
+        # 'model.max_depth': {
+        #     'values': [3, 5, 7, 9],
+        # },
+        'training.seed': {
+            'values': [4232, 451, 2352, 321, 9491],
         },
-        'dataset.binding_format': {
-            'values': ['peak_count', 'binary', 'rbp_exp', 'rbp_exp_peak'],
-        },
-        'model.n_estimators': {
-            'values': [100, 200, 500],
-        },
+        # 'model.hidden_dim': {
+        #     'values': [4, 6, 8, 12, 16, 20, 40],
+        # },
+        # 'model.num_codewords': {
+        #     'values': [4, 6, 8, 12],
+        # },
+        # 'model.num_codewords': {
+        #     'values': [(i, j) for i in [4, 6] for j in [6, 8, 10, 12]],
+        # },
+        #'model.l1_reg': {
+        #    'values': [0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+        #},
+        #'model.temperature': {
+        #    'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
+        #},
     }
 }
 
@@ -54,19 +79,22 @@ def calculate_grid_size(sweep_config):
     return total_combinations
 
 
-def main(sweep_name=None):
-    # Add sweep name to configuration if provided
-    if sweep_name:
+def main(sweep_id=None, sweep_name=None):
+    # Initialize the sweep
+    if sweep_id is None:
+        # Add sweep name to configuration if provided
+        if sweep_name is None:
+            sweep_name = SWEEP_NAME
+        print(f"Sweep name: {sweep_name}\n")
         sweep_configuration['name'] = sweep_name
 
-    # Initialize the sweep
-    sweep_id = wandb.sweep(sweep_configuration,
-                           project=WANDB_PROJECT,
-                           entity=WANDB_ENTITY)
+        sweep_id = wandb.sweep(sweep_configuration,
+                               project=WANDB_PROJECT,
+                               entity=WANDB_ENTITY)
 
-    print(f"Sweep initialized. Sweep ID: {sweep_id}")
-    if sweep_name:
-        print(f"Sweep name: {sweep_name}\n")
+        print(f"New sweep initialized.")
+    print(f"Sweep ID: {sweep_id}")
+
 
     if USE_GPU:
         slurm_script_name = 'run_python_script_gpu.slurm'
@@ -78,9 +106,10 @@ def main(sweep_name=None):
     print(f"Sending {num_jobs} slurm jobs...")
     for i in range(num_jobs):
         subprocess.run(['sbatch',
-                        f'--job-name={SLURM_JOB_NAME}_{sweep_id}_{i:02}',
+                        f'--job-name={sweep_name}_{sweep_id}_{i:02}',
                         f'--mem={MEMORY_GB}G',
                         f'--cpus-per-task={CPUS}',
+                        '--exclude=udc-an38-13',  # manual hpc node blacklist
                         slurm_script_name,
                         SCRIPT_NAME,
                         '--sweep_id', sweep_id],
@@ -90,7 +119,8 @@ def main(sweep_name=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Initialize WandB sweep and submit SLURM jobs')
+    parser.add_argument('--sweep-id', type=str, help='Optional id of  existing sweep')
     parser.add_argument('--sweep-name', type=str, help='Optional name for the sweep')
     args = parser.parse_args()
 
-    main(args.sweep_name)
+    main(sweep_id=args.sweep_id, sweep_name=args.sweep_name)
