@@ -16,8 +16,8 @@ mkdir -p $WANDB_DIR
 
 export PYTHONUNBUFFERED=1
 
-module load anaconda
-: ${VENV_DIR:=/sfs/qumulo/qhome/kqt4tu/src/platiglab/.venv}
+module load miniforge
+: ${VENV_DIR:=/home/$USER/src/platiglab/.venv}
 source $VENV_DIR/bin/activate
 
 # Run the Python script
