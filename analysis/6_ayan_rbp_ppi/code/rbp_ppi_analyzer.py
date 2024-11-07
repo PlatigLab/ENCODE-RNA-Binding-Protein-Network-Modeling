@@ -9,7 +9,6 @@ from sklearn.metrics import r2_score
 class RbpPpiAnalyzer:
 
     # initate the class with the following parameters
-    cell_line: str = None  
     distance_threshold: int = None
 
     ##########################################
@@ -18,6 +17,8 @@ class RbpPpiAnalyzer:
     FEATHER_CACHE_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/4_Ayans_XGBDT_SHAP_analysis/outputs/__featherv2-cache__/"
     LINEAR_MODEL_DIR = "/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/linear-models-2024-10/linear-models-100-3a00c07e/"
     PPI_CACHE_DIR = "../output/ppi_cache_data/"
+
+    cell_lines = ["K562", "HepG2"]
 
     # RBP PPI 
     rbp_comparisons_file = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/4_Ayans_XGBDT_SHAP_analysis/outputs/rbp_comparisons/rbp_comparisons.json"
@@ -44,34 +45,47 @@ class RbpPpiAnalyzer:
 
         with open(self.rbp_comparisons_file, "r") as f:
             self.rbp_ppi = json.load(f)
-        
-        self.rbp_ppi = self.rbp_ppi[self.cell_line]
-    
-        logger.success(f"FROM CACHE: RBP PPI info for {self.cell_line} loaded")
+            
+        logger.success(f"FROM CACHE: RBP PPI info loaded")
 
 
     def load_SHAP_data(self):
-        logger.info(f"FROM CACHE: Loading SHAP data for {self.cell_line} {self.distance_threshold}")
+        logger.info(f"FROM CACHE: Loading SHAP data for distance threshold: {self.distance_threshold}.")
         
-        shap_file = f"{self.FEATHER_CACHE_DIR}/{self.cell_line}-{self.distance_threshold}-shap_data.feather"
-        self.shap_data = pl.read_ipc(shap_file)
+        shap_data = {}
 
-        logger.success(f"Loaded SHAP data for {self.cell_line} {self.distance_threshold}")
+        for cell_line in self.cell_lines: 
+
+            shap_file = f"{self.FEATHER_CACHE_DIR}/{cell_line}-{self.distance_threshold}-shap_data.feather"
+            shap_data[cell_line] = pl.read_ipc(shap_file)
+        
+        self.shap_data = shap_data
+
+        logger.success(f"Loaded SHAP data for distance threshold: {self.distance_threshold}")
     
 
     def load_linear_model_results(self): 
-        logger.info(f"FROM CACHE: Loading linear model predictions for {self.cell_line} {self.distance_threshold}.")
+        logger.info(f"FROM CACHE: Loading linear model predictions for distance threshold: {self.distance_threshold}.")
 
-        linear_coefficients_file = glob.glob(f"{self.LINEAR_MODEL_DIR}/{self.cell_line}-{self.distance_threshold}-*-linear-model-beta.dat")
-        assert len(linear_coefficients_file) == 1
+        linear_coefficients = {}
+        for cell_line in self.cell_lines: 
 
-        linear_coefficients = pd.read_csv(linear_coefficients_file[0], sep=",", index_col=0)
-        linear_coefficients.index.name = "Feature"
+            linear_coefficients_file = glob.glob(f"{self.LINEAR_MODEL_DIR}/{cell_line}-{self.distance_threshold}-*-linear-model-beta.dat")
+            assert len(linear_coefficients_file) == 1
+
+            linear_coefficients[cell_line] = pd.read_csv(linear_coefficients_file[0], sep=",", index_col=0)
+            linear_coefficients[cell_line].index.name = "Feature"
+        
         self.linear_coefficients = linear_coefficients
 
-        self.linear_model_results = pl.read_ipc(f"{self.FEATHER_CACHE_DIR}/{self.cell_line}_{self.distance_threshold}_linear_model_results.feather")
-        
-        logger.success(f"Retrieved linear model predictions for {self.cell_line} {self.distance_threshold}.")
+        linear_model_results = {}
+        for cell_line in self.cell_lines:
+            linear_model_results_file = f"{self.FEATHER_CACHE_DIR}/{cell_line}_{self.distance_threshold}_linear_model_results.feather"
+            linear_model_results[cell_line] = pl.read_ipc(linear_model_results_file)
+
+        self.linear_model_results = linear_model_results
+
+        logger.success(f"Retrieved linear model predictions for distance threshold:  {self.distance_threshold}.")
 
 
     def get_number_SLURM_CPUs(self):
