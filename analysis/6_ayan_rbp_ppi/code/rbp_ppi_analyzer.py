@@ -135,9 +135,23 @@ class RbpPpiAnalyzer:
 
     def retrieve_rbp_ppi_events_and_controls(self): 
 
-        if len(glob.glob(f"{self.PPI_CACHE_DIR}/{self.cell_line}-{self.distance_threshold}-*")) == 2:
-            pass
-        
+        if len(glob.glob(f"{self.PPI_CACHE_DIR}/*-{self.distance_threshold}-*")) == 4:
+
+            logger.info("FROM CACHE: Loading RBP PPI events and controls.")
+
+            linear_ppi = {}
+            xgboost_ppi = {}
+
+            for cell_line in self.cell_lines: 
+                linear_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear-ppi_events_and_controls.feather")
+                xgboost_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-xgboost-ppi_events_and_controls.feather")
+
+            self.linear_ppi = linear_ppi
+            self.xgboost_ppi = xgboost_ppi
+
+            for cell_line in self.cell_lines:
+                logger.info(f"{cell_line}\nLinear PPI shape: {self.linear_ppi[cell_line].shape} | XGBoost PPI shape: {self.xgboost_ppi[cell_line].shape}")
+
         else: 
 
             logger.info("Retrieving RBP PPI events and controls.")
