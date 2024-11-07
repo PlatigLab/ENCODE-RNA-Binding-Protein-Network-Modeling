@@ -148,55 +148,54 @@ class RbpPpiAnalyzer:
             if not hasattr(self, 'shap_data'):
                 self.load_SHAP_data()
 
-            results = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                true_ppi = {
-                    executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results, rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi for position_key in self.splice_junction_position_renaming.keys()
-                }
+            for cell_line in self.cell_lines: 
 
-                for future in tqdm.tqdm(concurrent.futures.as_completed(true_ppi), total=len(true_ppi), desc="True PPI Events"):
-                    results.append(future.result())
-            
-            true_ppi = pl.concat(results, how="vertical").unique()
+                logger.info(f"Retrieving RBP PPI events and controls for {cell_line}.")
 
-            results = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                futures = []
-                for rbp1, rbp2 in self.rbp_ppi:
+                results = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                    true_ppi = {
+                        executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results[cell_line], rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi[cell_line] for position_key in self.splice_junction_position_renaming.keys()
+                    }
 
-                    for position1 in self.splice_junction_position_renaming.keys():
-                        for position2 in self.splice_junction_position_renaming.keys():
-                            if position1 != position2:
-
-                                futures.append(executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results, (rbp1, rbp2), position1, position2))
-
-                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Mismatched PPI Events"):
-                    results.append(future.result())
-
-            mismatched_ppi = pl.concat(results, how="vertical").unique()
-
-            true_ppi_indices = set(true_ppi["index"].to_list())
-
-            mismatched_ppi_indices = set(mismatched_ppi["index"].to_list())
-            mismatched_ppi_indices = mismatched_ppi_indices.difference(true_ppi_indices)
-
-            for model_type, df in [("linear", self.linear_model_results), ("xgboost", self.shap_data)]:
-
-                df = df.join(true_ppi, on="index", how="left")
-                df = df.join(mismatched_ppi, on="index", how="left")
-
-                df = df.with_columns(
-                    pl.when(pl.col("index").is_in(true_ppi_indices))
-                    .then(pl.lit("True PPI"))
-                    .when(pl.col("index").is_in(mismatched_ppi_indices))
-                    .then(pl.lit("Mismatched PPI"))
-                    .otherwise(pl.lit("Non-PPI"))
-                    .alias("PPI Type")
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(true_ppi), total=len(true_ppi), desc="True PPI Events"):
+                        results.append(future.result())
+                
+                true_ppi = pl.concat(results, how="vertical").unique()
+                true_ppi = true_ppi.with_columns(
+                    pl.lit("True PPI").alias("PPI Type")
                 )
 
-                assert df["PPI Type"].has_nulls() == False
+                results = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                    futures = []
+                    for rbp1, rbp2 in self.rbp_ppi[cell_line]:
 
-                self._cache_to_featherv2(df, f"{self.PPI_CACHE_DIR}/{self.cell_line}-{self.distance_threshold}-{model_type}-ppi_events_and_controls.feather")
+                        for position1 in self.splice_junction_position_renaming.keys():
+                            for position2 in self.splice_junction_position_renaming.keys():
+                                if position1 != position2:
+
+                                    futures.append(executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results[cell_line], (rbp1, rbp2), position1, position2))
+
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Mismatched PPI Events"):
+                        results.append(future.result())
+
+                mismatched_ppi = pl.concat(results, how="vertical").unique()
+
+                mismatched_ppi = mismatched_ppi.filter(~pl.col("index").is_in(true_ppi["index"]))
+                mismatched_ppi = mismatched_ppi.with_columns(
+                    pl.lit("Mismatched PPI").alias("PPI Type")
+                )
+
+                for model_type, df in [("linear", self.linear_model_results[cell_line]), ("xgboost", self.shap_data[cell_line])]:
+
+                    combined_ppi = pl.concat([true_ppi, mismatched_ppi], how="vertical")
+                    df = df.join(combined_ppi, on="index", how="left")
+
+                    df = df.with_columns(pl.col("PPI Type").fill_null("Non-PPI"))
+                    assert df["PPI Type"].has_nulls() == False
+
+                    self._cache_to_featherv2(df, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-{model_type}-ppi_events_and_controls.feather")
         
         logger.success("Finished retrieving RBP PPI events and controls.")
 
