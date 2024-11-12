@@ -930,6 +930,9 @@ class AyanXgbdtAnalyzer:
 
     def predicted_vs_actual_PSI_model(self): 
 
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
         plt.figure(dpi=200, figsize=(10,10))
 
         plotting_df = self.shap_data.select(["target", "psi_hat"])
@@ -953,7 +956,84 @@ class AyanXgbdtAnalyzer:
         plt.suptitle(f"{self.cell_line}: Actual vs Predicted", x=0.5, y=1.0)
 
         plt.show()
+
     
+    def compare_distance_thresholds(self):
+
+        r2_results = []
+        
+        xgboost_configs = [file for file in glob.glob(f"{self.ayan_shap_folder}/**/config*.json", recursive=True) if "-prelim" not in file]
+        linear_configs = [ file for file in glob.glob(f"{self.linear_model_path}/**/config*.json", recursive=True) if "-prelim" not in file]
+        elasticnet_configs = [ file for file in glob.glob(f"{self.elasticnet_model_path}/**/config*.json", recursive=True) if "-prelim" not in file]
+        
+        for config_files, model_type in zip([xgboost_configs, linear_configs, elasticnet_configs], ["XGBoost", "Standard OLS", "ElasticNet"]):
+            for file in config_files: 
+
+                with open(file, "r") as f:
+                    config = json.load(f)
+
+                    if model_type == "XGBoost":
+                        r2_results.append(
+                            [
+                                config["cell_line"],
+                                config["exon_buffer"], 
+                                config["r2"]["ensemble"], 
+                                model_type
+                            ]
+                        )
+
+                    elif model_type == "Standard OLS" or model_type == "ElasticNet":
+                        for cell_line in config["cell_lines"]:
+                            r2_results.append(
+                                [
+                                    cell_line, 
+                                    config["exon_buffer"], 
+                                    config[cell_line]["fit_statistics"]["r-squared-valid"],  
+                                    model_type
+                                ]
+                            )
+
+        r2_results = pd.DataFrame(r2_results, columns=["Cell Line", "Distance Threshold", "R2 Score", "Model Type"])
+
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharey=True, sharex=True, dpi=200)
+
+        for ax, model in zip(axes, ["Standard OLS", "ElasticNet", "XGBoost"]):
+            subset = r2_results[r2_results["Model Type"] == model].sort_values(by=["Distance Threshold", "Cell Line"], key=lambda x: x if x.name == "Cell Line" else x.astype(int))
+
+            sns.barplot(data=subset, x="Distance Threshold", y="R2 Score", hue="Cell Line", ax=ax, palette=["lightblue", "lightcoral"], edgecolor="black", width=0.5)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+
+            if model=="ElasticNet":
+                ax.set_title("ElasticNet\nNOTE: not fully optimized", fontsize=20)
+            else: 
+                ax.set_title(model, fontsize=18)
+
+        avg_r2_score = r2_results["R2 Score"].mean()
+        for ax in axes:
+            ax.axhline(y=avg_r2_score, color='green', linestyle=':', linewidth=2, label=f'Average R2: {avg_r2_score:.2f}')
+
+        plt.suptitle("Test R2 Scores by Cell Line, Model, and Window Size", fontsize=26, y=1.01)
+        fig.supxlabel("Window Size", fontsize=20)
+        fig.supylabel("R2 Score", fontsize=20, x=-0.01)
+
+        plt.tight_layout()
+        plt.show()
+
+        plt.figure(dpi=200, figsize=(12, 4))
+
+        for (cell_line, distance_threshold), group in r2_results.groupby(["Cell Line", "Distance Threshold"]):
+            group = group.set_index("Model Type").reindex(["Standard OLS", "ElasticNet", "XGBoost"]).reset_index()
+            plt.plot(group["Model Type"], group["R2 Score"], marker="o", label=f"{cell_line} - {distance_threshold}")
+
+        plt.title("Test R2 Scores by Cell Line, Model, and Window Size\nNOTE: ElasticNet not fully optimized", fontsize=20)
+        plt.xlabel("Model Type", fontsize=15)
+        plt.ylabel("R2 Score", fontsize=15)
+        plt.legend(title="Cell Line - Window Size", title_fontsize=14, fontsize=10, loc='upper left', bbox_to_anchor=(1, 1.05))
+
+        plt.tight_layout()
+        plt.show()
+
 
     def plot_psi_distribution(self):
         
