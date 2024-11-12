@@ -2151,12 +2151,7 @@ class AyanXgbdtAnalyzer:
 
         self.linear_coefficients = linear_coefficients
 
-        files = sorted([file for file in glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}-{self.distance_threshold}-*-data.dat") if re.search(r'-(validate|test|train)-data\.dat$', file)])
-        assert len(files) == 3, logger.error([file.split("/")[-1] for file in files])
-
-        dataframes = []
-
-        CACHE_FILE = f"../outputs/__featherv2-cache__/{self.cell_line}_{self.distance_threshold}_linear_model_results.feather"
+        CACHE_FILE = f"../outputs/__featherv2-cache__/{self.cell_line}-{self.distance_threshold}-linear_model_results.feather"
 
         if pathlib.Path(CACHE_FILE).exists():
 
@@ -2169,10 +2164,17 @@ class AyanXgbdtAnalyzer:
 
         else: 
 
+            logger.info("No Cache... Hence, creating cache for standard OLS results. ")
+
+            files = sorted([file for file in glob.glob(f"{self.linear_model_path}/{self.cell_line}-{self.distance_threshold}-*-data.dat") if re.search(r'-(validate|test|train)-data\.dat$', file)])
+            assert len(files) == 3, logger.error([file.split("/")[-1] for file in files])
+
+            dataframes = []
+
             for file in files:
                 logger.info(f"Loading file: {file.split('/')[-1]}")
 
-                tmp_df = pl.scan_csv(file, has_header=True, separator=",").rename({"": "index"}).collect(streaming=True)
+                tmp_df = pl.scan_csv(file, has_header=True, separator=",").rename({"": "graph_index"}).collect(streaming=True)
 
                 partition = file.split("-")[-2]
                 assert partition in ["validate", "test", "train"], logger.error(f"Partition {partition} not recognized.")
@@ -2185,26 +2187,6 @@ class AyanXgbdtAnalyzer:
 
             return self.linear_model_results.head()
         
-
-    def assert_missing_linear_model_coefficients_are_zero_binding(self): 
-
-        if not hasattr(self, 'linear_coefficients'):
-            self.load_linear_model_results()
-
-        if not hasattr(self, 'shap_data'):
-            self.load_SHAP_data()
-
-        shap_features = set(self.binding_columns)
-        linear_features = set(self.linear_coefficients.index) - {"const"}
-
-        assert linear_features.issubset(shap_features), logger.error("Linear model features not a subset of SHAP binding features")
-
-        missing_features = shap_features.difference(linear_features)
-
-        for feature in missing_features:
-            print(feature, self.shap_data[feature].sum())
-            # assert self.shap_data[feature].sum() == 0, logger.error(f"Feature {feature} is not an all 0 column")
-
 
     def plot_linear_model_results(self):
     
