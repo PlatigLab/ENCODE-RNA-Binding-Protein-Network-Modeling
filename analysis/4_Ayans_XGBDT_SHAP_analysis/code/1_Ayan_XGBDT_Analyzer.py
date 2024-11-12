@@ -2141,14 +2141,14 @@ class AyanXgbdtAnalyzer:
 
     def load_linear_model_results(self): 
         logger.info("Retrieving linear model predictions.")
-
-        LINEAR_MODEL_PATH="/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/linear-models-2024-10/linear-models-100-3a00c07e/"
         
-        linear_coefficients_file = glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}-{self.distance_threshold}-*-linear-model-beta.dat")
+        linear_coefficients_file = glob.glob(f"{self.linear_model_path}/{self.cell_line}-{self.distance_threshold}-*-linear-model-beta.dat")
         assert len(linear_coefficients_file) == 1
 
         linear_coefficients = pd.read_csv(linear_coefficients_file[0], sep=",", index_col=0)
         linear_coefficients.index.name = "Feature"
+        assert set(linear_coefficients.index) - {"const"} == set(self.binding_columns), "Mismatch between linear coefficients and binding columns"
+
         self.linear_coefficients = linear_coefficients
 
         files = sorted([file for file in glob.glob(f"{LINEAR_MODEL_PATH}/{self.cell_line}-{self.distance_threshold}-*-data.dat") if re.search(r'-(validate|test|train)-data\.dat$', file)])
