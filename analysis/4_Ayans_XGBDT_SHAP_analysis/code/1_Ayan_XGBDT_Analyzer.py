@@ -17,6 +17,7 @@ import os, json, glob, scipy, concurrent.futures, tqdm, gc, pathlib, pickle, arg
 
 @dataclass
 class AyanXgbdtAnalyzer:
+
     # initate the class with the following parameters
     cell_line: str = None  
     distance_threshold: int = None
@@ -25,8 +26,10 @@ class AyanXgbdtAnalyzer:
     # General (non-class specific) variables #
     ##########################################
 
-    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/bdt-xgb-models-2024-10/"
+    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/bdt-xgb-models-2024-11/"
     ayan_binding_folder = "/project/PlatigLab/data/collaborators/BWH/2_input_binding_data_and_INCORRECT_SHAP_toy_data_2024-07/input_binding_data/"
+    linear_model_path = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/linear-models-ols-2024-11/linear-models-ols-100-0599cbc0/"
+    elasticnet_model_path = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/linear-models-elastic_net-2024-11/linear-models-elastic_net-0.01-0.5-100-818c7bf4/"
 
     feather_cache = "../outputs/__featherv2-cache__"
 
