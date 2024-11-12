@@ -914,7 +914,7 @@ class AyanXgbdtAnalyzer:
 
                     dataframes.append(tmp_df)
 
-                tmp_df = pl.concat(dataframes, how="diagonal").rename({"": "index"})
+                tmp_df = pl.concat(dataframes, how="diagonal")
 
                 self.binding_columns = [col for col in tmp_df.columns if col.endswith("_right") or col.endswith("_left")]
                 self.shap_columns = [col for col in tmp_df.columns if col.endswith("_shap")]
