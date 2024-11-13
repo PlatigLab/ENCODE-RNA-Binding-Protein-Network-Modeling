@@ -50,7 +50,7 @@ class RbpPpiAnalyzer:
 
 
     def load_SHAP_data(self):
-        logger.info(f"FROM CACHE: Loading SHAP data for distance threshold: {self.distance_threshold}.")
+        logger.info(f"FROM CACHE: Loading SHAP data for distance threshold {self.distance_threshold}.")
         
         shap_data = {}
 
@@ -58,8 +58,19 @@ class RbpPpiAnalyzer:
 
             shap_file = f"{self.FEATHER_CACHE_DIR}/{cell_line}-{self.distance_threshold}-shap_data.feather"
             shap_data[cell_line] = pl.read_ipc(shap_file)
+
         
         self.shap_data = shap_data
+
+        binding_columns = {}
+        shap_columns = {}
+
+        for cell_line in self.cell_lines:
+            binding_columns[cell_line] = [col for col in self.shap_data[cell_line].columns if col.endswith("_right") or col.endswith("_left")]
+            shap_columns[cell_line] = [col for col in self.shap_data[cell_line].columns if col.endswith("_shap")]
+        
+        self.binding_columns = binding_columns
+        self.shap_columns = shap_columns
 
         logger.success(f"Loaded SHAP data for distance threshold: {self.distance_threshold}")
     
