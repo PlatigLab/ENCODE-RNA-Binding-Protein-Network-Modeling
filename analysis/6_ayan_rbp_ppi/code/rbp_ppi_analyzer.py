@@ -91,12 +91,43 @@ class RbpPpiAnalyzer:
 
         linear_model_results = {}
         for cell_line in self.cell_lines:
-            linear_model_results_file = f"{self.FEATHER_CACHE_DIR}/{cell_line}_{self.distance_threshold}_linear_model_results.feather"
+            linear_model_results_file = f"{self.FEATHER_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear_model_results.feather"
             linear_model_results[cell_line] = pl.read_ipc(linear_model_results_file)
 
         self.linear_model_results = linear_model_results
 
-        logger.success(f"Retrieved linear model predictions for distance threshold:  {self.distance_threshold}.")
+        logger.success(f"Retrieved linear model predictions for distance threshold: {self.distance_threshold}.")
+
+    
+    def get_total_binding(self):
+
+        logger.info("Calculating total binding for SHAP data and linear model results.")
+
+        if not hasattr(self, 'shap_data'):
+            self.load_SHAP_data()
+
+        if not hasattr(self, 'linear_model_results'):
+            self.load_linear_model_results()
+
+        for cell_line in self.cell_lines:
+                
+            shap_data = self.shap_data[cell_line]
+            linear_model_results = self.linear_model_results[cell_line]
+
+            shap_data = shap_data.with_columns(
+                pl.sum_horizontal(pl.col(self.binding_columns[cell_line])).alias("Total Binding")
+            )
+
+            linear_model_results = linear_model_results.with_columns(
+                pl.sum_horizontal(pl.col(self.binding_columns[cell_line])).alias("Total Binding")
+            )
+
+            self.shap_data[cell_line] = shap_data
+            self.linear_model_results[cell_line] = linear_model_results
+
+        logger.success("Finished calculating total binding for SHAP data and linear model results.")
+
+
 
 
     def get_number_SLURM_CPUs(self):
