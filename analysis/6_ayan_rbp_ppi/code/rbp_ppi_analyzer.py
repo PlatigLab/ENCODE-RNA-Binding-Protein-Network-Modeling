@@ -447,5 +447,16 @@ class RbpPpiAnalyzer:
         plt.xlabel("R2 Score", fontsize=12, labelpad=10)
         plt.legend(title="Model/R2 Scores", fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
 
-        plt.tight_layout()
-        plt.show()
+
+if __name__ == "__main__":
+
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
+    logger.add(sys.stderr, level="ERROR")
+
+    parser = argparse.ArgumentParser(description="RBP PPI Analyzer")
+    parser.add_argument('--distance', type=int, required=True, help='Distance threshold for analysis')
+    parser.add_argument('--parallel-task', type=str, required=False, help='Parallel task to run')
+    args = parser.parse_args()
+
+    analyzer = RbpPpiAnalyzer(distance_threshold=args.distance)
