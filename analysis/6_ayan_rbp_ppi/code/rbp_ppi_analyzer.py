@@ -173,6 +173,21 @@ class RbpPpiAnalyzer:
         logger.success("Initial data assertions passed.")
 
 
+    def check_binding_graphs_equal_for_shap_vs_linear_regression(self): 
+
+        logger.info("Checking if binding graphs are equal for SHAP vs Linear Regression.")
+
+        for cell_line in self.cell_lines:
+            tmp_shap = self.shap_data[cell_line].sort("graph_index").select(self.binding_columns[cell_line])
+            tmp_linear = self.linear_model_results[cell_line].sort("graph_index").select(self.binding_columns[cell_line])
+
+            if tmp_shap.equals(tmp_linear): 
+                logger.info(f"Binding graphs match for {cell_line}.")
+                
+            else: 
+                logger.error(f"Binding graphs do not match for {cell_line}.")
+            
+
 
 
     def get_number_SLURM_CPUs(self):
@@ -460,3 +475,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     analyzer = RbpPpiAnalyzer(distance_threshold=args.distance)
+
+        case "compare_model_binding_graphs": 
+            analyzer.check_binding_graphs_equal_for_shap_vs_linear_regression()
+
