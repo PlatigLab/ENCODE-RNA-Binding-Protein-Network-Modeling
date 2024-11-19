@@ -54,11 +54,11 @@ class RbpPpiAnalyzer:
             rbp_ppi = json.load(f)
 
         for cell_line in self.cell_lines:
-            rbp_ppi[cell_line] = [sorted(pair) for pair in rbp_ppi[cell_line]]
+            rbp_ppi[cell_line] = [tuple(sorted(pair)) for pair in rbp_ppi[cell_line]]
         
         self.rbp_ppi = rbp_ppi
 
-        logger.success(f"FROM CACHE: RBP PPI info loaded")
+        logger.success(f"FROM CACHE: RBP PPI info loaded\n RBP PPIs in K562: {len(self.rbp_ppi['K562'])}\nRBP PPIs in HepG2: {len(self.rbp_ppi['HepG2'])}")
 
 
     def load_SHAP_data(self):
