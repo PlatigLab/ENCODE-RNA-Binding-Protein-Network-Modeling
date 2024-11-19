@@ -497,152 +497,140 @@ class RbpPpiAnalyzer:
         
         logger.success("Finished retrieving RBP PPI events and controls.")
 
+    
+    def amount_binding_vs_PSI(self): 
 
-    def compare_xgboost_and_linear_model_predictions(self): 
-        logger.info("Plotting XGBoost vs Linear Model prediction performance.")
+        for title_prefix in ["KD + CTRL:", "CTRL ONLY:"]:
 
-        if not hasattr(self, 'shap_data'):
-            self.load_SHAP_data()
+            if title_prefix == "KD + CTRL:":
+                iter_data = self.shap_data
+            elif title_prefix == "CTRL ONLY:":
+                iter_data = {cell_line: self.shap_data[cell_line].filter(pl.col("RBP_KD") == "NONE") for cell_line in self.cell_lines}
 
-        if not hasattr(self, 'linear_model_results'):
-            self.load_linear_model_results()
+            logger.info(f"Plotting amount of binding vs PSI for {title_prefix.strip(':')}")
 
-        test_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "test")
-        test_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "test")
+            fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=False, sharey=True, dpi=200)
 
-        assert test_lm_predictions.shape[0] == test_xgboost_predictions.shape[0]
-        logger.info(f"{test_lm_predictions.shape[0]} examples used to evaluate each model")
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = iter_data[cell_line].select(["Total Binding", "target"]).to_pandas()
+                hb = ax.hexbin(data["Total Binding"], data["target"], gridsize=50, cmap='viridis', mincnt=1, norm = mcolors.LogNorm())
+                
+                ax.set_title(f"{cell_line}", fontsize=20, pad=20)
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200)
+                cb = fig.colorbar(hb, ax=ax)
+                cb.ax.set_title('Bin Counts', fontsize=12,)
 
-        for ax, (title, predictions) in zip(axes, [("Linear Regression", test_lm_predictions), ("XGBoost", test_xgboost_predictions)]):
-            ax.scatter(predictions["target"], predictions["psi_hat"], facecolors='none', edgecolors='blue', alpha=0.01, s=0.1)
+                num_points = len(data)
+                spearman_corr, _ = spearmanr(data["Total Binding"], data["target"])
 
-            ax.set_title(title)
-            ax.set_xlabel("Actual")
-            ax.set_ylabel("Predicted")
+                ax.text(0.95, 0.6, f"Spearman r: {spearman_corr:.2f}\n# Points: {num_points}", 
+                        transform=ax.transAxes, verticalalignment='top', horizontalalignment='right', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
 
-            # Calculate R2 score
-            r2 = r2_score(predictions["target"], predictions["psi_hat"])
+            fig.supxlabel("# Bindings per Graph", fontsize=20)
+            fig.supylabel("PSI", fontsize=20, x=0.01)
+            plt.suptitle(f"{title_prefix} Amount of Binding vs. PSI", fontsize=24, y=1.0)
 
-            # Add y=x line
-            ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
+            plt.tight_layout()
+            plt.show()
 
-            # Add number of points and R2 score to the plot
-            num_points = len(predictions)
-            ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+            
+            fig, axes = plt.subplots(1, 2, figsize=(9, 3), sharex=True, sharey=True, dpi=200)
 
-        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Test Set Prediction Performance (Linear vs XGBoost Models)", fontsize=16)
-        plt.tight_layout()
-        plt.show()
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = iter_data[cell_line].select(["Total Binding", "target"]).filter(pl.col("Total Binding") < 5).to_pandas()
+                hb = ax.hexbin(data["Total Binding"], data["target"], gridsize=40, cmap='viridis', mincnt=1, norm=mcolors.LogNorm())
+                
+                ax.set_title(f"{cell_line}", fontsize=14, pad=20)
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200, sharex=True,)
+                cb = fig.colorbar(hb, ax=ax)
+                cb.ax.set_title('Bin Counts', fontsize=8,)
 
-        for ax, (title, predictions) in zip(axes, [("Linear Regression", test_lm_predictions), ("XGBoost", test_xgboost_predictions)]):
-            hb = ax.hist2d(predictions["target"], predictions["psi_hat"], bins=100, cmap='Blues', norm=mcolors.LogNorm())
-            cbar = plt.colorbar(hb[3], ax=ax)
-            cbar.set_label('Logarithm Density')
+                num_points = len(data)
+                spearman_corr, _ = spearmanr(data["Total Binding"], data["target"])
 
-            ax.set_title(title)
-            ax.set_xlabel("Actual")
-            ax.set_ylabel("Predicted")
+                ax.text(0.95, 0.6, f"Spearman r: {spearman_corr:.2f}\n# Points: {num_points}", 
+                        transform=ax.transAxes, verticalalignment='top', horizontalalignment='right', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
 
-            # Calculate R2 score
-            r2 = r2_score(predictions["target"], predictions["psi_hat"])
+            fig.supxlabel("# Bindings per Graph", fontsize=10)
+            fig.supylabel("PSI", fontsize=10, x=0.01)
+            plt.suptitle(f"{title_prefix} Amount of Binding vs. PSI", fontsize=16, y=1.0)
 
-            # Add y=x line
-            ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
+            plt.tight_layout()
+            plt.show()
 
-            # Add number of points and R2 score to the plot
-            num_points = len(predictions)
-            ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+            logger.info("Creating violinplot plot for PSI per each binding amount category.")
 
-        plt.suptitle(f"{self.cell_line} {self.distance_threshold}: Test Set Prediction Performance (Linear vs XGBoost Models)\nNOTE: logarithmic density used for coloring", fontsize=16, y=1.01)
+            number_of_bins = 15
+            combined_data = []
 
-        plt.tight_layout()
-        plt.show()
-        
+            for cell_line in self.cell_lines:
+                data = iter_data[cell_line].select(["Total Binding", "target"]).with_columns(
+                    pl.when(pl.col("Total Binding") < number_of_bins)
+                        .then(pl.col("Total Binding"))
+                        .otherwise(number_of_bins)
+                    .alias("Binding Amount Categories")
+                )
+                
+                data = data.with_columns(pl.lit(cell_line).alias("Cell Line"))
 
-    #TODO get Ayan to give predictions for testing set for linear models
-    def compare_rbp_ppi_performance_xgboost_vs_linear_model(self): 
-        logger.info("Comparing RBP PPI performance between XGBoost and Linear Models.")
-        
-        if not hasattr(self, 'shap_data'):
-            self.load_SHAP_data()
+                combined_data.append(data)
 
-        if not hasattr(self, 'linear_model_results'):
-            self.load_linear_model_results()
+            combined_data = pl.concat(combined_data).sort(["Cell Line", "Binding Amount Categories"]).with_columns(
+                pl.col("Binding Amount Categories").cast(pl.Utf8)
+            ).to_pandas()
 
-        test_xgboost_predictions = self.shap_data.filter(pl.col("Data Partition") == "test")
-        test_lm_predictions = self.linear_model_results.filter(pl.col("Data Partition") == "test")
+            combined_data["Binding Amount Categories"] = combined_data["Binding Amount Categories"].replace(str(number_of_bins), f"> {number_of_bins}")
 
-        r2_test_lm = r2_score(test_lm_predictions["target"], test_lm_predictions["psi_hat"])
-        r2_test_xgboost = r2_score(test_xgboost_predictions["target"], test_xgboost_predictions["psi_hat"])
+            fig, axes = plt.subplots(2, 1, figsize=(12, 8), dpi=200, sharey=True, sharex=True)
 
-        assert test_lm_predictions.shape[0] == test_xgboost_predictions.shape[0]
-        logger.info(f"{test_lm_predictions.shape[0]} examples used to evaluate each model")
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = combined_data[combined_data["Cell Line"] == cell_line]
 
-        linear_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=test_lm_predictions)
-        xgboost_model_ppi_predictions = self.retrieve_rbp_ppi_events_and_controls(df=test_xgboost_predictions)
+                sns.violinplot(x="Binding Amount Categories", y="target", data=data, palette="viridis", ax=ax)
 
-        for key in linear_model_ppi_predictions.keys():
-            assert linear_model_ppi_predictions[key].shape[0] == xgboost_model_ppi_predictions[key].shape[0]
+                ax.set_title(f"{cell_line}", fontsize=20)
+                ax.set_ylim(-0.2, 1.4)
 
-        r2_scores = {
-            "Model": [],
-            "PPI Category": [],
-            "R2 Score": []
-        }
-        
-        for key in linear_model_ppi_predictions.keys():
+                ax.set_xlabel("")
+                ax.set_ylabel("")
 
-            for plot_type in ["hist", "scatter"]:
+                total_count = data.shape[0]
+                for category in data["Binding Amount Categories"].unique():
+                    category_count = data[data["Binding Amount Categories"] == category].shape[0]
+                    percentage = (category_count / total_count) * 100
+                    high_target_percentage = ((data[(data["Binding Amount Categories"] == category) & (data["target"] > 0.9)].shape[0]) / category_count) * 100
 
-                fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=200,)
+                    ax.text(category, 0.92, f"{percentage:.1f}%", ha='center', va='bottom', color="blue", fontsize=10, transform=ax.get_xaxis_transform())
+                    ax.text(category, 0.87, f"{high_target_percentage:.1f}%", ha='center', va='bottom', color="red", fontsize=10, transform=ax.get_xaxis_transform())
 
-                for ax, (title, predictions) in zip(axes, [("Linear Regression", linear_model_ppi_predictions[key]), ("XGBoost", xgboost_model_ppi_predictions[key])]):
-                    
-                    if plot_type == "hist":
-                        hb = ax.hist2d(predictions["target"], predictions["psi_hat"], bins=100, cmap='Blues', norm=mcolors.LogNorm())
-                        cbar = plt.colorbar(hb[3], ax=ax)
-                        cbar.set_label('Logarithm Density')
-                    elif plot_type == "scatter":
-                        ax.scatter(predictions["target"], predictions["psi_hat"], facecolors='none', edgecolors='blue', alpha=0.1, s=0.5)
+                ax.axhline(0, color='black', linestyle='--', linewidth=2)
+                ax.axhline(1, color='black', linestyle='--', linewidth=2)
 
-                    ax.set_title(title)
-                    ax.set_xlabel("Actual")
-                    ax.set_ylabel("Predicted")
+            plt.suptitle(f"{title_prefix} Distributions of PSI per # Bindings", fontsize=24, y=1.0)
+            fig.supxlabel("# Bindings per Event", fontsize=20)
+            fig.supylabel("PSI", fontsize=20, x=0.01)
 
-                    ax.plot([0, 1], [0, 1], color='green', linestyle='--', linewidth=2)
+            plt.tight_layout()
+            plt.show()
 
-                    # Calculate R2 score
-                    r2 = r2_score(predictions["target"], predictions["psi_hat"])
-                    
-                    r2_scores["Model"].append(title)
-                    r2_scores["PPI Category"].append(key)
-                    r2_scores["R2 Score"].append(r2)
+            logger.info("Plotting cell-line-comparison-specific version of violinplot for distribution of PSI per binding amount category")
 
-                    # Add number of points and R2 score to the plot
-                    num_points = len(predictions)
-                    ax.text(0.05, 0.95, f"# Points: {num_points}\nR2: {r2:.2f}", transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+            plt.figure(figsize=(20, 6), dpi=200)
+            sns.violinplot(x="Binding Amount Categories", y="target", hue="Cell Line", data=combined_data, palette=["#0072B2", "#D55E00"], split=True, gap=0.1)
 
-                plt.suptitle(f"{self.cell_line} {self.distance_threshold} Test Set: {key}", fontsize=20)
-                plt.tight_layout()
-                plt.show()
+            plt.axhline(0, color='red', linestyle='--', linewidth=2)
+            plt.axhline(1, color='red', linestyle='--', linewidth=2)
 
-        r2_scores = pd.DataFrame.from_dict(r2_scores, orient="columns")
+            plt.xlabel("# Bindings per Event", fontsize = 24, labelpad=10)
+            plt.ylabel("PSI", fontsize=24, labelpad=10)
+            plt.title(f"{title_prefix} Distributions of PSI per # Bindings", fontsize=30, pad=20)
+            plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=20)
 
-        plt.figure(dpi=200, figsize=(8,3))
+            plt.tight_layout()
+            plt.show()
 
-        sns.barplot(data=r2_scores, y="PPI Category", x="R2 Score", hue="Model", palette=["tomato", "royalblue"], orient="h", width=0.6)
-
-        plt.axvline(x=r2_test_lm, color='tomato', linestyle='-', linewidth=2, label=f'Linear Model R2: {r2_test_lm:.2f}')
-        plt.axvline(x=r2_test_xgboost, color='royalblue', linestyle='-.', linewidth=2, label=f'XGBoost R2: {r2_test_xgboost:.2f}')
-
-        plt.title(f"{self.cell_line} {self.distance_threshold}: Test Set R2 Scores\nby PPI Category/Model", fontsize=16, pad=20)
-        plt.ylabel("PPI Category", fontsize=12, labelpad=10)
-        plt.xlabel("R2 Score", fontsize=12, labelpad=10)
-        plt.legend(title="Model/R2 Scores", fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
+            logger.success(f"Finished plotting amount of binding vs PSI for {title_prefix.strip(':')}")
+            
 
 
 if __name__ == "__main__":
