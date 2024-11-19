@@ -188,6 +188,90 @@ class RbpPpiAnalyzer:
                 logger.error(f"Binding graphs do not match for {cell_line}.")
             
 
+    def check_mismatch_graphs(self):  
+
+        MISMATCH_CACHE_FILE= "../output/mismatch_graph_stats/mismatch_stats.tsv"
+
+        if pathlib.Path(MISMATCH_CACHE_FILE).exists():
+
+            logger.info("FROM CACHE: Loading mismatch graph stats.")
+            mismatched_graphs = pd.read_csv(MISMATCH_CACHE_FILE, sep="\t")
+
+            self.mismatched_graphs = mismatched_graphs
+        
+        else: 
+
+            if not hasattr(self, 'shap_data'):
+                self.load_SHAP_data()
+
+            logger.info("Calculating number of mismatch graphs for each 3-exon combination.")
+            mismatched_graphs = {}
+
+            for cell_line in self.cell_lines:
+
+                subset_data = self.shap_data[cell_line].filter(pl.col("RBP_KD") == "NONE")
+                
+                unique_combinations = subset_data.select(["ENSE", "ENSE_UP", "ENSE_DN"]).unique().to_dict(as_series=False)
+                unique_combinations = list(zip(unique_combinations["ENSE"], unique_combinations["ENSE_UP"], unique_combinations["ENSE_DN"]))
+                
+                def process_combination(combination, cell_line, data):
+                    ense, ense_up, ense_dn = combination
+
+                    combination_subset = data.filter(
+                        (pl.col("ENSE") == ense) & 
+                        (pl.col("ENSE_UP") == ense_up) & 
+                        (pl.col("ENSE_DN") == ense_dn)
+                    )
+
+                    return [combination, combination_subset.select(self.binding_columns[cell_line]).unique().shape[0]]
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                    mismatched_graphs[cell_line] = list(tqdm.tqdm(executor.map(lambda comb: process_combination(comb, cell_line, subset_data), unique_combinations), total=len(unique_combinations), desc=f"Processing shap_data for {cell_line}"))
+
+                mismatched_graphs[cell_line] = pd.DataFrame(mismatched_graphs[cell_line], columns=["Combination", "Mismatched Graphs"])
+            
+            mismatched_graphs = pd.concat(mismatched_graphs, keys=self.cell_lines, names=["Cell Line"]).reset_index(level=0)
+            mismatched_graphs.to_csv(MISMATCH_CACHE_FILE, sep="\t", index=False)
+
+    
+    def plot_mismatch_graphs(self):
+
+        if not hasattr(self, 'mismatched_graphs'):
+            self.check_mismatch_graphs()
+
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=False, sharey=True, dpi=200)
+
+        combined_data = []
+
+        for ax, cell_line in zip(axes, self.cell_lines):
+            subset_data = self.mismatched_graphs[self.mismatched_graphs["Cell Line"] == cell_line]
+            subset_data.loc[:, "Mismatched Graphs"] = subset_data["Mismatched Graphs"].astype(int)
+            
+            value_counts = subset_data["Mismatched Graphs"].value_counts().sort_index()
+            value_counts_percentage = (value_counts / value_counts.sum()) * 100
+
+            ax.bar(value_counts.index.astype(str), value_counts_percentage.values, width=0.5)
+            ax.set_title(f"{cell_line}", fontsize=16)
+
+            num_mismatched = subset_data[subset_data["Mismatched Graphs"] > 1].shape[0]
+            total_rows = subset_data.shape[0]
+            percentage_mismatched = (num_mismatched / total_rows) * 100
+
+            ax.text(0.5, 0.95, f"> 1 Unique Graph: {num_mismatched}\n# Total: {total_rows}\nPercent Wrong: {percentage_mismatched:.2f}%", 
+                transform=ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+            for value, count in value_counts.items():
+                combined_data.append([cell_line, value, count, value_counts_percentage[value]])
+
+        fig.supxlabel("# Unique Graphs per SE Combination", fontsize=16)
+        fig.supylabel("% of Data", fontsize=16)
+        plt.suptitle("# Unique Graphs per SE Combination", y=1.0, fontsize=20)
+
+        plt.tight_layout()
+        plt.show()
+
+        mismatch_df = pd.DataFrame(combined_data, columns=["Cell Line", "Mismatched Graphs", "Count", "Percentage"])
+        return mismatch_df
 
 
     def get_number_SLURM_CPUs(self):
@@ -475,6 +559,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     analyzer = RbpPpiAnalyzer(distance_threshold=args.distance)
+
+    match args.parallel_task:
+
+        case "mismatch_graphs":
+            analyzer.check_mismatch_graphs()
 
         case "compare_model_binding_graphs": 
             analyzer.check_binding_graphs_equal_for_shap_vs_linear_regression()
