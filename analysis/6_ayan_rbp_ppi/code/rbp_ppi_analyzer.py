@@ -15,7 +15,7 @@ class RbpPpiAnalyzer:
     # General (non-class specific) variables #
     ##########################################
     FEATHER_CACHE_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/4_Ayans_XGBDT_SHAP_analysis/outputs/__featherv2-cache__/"
-    LINEAR_MODEL_DIR = "/project/PlatigLab/data/collaborators/BWH/5_linear_and_xgbdt_models_2024_10/linear-models-2024-10/linear-models-100-3a00c07e/"
+    LINEAR_MODEL_DIR = "/project/PlatigLab/data/collaborators/BWH/6_ols_regression_and_xgbdt_models_2024_11/linear-models-ols-2024-11/linear-models-ols-100-0599cbc0/"
     PPI_CACHE_DIR = "../output/ppi_cache_data/"
 
     cell_lines = ["K562", "HepG2"]
@@ -42,7 +42,6 @@ class RbpPpiAnalyzer:
         self.load_linear_model_results()
 
         self.get_total_binding()
-
         self.check_initial_data_assertions()
 
         self.load_RBP_PPI_pairs()
@@ -52,8 +51,13 @@ class RbpPpiAnalyzer:
     def load_RBP_PPI_pairs(self):
 
         with open(self.rbp_comparisons_file, "r") as f:
-            self.rbp_ppi = json.load(f)
-            
+            rbp_ppi = json.load(f)
+
+        for cell_line in self.cell_lines:
+            rbp_ppi[cell_line] = [sorted(pair) for pair in rbp_ppi[cell_line]]
+        
+        self.rbp_ppi = rbp_ppi
+
         logger.success(f"FROM CACHE: RBP PPI info loaded")
 
 
@@ -323,10 +327,13 @@ class RbpPpiAnalyzer:
 
 
     def retrieve_rbp_cobinding(self, data, rbp_ppi_pair, position1, position2):
+        assert position1==position2, logger.error(f"Position 1 and Position 2 must be the same.")
 
         rbp1, rbp2 = sorted(rbp_ppi_pair)
+        rbp1 = rbp1.upper()
+        rbp2 = rbp2.upper()
 
-        search_columns = [f"{rbp1.upper()}_{position1}", f"{rbp2.upper()}_{position2}"]
+        search_columns = [f"{rbp1}_{position1}", f"{rbp2}_{position2}"]
 
         assert all(col in data.columns for col in search_columns), logger.error(f"Columns {search_columns} not found in DataFrame")
 
@@ -337,48 +344,45 @@ class RbpPpiAnalyzer:
         tmp_data = tmp_data.with_columns(
             [
                 pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
-                pl.lit(f"{self.splice_junction_position_renaming[position1]}-{self.splice_junction_position_renaming[position2]}").alias("Position Pair")
-            ]
-        )
-
-        if position1 == position2:
-            tmp_data = tmp_data.with_columns(
+                pl.lit(f"{self.splice_junction_position_renaming[position1]}").alias("Position"), 
                 pl.lit("Same Pos. PPI").alias("PPI Analysis Category")
-            )
-
-        else:
-            tmp_data = tmp_data.with_columns(
-                pl.lit("Diff. Pos. PPI").alias("PPI Analysis Category")
-            )
+            ]
+        ) 
 
         return tmp_data
     
 
-    def retrieve_single_binders(self, data, rbp_ppi_pair):
+    def retrieve_single_binders(self, data, rbp_ppi_pair, position):
 
         rbp1, rbp2 = sorted(rbp_ppi_pair)
+        rbp1 = rbp1.upper()
+        rbp2 = rbp2.upper()
 
-        rbp1_cols = [f"{rbp1.upper()}_{pos}" for pos in self.splice_junction_position_renaming.keys()]
-        rbp2_cols = [f"{rbp2.upper()}_{pos}" for pos in self.splice_junction_position_renaming.keys()]
-        assert all(col in data.columns for col in (rbp1_cols + rbp2_cols)), logger.error(f"Columns not found in DataFrame")
-        
-        data = data.with_columns(
-            pl.sum_horizontal(pl.col(rbp1_cols)).alias("tmp_rbp1"),
-            pl.sum_horizontal(pl.col(rbp2_cols)).alias("tmp_rbp2")
-        )
+        search_columns = [f"{rbp1}_{position}", f"{rbp2}_{position}"]
+        assert all(col in data.columns for col in search_columns), logger.error(f"Columns {search_columns} not found in DataFrame")
 
         rbp1_single_binders = data.filter(
-            (pl.col("tmp_rbp1") > 0) & (pl.col("tmp_rbp2") == 0)
-        ).select("graph_index").with_columns(
-            pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
-            pl.lit(f"{rbp1}").alias("PPI Analysis Category")
+            (pl.col(search_columns[0]) == 1) & (pl.col(search_columns[1]) == 0)
+        ).select("graph_index")
+
+        rbp1_single_binders = rbp1_single_binders.with_columns(
+            [
+                pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
+                pl.lit(f"{self.splice_junction_position_renaming[position]}").alias("Position"), 
+                pl.lit(f"{rbp1} Only").alias("PPI Analysis Category")
+            ]
         )
 
         rbp2_single_binders = data.filter(
-            (pl.col("tmp_rbp2") > 0) & (pl.col("tmp_rbp1") == 0)
-        ).select("graph_index").with_columns(
-            pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
-            pl.lit(f"{rbp2}").alias("PPI Analysis Category")
+            (pl.col(search_columns[0]) == 0) & (pl.col(search_columns[1]) == 1)
+        ).select("graph_index")
+
+        rbp2_single_binders = rbp2_single_binders.with_columns(
+            [
+                pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
+                pl.lit(f"{self.splice_junction_position_renaming[position]}").alias("Position"),
+                pl.lit(f"{rbp2} Only").alias("PPI Analysis Category")
+            ]
         )
 
         return pl.concat([rbp1_single_binders, rbp2_single_binders], how="vertical")
@@ -414,17 +418,15 @@ class RbpPpiAnalyzer:
             for cell_line in self.cell_lines:
                 assert self.linear_ppi[cell_line].shape[0] == self.xgboost_ppi[cell_line].shape[0], logger.error(f"Linear PPI and XGBoost PPI do not have the same number of rows for {cell_line}.")
                 assert set(self.linear_ppi[cell_line]["graph_index"]) == set(self.xgboost_ppi[cell_line]["graph_index"]), logger.error(f"'graph_index' values do not match between Linear PPI and XGBoost PPI for {cell_line}.")
-                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in Linear PPI for {cell_line}.")
-                assert self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in XGBoost PPI for {cell_line}.")
-                assert self.linear_ppi[cell_line]["PPI Analysis Category"].has_nulls() == False, logger.error(f"Null values found in 'PPI Analysis Category' for Linear PPI for {cell_line}.")
-                assert self.xgboost_ppi[cell_line]["PPI Analysis Category"].has_nulls() == False, logger.error(f"Null values found in 'PPI Analysis Category' for XGBoost PPI for {cell_line}.")
-                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).equals(self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"])), logger.error(f"Linear PPI and XGBoost PPI do not have the same values for {cell_line}.")
+                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in Linear PPI for {cell_line}.")
+                assert self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in XGBoost PPI for {cell_line}.")
+                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position", "PPI Analysis Category"]).equals(self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position", "PPI Analysis Category"])), logger.error(f"Linear PPI and XGBoost PPI do not have the same values for {cell_line}.")
 
                 logger.info(f"{cell_line}\nLinear PPI shape: {self.linear_ppi[cell_line].shape} | XGBoost PPI shape: {self.xgboost_ppi[cell_line].shape}")
 
         else: 
 
-            logger.info("Retrieving RBP PPI events and controls.")
+            logger.info("NO CACHE... Hence, retrieving RBP PPI events and controls for both cell lines.")
 
             if not hasattr(self, 'linear_model_results'):
                 self.load_linear_model_results()
@@ -449,29 +451,13 @@ class RbpPpiAnalyzer:
                 
                 same_pos_ppi = pl.concat(results, how="vertical")
                 assert same_pos_ppi.is_duplicated().any() == False
-
-                input_data = input_data.filter(~pl.col("graph_index").is_in(same_pos_ppi["graph_index"]))
-
-                results = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                    futures = []
-                    for rbp1, rbp2 in self.rbp_ppi[cell_line]:
-                        for position1, position2 in itertools.combinations(list(self.splice_junction_position_renaming.keys()), 2):
-                            futures.append(executor.submit(self.retrieve_rbp_cobinding, input_data, (rbp1, rbp2), position1, position2))
-
-                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Different Position PPI Events"):
-                        results.append(future.result())
-
-                diff_pos_ppi = pl.concat(results, how="vertical").unique()
-                assert diff_pos_ppi.is_duplicated().any() == False
-
-                input_data = input_data.filter(~pl.col("graph_index").is_in(diff_pos_ppi["graph_index"]))
                 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                     futures = []
                     for rbp1, rbp2 in self.rbp_ppi[cell_line]:
-                        futures.append(executor.submit(self.retrieve_single_binders, input_data, (rbp1, rbp2)))
+                        for position in self.splice_junction_position_renaming.keys():
+                            futures.append(executor.submit(self.retrieve_single_binders, input_data, (rbp1, rbp2), position))
 
                     for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Single Binder Events"):
                         results.append(future.result())
@@ -479,15 +465,8 @@ class RbpPpiAnalyzer:
                 single_binders = pl.concat(results, how="vertical")
                 assert single_binders.is_duplicated().any() == False
 
-                neither = input_data.filter(~pl.col("graph_index").is_in(single_binders["graph_index"])).select("graph_index")
-
-                neither = neither.with_columns(
-                    pl.lit("No Assignment").alias("PPI Analysis Category")
-                )
-                assert neither.is_duplicated().any() == False
-
                 final_data = pl.concat(
-                    [same_pos_ppi, diff_pos_ppi, single_binders, neither], 
+                    [same_pos_ppi, single_binders], 
                     how="diagonal"
                 ).sort("graph_index")
                 assert final_data.is_duplicated().any() == False
@@ -497,8 +476,6 @@ class RbpPpiAnalyzer:
                 for model_type, df in [("linear", self.linear_model_results[cell_line]), ("xgboost", self.shap_data[cell_line])]:
 
                     df = df.join(final_data, on="graph_index", how="left", validate="1:m")
-                    assert df["PPI Analysis Category"].has_nulls() == False
-
                     df = df.sort("graph_index")
 
                     self._cache_to_featherv2(df, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-{model_type}-ppi_events_and_controls.feather")
@@ -594,7 +571,8 @@ class RbpPpiAnalyzer:
             for ax, cell_line in zip(axes, self.cell_lines):
                 data = combined_data[combined_data["Cell Line"] == cell_line]
 
-                sns.violinplot(x="Binding Amount Categories", y="target", data=data, palette="viridis", ax=ax)
+                sns.violinplot(x="Binding Amount Categories", y="target", data=data, palette=["lightgreen"], ax=ax, inner=None)
+                sns.boxplot(x="Binding Amount Categories", y="target", data=data, color="gray", ax=ax, width=0.1, showcaps=False, boxprops={'facecolor':'gray'}, flierprops={'marker': 'o', 'markersize': 2})
 
                 ax.set_title(f"{cell_line}", fontsize=20)
                 ax.set_ylim(-0.2, 1.4)
