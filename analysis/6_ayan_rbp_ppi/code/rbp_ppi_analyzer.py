@@ -1,9 +1,9 @@
-import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns
+import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc
 
 from dataclasses import dataclass
 from loguru import logger
 from sklearn.metrics import r2_score
-
+from scipy.stats import spearmanr
 
 @dataclass
 class RbpPpiAnalyzer:
@@ -37,8 +37,16 @@ class RbpPpiAnalyzer:
 
     
     def __post_init__(self):
+
+        self.load_SHAP_data()
+        self.load_linear_model_results()
+
+        self.get_total_binding()
+
+        self.check_initial_data_assertions()
+
         self.load_RBP_PPI_pairs()
-        self.retrieve_rbp_ppi_events_and_controls()
+        # self.retrieve_rbp_ppi_events_and_controls()
 
 
     def load_RBP_PPI_pairs(self):
@@ -76,7 +84,7 @@ class RbpPpiAnalyzer:
     
 
     def load_linear_model_results(self): 
-        logger.info(f"FROM CACHE: Loading linear model predictions for distance threshold: {self.distance_threshold}.")
+        logger.info(f"FROM CACHE: Loading linear model predictions for distance threshold {self.distance_threshold}.")
 
         linear_coefficients = {}
         for cell_line in self.cell_lines: 
