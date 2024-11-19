@@ -1,0 +1,3 @@
+sbatch --job-name="mismatch_graphs" --partition=standard --account=platiglab -N1 --mem=200GB --output="mismatch_graphs.out" --error="mismatch_graphs.err" --time=0-12:00:00 --wrap="python3 rbp_ppi_analyzer.py --distance 100 --parallel-task mismatch_graphs"
+
+sbatch --job-name="model_binding_graphs_compare" --partition=standard --account=platiglab -N1 --mem=200GB --output="model_binding_graphs_compare.out" --error="model_binding_graphs_compare.err" --time=0-12:00:00 --wrap="python3 rbp_ppi_analyzer.py --distance 100 --parallel-task compare_model_binding_graphs"
