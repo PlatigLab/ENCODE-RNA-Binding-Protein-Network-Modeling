@@ -390,6 +390,8 @@ class RbpPpiAnalyzer:
 
     def retrieve_rbp_ppi_events_and_controls(self): 
 
+        PPI_MISSING_SUMMARY_DIR = "../output/ppi_no_examples_summary/"
+
         if len(glob.glob(f"{self.PPI_CACHE_DIR}/*-{self.distance_threshold}-*")) == 4:
             
             self.delete_non_PPI_data()
@@ -425,7 +427,7 @@ class RbpPpiAnalyzer:
                 logger.info(f"{cell_line}\nLinear PPI shape: {self.linear_ppi[cell_line].shape} | XGBoost PPI shape: {self.xgboost_ppi[cell_line].shape}")
 
         else: 
-
+            
             logger.info("NO CACHE... Hence, retrieving RBP PPI events and controls for both cell lines.")
 
             if not hasattr(self, 'linear_model_results'):
@@ -440,30 +442,59 @@ class RbpPpiAnalyzer:
 
                 input_data = self.shap_data[cell_line].select(self.binding_columns[cell_line] + ["graph_index"])
 
+                rbp_pair_position_combinations = {(rbp_ppi_pair, position_key): None for rbp_ppi_pair in self.rbp_ppi[cell_line] for position_key in self.splice_junction_position_renaming.keys()}
+                assert len(rbp_pair_position_combinations) == len(self.rbp_ppi[cell_line]) * len(self.splice_junction_position_renaming.keys())
+
+                no_ppi_combinations = []
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                     same_pos_ppi = {
-                        executor.submit(self.retrieve_rbp_cobinding, input_data, rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi[cell_line] for position_key in self.splice_junction_position_renaming.keys()
+                        executor.submit(self.retrieve_rbp_cobinding, input_data, rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair, position_key in rbp_pair_position_combinations.keys()
                     }
 
                     for future in tqdm.tqdm(concurrent.futures.as_completed(same_pos_ppi), total=len(same_pos_ppi), desc="Same Position PPI Events"):
-                        results.append(future.result())
+                        result = future.result()
+
+                        if not result.is_empty():
+                            results.append(result)
+                        else:
+                            rbp_pair_position_combinations.pop(same_pos_ppi[future])
+                            no_ppi_combinations.append(same_pos_ppi[future])
                 
                 same_pos_ppi = pl.concat(results, how="vertical")
                 assert same_pos_ppi.is_duplicated().any() == False
                 
+                no_single_binders = []
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                    futures = []
-                    for rbp1, rbp2 in self.rbp_ppi[cell_line]:
-                        for position in self.splice_junction_position_renaming.keys():
-                            futures.append(executor.submit(self.retrieve_single_binders, input_data, (rbp1, rbp2), position))
+                    single_binders_futures = {
+                        executor.submit(self.retrieve_single_binders, input_data, rbp_ppi_pair, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair, position_key in rbp_pair_position_combinations.keys()
+                    }
 
-                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Single Binder Events"):
-                        results.append(future.result())
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(single_binders_futures), total=len(single_binders_futures), desc="Single Binder Events"):
+                        result = future.result()
+                        if not result.is_empty():
+                            results.append(result)
+                        else: 
+                            no_single_binders.append(single_binders_futures[future])
 
                 single_binders = pl.concat(results, how="vertical")
                 assert single_binders.is_duplicated().any() == False
+
+                no_examples_data = []
+
+                for no_example_type, combinations in [("No PPI Examples", no_ppi_combinations), ("No Single Binding", no_single_binders)]:
+                    for rbp_ppi_pair, position_key in combinations:
+                        no_examples_data.append({
+                            "No Examples Type": no_example_type,
+                            "RBP Pair": f"{rbp_ppi_pair[0].upper()}-{rbp_ppi_pair[1].upper()}",
+                            "Position": self.splice_junction_position_renaming[position_key]
+                        })
+
+                no_examples_df = pd.DataFrame(no_examples_data).sort_values(by=["No Examples Type", "RBP Pair", "Position"])
+
+                output_file = f"{PPI_MISSING_SUMMARY_DIR}/{cell_line}_{self.distance_threshold}.csv"
+                no_examples_df.to_csv(output_file, index=False)
 
                 final_data = pl.concat(
                     [same_pos_ppi, single_binders], 
