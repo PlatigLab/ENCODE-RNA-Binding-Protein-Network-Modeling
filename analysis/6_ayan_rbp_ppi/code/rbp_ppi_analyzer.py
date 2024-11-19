@@ -379,20 +379,39 @@ class RbpPpiAnalyzer:
     def retrieve_rbp_ppi_events_and_controls(self): 
 
         if len(glob.glob(f"{self.PPI_CACHE_DIR}/*-{self.distance_threshold}-*")) == 4:
+            
+            self.delete_non_PPI_data()
 
             logger.info("FROM CACHE: Loading RBP PPI events and controls.")
 
             linear_ppi = {}
             xgboost_ppi = {}
 
+            binding_columns = {}
+            shap_columns = {}
+
             for cell_line in self.cell_lines: 
                 linear_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear-ppi_events_and_controls.feather")
                 xgboost_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-xgboost-ppi_events_and_controls.feather")
 
+                binding_columns[cell_line] = [col for col in xgboost_ppi[cell_line].columns if col.endswith("_right") or col.endswith("_left")]
+                shap_columns[cell_line] = [col for col in xgboost_ppi[cell_line].columns if col.endswith("_shap")]
+
             self.linear_ppi = linear_ppi
             self.xgboost_ppi = xgboost_ppi
 
+            self.binding_columns = binding_columns
+            self.shap_columns = shap_columns
+
             for cell_line in self.cell_lines:
+                assert self.linear_ppi[cell_line].shape[0] == self.xgboost_ppi[cell_line].shape[0], logger.error(f"Linear PPI and XGBoost PPI do not have the same number of rows for {cell_line}.")
+                assert set(self.linear_ppi[cell_line]["graph_index"]) == set(self.xgboost_ppi[cell_line]["graph_index"]), logger.error(f"'graph_index' values do not match between Linear PPI and XGBoost PPI for {cell_line}.")
+                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in Linear PPI for {cell_line}.")
+                assert self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).is_duplicated().any() == False, logger.error(f"Duplicated values found in XGBoost PPI for {cell_line}.")
+                assert self.linear_ppi[cell_line]["PPI Analysis Category"].has_nulls() == False, logger.error(f"Null values found in 'PPI Analysis Category' for Linear PPI for {cell_line}.")
+                assert self.xgboost_ppi[cell_line]["PPI Analysis Category"].has_nulls() == False, logger.error(f"Null values found in 'PPI Analysis Category' for XGBoost PPI for {cell_line}.")
+                assert self.linear_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"]).equals(self.xgboost_ppi[cell_line].select(["graph_index", "RBP Pair", "Position Pair", "PPI Analysis Category"])), logger.error(f"Linear PPI and XGBoost PPI do not have the same values for {cell_line}.")
+
                 logger.info(f"{cell_line}\nLinear PPI shape: {self.linear_ppi[cell_line].shape} | XGBoost PPI shape: {self.xgboost_ppi[cell_line].shape}")
 
         else: 
@@ -452,18 +471,27 @@ class RbpPpiAnalyzer:
                 single_binders = pl.concat(results, how="vertical")
                 assert single_binders.is_duplicated().any() == False
 
-                mismatched_ppi = mismatched_ppi.filter(~pl.col("index").is_in(true_ppi["index"]))
-                mismatched_ppi = mismatched_ppi.with_columns(
-                    pl.lit("Mismatched PPI").alias("PPI Type")
+                neither = input_data.filter(~pl.col("graph_index").is_in(single_binders["graph_index"])).select("graph_index")
+
+                neither = neither.with_columns(
+                    pl.lit("No Assignment").alias("PPI Analysis Category")
                 )
+                assert neither.is_duplicated().any() == False
+
+                final_data = pl.concat(
+                    [same_pos_ppi, diff_pos_ppi, single_binders, neither], 
+                    how="diagonal"
+                ).sort("graph_index")
+                assert final_data.is_duplicated().any() == False
+
+                self._cache_to_featherv2(final_data, f"{self.PPI_CACHE_DIR}/PPI-ASSIGNMENTS-{cell_line}-{self.distance_threshold}.feather")
 
                 for model_type, df in [("linear", self.linear_model_results[cell_line]), ("xgboost", self.shap_data[cell_line])]:
 
-                    combined_ppi = pl.concat([true_ppi, mismatched_ppi], how="vertical")
-                    df = df.join(combined_ppi, on="index", how="left")
+                    df = df.join(final_data, on="graph_index", how="left", validate="1:m")
+                    assert df["PPI Analysis Category"].has_nulls() == False
 
-                    df = df.with_columns(pl.col("PPI Type").fill_null("Non-PPI"))
-                    assert df["PPI Type"].has_nulls() == False
+                    df = df.sort("graph_index")
 
                     self._cache_to_featherv2(df, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-{model_type}-ppi_events_and_controls.feather")
         
