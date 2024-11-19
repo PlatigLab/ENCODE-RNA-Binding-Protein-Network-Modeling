@@ -1005,7 +1005,7 @@ class AyanXgbdtAnalyzer:
             ax.set_ylabel("")
 
             if model=="ElasticNet":
-                ax.set_title("ElasticNet\nNOTE: not fully optimized", fontsize=20)
+                ax.set_title("ElasticNet", fontsize=20)
             else: 
                 ax.set_title(model, fontsize=18)
 
@@ -1026,7 +1026,7 @@ class AyanXgbdtAnalyzer:
             group = group.set_index("Model Type").reindex(["Standard OLS", "ElasticNet", "XGBoost"]).reset_index()
             plt.plot(group["Model Type"], group["R2 Score"], marker="o", label=f"{cell_line} - {distance_threshold}")
 
-        plt.title("Test R2 Scores by Cell Line, Model, and Window Size\nNOTE: ElasticNet not fully optimized", fontsize=20)
+        plt.title("Test R2 Scores by Cell Line, Model, and Window Size", fontsize=20)
         plt.xlabel("Model Type", fontsize=15)
         plt.ylabel("R2 Score", fontsize=15)
         plt.legend(title="Cell Line - Window Size", title_fontsize=14, fontsize=10, loc='upper left', bbox_to_anchor=(1, 1.05))
