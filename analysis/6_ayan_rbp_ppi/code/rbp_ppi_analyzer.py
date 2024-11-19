@@ -284,6 +284,24 @@ class RbpPpiAnalyzer:
             return 1
 
 
+    def delete_non_PPI_data(self): 
+
+        if hasattr(self, 'shap_data'):
+            del self.shap_data
+        
+        if hasattr(self, 'linear_model_results'):
+            del self.linear_model_results
+        
+        if hasattr(self, 'binding_columns'):
+            del self.binding_columns
+        
+        if hasattr(self, 'shap_columns'):
+            del self.shap_columns
+        
+        gc.collect()
+
+
+
     def _cache_to_featherv2(self, df, file_path):
 
         if not pathlib.Path(file_path).exists():
