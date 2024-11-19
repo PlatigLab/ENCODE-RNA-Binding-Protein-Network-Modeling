@@ -344,6 +344,36 @@ class RbpPpiAnalyzer:
             )
 
         return tmp_data
+    
+
+    def retrieve_single_binders(self, data, rbp_ppi_pair):
+
+        rbp1, rbp2 = sorted(rbp_ppi_pair)
+
+        rbp1_cols = [f"{rbp1.upper()}_{pos}" for pos in self.splice_junction_position_renaming.keys()]
+        rbp2_cols = [f"{rbp2.upper()}_{pos}" for pos in self.splice_junction_position_renaming.keys()]
+        assert all(col in data.columns for col in (rbp1_cols + rbp2_cols)), logger.error(f"Columns not found in DataFrame")
+        
+        data = data.with_columns(
+            pl.sum_horizontal(pl.col(rbp1_cols)).alias("tmp_rbp1"),
+            pl.sum_horizontal(pl.col(rbp2_cols)).alias("tmp_rbp2")
+        )
+
+        rbp1_single_binders = data.filter(
+            (pl.col("tmp_rbp1") > 0) & (pl.col("tmp_rbp2") == 0)
+        ).select("graph_index").with_columns(
+            pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
+            pl.lit(f"{rbp1}").alias("PPI Analysis Category")
+        )
+
+        rbp2_single_binders = data.filter(
+            (pl.col("tmp_rbp2") > 0) & (pl.col("tmp_rbp1") == 0)
+        ).select("graph_index").with_columns(
+            pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
+            pl.lit(f"{rbp2}").alias("PPI Analysis Category")
+        )
+
+        return pl.concat([rbp1_single_binders, rbp2_single_binders], how="vertical")
 
 
     def retrieve_rbp_ppi_events_and_controls(self): 
@@ -399,17 +429,28 @@ class RbpPpiAnalyzer:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                     futures = []
                     for rbp1, rbp2 in self.rbp_ppi[cell_line]:
+                        for position1, position2 in itertools.combinations(list(self.splice_junction_position_renaming.keys()), 2):
+                            futures.append(executor.submit(self.retrieve_rbp_cobinding, input_data, (rbp1, rbp2), position1, position2))
 
-                        for position1 in self.splice_junction_position_renaming.keys():
-                            for position2 in self.splice_junction_position_renaming.keys():
-                                if position1 != position2:
-
-                                    futures.append(executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results[cell_line], (rbp1, rbp2), position1, position2))
-
-                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Mismatched PPI Events"):
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Different Position PPI Events"):
                         results.append(future.result())
 
-                mismatched_ppi = pl.concat(results, how="vertical").unique()
+                diff_pos_ppi = pl.concat(results, how="vertical").unique()
+                assert diff_pos_ppi.is_duplicated().any() == False
+
+                input_data = input_data.filter(~pl.col("graph_index").is_in(diff_pos_ppi["graph_index"]))
+                
+                results = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                    futures = []
+                    for rbp1, rbp2 in self.rbp_ppi[cell_line]:
+                        futures.append(executor.submit(self.retrieve_single_binders, input_data, (rbp1, rbp2)))
+
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Single Binder Events"):
+                        results.append(future.result())
+
+                single_binders = pl.concat(results, how="vertical")
+                assert single_binders.is_duplicated().any() == False
 
                 mismatched_ppi = mismatched_ppi.filter(~pl.col("index").is_in(true_ppi["index"]))
                 mismatched_ppi = mismatched_ppi.with_columns(
