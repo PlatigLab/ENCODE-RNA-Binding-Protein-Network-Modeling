@@ -26,10 +26,10 @@ class AyanXgbdtAnalyzer:
     # General (non-class specific) variables #
     ##########################################
 
-    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/bdt-xgb-models-2024-11/"
+    ayan_shap_folder = "/project/PlatigLab/data/collaborators/BWH/6_ols_regression_and_xgbdt_models_2024_11/bdt-xgb-models-2024-11/"
     ayan_binding_folder = "/project/PlatigLab/data/collaborators/BWH/2_input_binding_data_and_INCORRECT_SHAP_toy_data_2024-07/input_binding_data/"
-    linear_model_path = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/linear-models-ols-2024-11/"
-    elasticnet_model_path = "/project/PlatigLab/data/collaborators/BWH/6_CORRECT_linear_and_xgbdt_models_2024_11/linear-models-elastic_net-2024-11/"
+    linear_model_path = "/project/PlatigLab/data/collaborators/BWH/6_ols_regression_and_xgbdt_models_2024_11/linear-models-ols-2024-11/"
+    elasticnet_model_path = "/project/PlatigLab/data/collaborators/BWH/7_elasticnet_optimized_2024_11/linear-models-elastic_net-2024-11-optimized/"
 
     feather_cache = "../outputs/__featherv2-cache__"
 
