@@ -632,6 +632,81 @@ class RbpPpiAnalyzer:
             logger.success(f"Finished plotting amount of binding vs PSI for {title_prefix.strip(':')}")
             
 
+    def calculate_basic_ppi_stats(self):
+        logger.info("Calculating basic PPI stats.")
+
+        if not hasattr(self, 'linear_ppi') or not hasattr(self, 'xgboost_ppi'):
+            self.retrieve_rbp_ppi_events_and_controls()
+
+
+        for y_lim in [False, True]: 
+
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True, sharex=True, dpi=200)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = self.xgboost_ppi[cell_line].select(["RBP Pair", "PPI Analysis Category"]).filter(pl.col("PPI Analysis Category") != "No Assignment")
+
+                counts = data.group_by(["RBP Pair", "PPI Analysis Category"]).agg(pl.count()).to_pandas()
+                counts = counts.rename(columns={"count": "Count"})
+
+                for idx, row in counts.iterrows():
+                    if "PPI" not in row["PPI Analysis Category"]:
+                        rbp_pair = row["RBP Pair"].split("-")
+
+                        assert row["PPI Analysis Category"] in rbp_pair
+
+                        if row["PPI Analysis Category"] == rbp_pair[0]:
+                            counts.at[idx, "PPI Analysis Category"] = "1st Only"
+                        elif row["PPI Analysis Category"] == rbp_pair[1]:
+                            counts.at[idx, "PPI Analysis Category"] = "2nd Only"
+
+                if y_lim: 
+                    counts = counts[counts["Count"] < 100000]
+
+                counts = counts.sort_values(by=["PPI Analysis Category", "RBP Pair",])
+
+                category_order = ["Same Pos. PPI", "Diff. Pos. PPI", "1st Only", "2nd Only"]
+
+                sns.stripplot(x="PPI Analysis Category", y="Count", data=counts, ax=ax, order=category_order, edgecolor="black", alpha=0.4, jitter=True, size=4)
+                
+                ax.set_title(f"{cell_line} (# Possible PPIs: {len(self.rbp_ppi[cell_line])})", fontsize=16)
+                ax.set_ylabel("")
+                ax.set_xlabel("")
+
+                for category in category_order:
+                    unique_rb_pairs = counts[counts["PPI Analysis Category"] == category]["RBP Pair"].nunique()
+
+                    if y_lim: 
+                        y_coord = 90000
+                    else: 
+                        y_coord = ax.get_ylim()[1] * 0.90
+
+
+                    ax.text(category_order.index(category)-0.05, y_coord, f"{unique_rb_pairs}", 
+                            ha='center', va='top', fontsize=14, color='red')
+
+
+                print(counts.sort_values("Count", ascending=False).head(n=10))
+
+            if y_lim:
+                notice_str = "NOTE: y-axis is limited to 100,000"
+            else: 
+                notice_str = ""
+
+            plt.suptitle(f"Counts per Category + RBP-Pair Combination\n{notice_str}", fontsize=20)
+            fig.supxlabel("PPI Analysis Category", fontsize=16)
+            fig.supylabel("# Category Counts per RBP-Pair", fontsize=12, x=-0.01)
+
+
+            plt.tight_layout()
+            plt.show()
+
+        
+
+
+    def tmp(self): 
+        pass
+
 
 if __name__ == "__main__":
 
