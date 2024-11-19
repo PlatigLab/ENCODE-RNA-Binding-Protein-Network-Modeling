@@ -315,7 +315,8 @@ class RbpPpiAnalyzer:
 
 
     def retrieve_rbp_cobinding(self, data, rbp_ppi_pair, position1, position2):
-        rbp1, rbp2 = rbp_ppi_pair
+
+        rbp1, rbp2 = sorted(rbp_ppi_pair)
 
         search_columns = [f"{rbp1.upper()}_{position1}", f"{rbp2.upper()}_{position2}"]
 
@@ -323,16 +324,24 @@ class RbpPpiAnalyzer:
 
         tmp_data = data.filter(
             (pl.col(search_columns[0]) == 1) & (pl.col(search_columns[1]) == 1)
-        ).select("index")
+        ).select("graph_index")
 
         tmp_data = tmp_data.with_columns(
             [
-                pl.lit(rbp1).alias("RBP 1"),
-                pl.lit(rbp2).alias("RBP 2"),
-                pl.lit(self.splice_junction_position_renaming[position1]).alias("Position 1"),
-                pl.lit(self.splice_junction_position_renaming[position2]).alias("Position 2")
+                pl.lit(f"{rbp1}-{rbp2}").alias("RBP Pair"),
+                pl.lit(f"{self.splice_junction_position_renaming[position1]}-{self.splice_junction_position_renaming[position2]}").alias("Position Pair")
             ]
         )
+
+        if position1 == position2:
+            tmp_data = tmp_data.with_columns(
+                pl.lit("Same Pos. PPI").alias("PPI Analysis Category")
+            )
+
+        else:
+            tmp_data = tmp_data.with_columns(
+                pl.lit("Diff. Pos. PPI").alias("PPI Analysis Category")
+            )
 
         return tmp_data
 
@@ -370,19 +379,21 @@ class RbpPpiAnalyzer:
 
                 logger.info(f"Retrieving RBP PPI events and controls for {cell_line}.")
 
+                input_data = self.shap_data[cell_line].select(self.binding_columns[cell_line] + ["graph_index"])
+
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
-                    true_ppi = {
-                        executor.submit(self.retrieve_rbp_cobinding, self.linear_model_results[cell_line], rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi[cell_line] for position_key in self.splice_junction_position_renaming.keys()
+                    same_pos_ppi = {
+                        executor.submit(self.retrieve_rbp_cobinding, input_data, rbp_ppi_pair, position_key, position_key): (rbp_ppi_pair, position_key) for rbp_ppi_pair in self.rbp_ppi[cell_line] for position_key in self.splice_junction_position_renaming.keys()
                     }
 
-                    for future in tqdm.tqdm(concurrent.futures.as_completed(true_ppi), total=len(true_ppi), desc="True PPI Events"):
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(same_pos_ppi), total=len(same_pos_ppi), desc="Same Position PPI Events"):
                         results.append(future.result())
                 
-                true_ppi = pl.concat(results, how="vertical").unique()
-                true_ppi = true_ppi.with_columns(
-                    pl.lit("True PPI").alias("PPI Type")
-                )
+                same_pos_ppi = pl.concat(results, how="vertical")
+                assert same_pos_ppi.is_duplicated().any() == False
+
+                input_data = input_data.filter(~pl.col("graph_index").is_in(same_pos_ppi["graph_index"]))
 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
