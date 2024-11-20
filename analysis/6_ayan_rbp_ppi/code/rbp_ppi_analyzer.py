@@ -439,6 +439,10 @@ class RbpPpiAnalyzer:
 
                 logger.info(f"{cell_line}\nLinear PPI shape: {self.linear_ppi[cell_line].shape} | XGBoost PPI shape: {self.xgboost_ppi[cell_line].shape}")
 
+            with open(f"{PPI_MISSING_SUMMARY_DIR}/missing_data_stats_{self.distance_threshold}.json", "r") as f:
+                missing_stats_dictionary = json.load(f)
+                logger.info(f"Missing Data Stats:\n{json.dumps(missing_stats_dictionary, indent=4)}")
+
         else: 
             
             logger.info("NO CACHE... Hence, retrieving RBP PPI events and controls for both cell lines.")
@@ -448,6 +452,8 @@ class RbpPpiAnalyzer:
 
             if not hasattr(self, 'shap_data'):
                 self.load_SHAP_data()
+
+            missing_data_stats = {}
 
             for cell_line in self.cell_lines: 
 
@@ -493,10 +499,11 @@ class RbpPpiAnalyzer:
 
                 single_binders = pl.concat(results, how="vertical")
                 assert single_binders.is_duplicated().any() == False
+                assert len(no_single_binders) == 0
 
                 no_examples_data = []
 
-                for no_example_type, combinations in [("No PPI Examples", no_ppi_combinations), ("No Single Binding", no_single_binders)]:
+                for no_example_type, combinations in [("No PPI Examples", no_ppi_combinations)]:
                     for rbp_ppi_pair, position_key in combinations:
                         no_examples_data.append({
                             "No Examples Type": no_example_type,
@@ -506,15 +513,27 @@ class RbpPpiAnalyzer:
 
                 no_examples_df = pd.DataFrame(no_examples_data).sort_values(by=["No Examples Type", "RBP Pair", "Position"])
 
-                output_file = f"{PPI_MISSING_SUMMARY_DIR}/{cell_line}_{self.distance_threshold}.csv"
-                no_examples_df.to_csv(output_file, index=False)
+                output_file = f"{PPI_MISSING_SUMMARY_DIR}/{cell_line}_{self.distance_threshold}.tsv"
+                no_examples_df.to_csv(output_file, sep="\t", index=False)
 
                 final_data = pl.concat(
                     [same_pos_ppi, single_binders], 
                     how="diagonal"
                 ).sort("graph_index")
                 assert final_data.is_duplicated().any() == False
+                
+                possible_combinations = len(self.rbp_ppi[cell_line]) * len(self.splice_junction_position_renaming.keys())
+                omitted_combinations = pl.from_pandas(no_examples_df).select(["RBP Pair", "Position"]).n_unique()
+                final_combinations = final_data.select(["RBP Pair", "Position"]).n_unique()
 
+                print(f"{cell_line} -- Possible Combinations: {possible_combinations} | Omitted Combinations: {omitted_combinations} | Final Combinations: {final_combinations}")
+                assert final_combinations == possible_combinations - omitted_combinations
+
+                missing_data_stats[cell_line] = {}
+                missing_data_stats[cell_line]["Possible Combinations"] = possible_combinations
+                missing_data_stats[cell_line]["Omitted Combinations"] = omitted_combinations
+                missing_data_stats[cell_line]["Final Combinations"] = final_combinations
+                
                 self._cache_to_featherv2(final_data, f"{self.PPI_CACHE_DIR}/PPI-ASSIGNMENTS-{cell_line}-{self.distance_threshold}.feather")
 
                 for model_type, df in [("linear", self.linear_model_results[cell_line]), ("xgboost", self.shap_data[cell_line])]:
@@ -524,6 +543,9 @@ class RbpPpiAnalyzer:
 
                     self._cache_to_featherv2(df, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-{model_type}-ppi_events_and_controls.feather")
         
+            with open(f"{PPI_MISSING_SUMMARY_DIR}/missing_data_stats_{self.distance_threshold}.json", "w") as f:
+                json.dump(missing_data_stats, f, indent=4)
+
         logger.success("Finished retrieving RBP PPI events and controls.")
 
     
