@@ -548,6 +548,41 @@ class RbpPpiAnalyzer:
 
         logger.success("Finished retrieving RBP PPI events and controls.")
 
+
+    def plot_same_pos_ppi_per_pair_combination(self): 
+        logger.info("Plotting number of same position PPI rows per pair combination.")
+
+        for title in ["ALL DATA", "TEST ONLY"]: 
+
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True, sharey=True, dpi=200)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                
+                data = self.xgboost_ppi[cell_line]
+
+                if title == "TEST ONLY":
+                    data = self.return_test_ppi_data(data)
+                
+                data = data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+
+                grouped_data = data.group_by(["RBP Pair", "Position"]).agg(pl.count()).to_pandas()
+
+                ax.hist(grouped_data["count"], bins=50, color='skyblue', edgecolor='black')
+                ax.set_title(f"{cell_line}", fontsize=16)
+
+                num_points = grouped_data["count"].sum()
+                num_groups = grouped_data.shape[0]
+
+                ax.text(0.5, 0.9, f"# Points: {num_points}\n# Pair-Positions: {num_groups}", 
+                        transform=ax.transAxes, verticalalignment='top', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+            plt.suptitle(f"{title}: Distribution of # of Same Pos. PPI rows per Pair Combination", fontsize=22)
+            fig.supylabel("", fontsize=18)
+            fig.supxlabel("# Same Pos. PPI Rows per Pair-Position Combination ", fontsize=18)
+
+            plt.tight_layout()
+            plt.show()
+
     
     def amount_binding_vs_PSI(self): 
 
