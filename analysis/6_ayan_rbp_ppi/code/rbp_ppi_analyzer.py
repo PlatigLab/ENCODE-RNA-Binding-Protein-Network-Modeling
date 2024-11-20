@@ -549,6 +549,22 @@ class RbpPpiAnalyzer:
         logger.success("Finished retrieving RBP PPI events and controls.")
 
 
+    def return_test_ppi_data(self, df): 
+        data = df.filter(pl.col("Data Partition") == "test")
+        
+        result = (
+            data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+            .group_by(["RBP Pair", "Position"])
+            .agg(pl.count())
+            .filter(pl.col("count") >= 3)
+            .select(["RBP Pair", "Position"])
+        ).unique()
+
+        filtered_data = data.join(result, on=["RBP Pair", "Position"], how="inner")
+
+        return pl.concat([filtered_data, data.filter(pl.col("RBP Pair").is_null())], how="vertical")
+    
+
     def plot_same_pos_ppi_per_pair_combination(self): 
         logger.info("Plotting number of same position PPI rows per pair combination.")
 
