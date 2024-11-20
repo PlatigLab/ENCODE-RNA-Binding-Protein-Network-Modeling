@@ -647,16 +647,154 @@ class RbpPpiAnalyzer:
             plt.show()
 
             logger.success(f"Finished plotting amount of binding vs PSI for {title_prefix.strip(':')}")
+
+    
+    def calculate_summary_PPI_performance(self): 
+        
+        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi_summary_stats/summary_ppi_performance_{self.distance_threshold}.csv"
+
+        if pathlib.Path(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE).exists():
+
+            self.summary_ppi_df = pd.read_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE)
+            logger.success("FROM CACHE: loaded summary PPI performance.")
+
+        else: 
             
+            if not hasattr(self, 'linear_ppi') or not hasattr(self, 'xgboost_ppi'):
+                self.retrieve_rbp_ppi_events_and_controls()
+            
+            logger.info("Calculating summary PPI performance.")
 
-    def calculate_basic_ppi_stats(self):
-        logger.info("Calculating basic PPI stats.")
+            summary_data = []
 
-        if not hasattr(self, 'linear_ppi') or not hasattr(self, 'xgboost_ppi'):
-            self.retrieve_rbp_ppi_events_and_controls()
+            for data_partition in ["ALL DATA", "TEST ONLY"]:
+                for cell_line in self.cell_lines:
+                    for model in ["xgboost", "linear"]:
+                        data = getattr(self, f"{model}_ppi")[cell_line]
+
+                        if data_partition == "TEST ONLY":
+                            data = data.filter(pl.col("Data Partition") == "test")
+
+                        for category in ["Same Pos. PPI", "Single Binders", "Neither"]:
+                            if category == "Same Pos. PPI":
+                                subset = data.filter(pl.col("PPI Analysis Category") == category)
+                            elif category == "Single Binders":
+                                same_pos_ppi_graph_indices = data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI").select("graph_index").unique()
+                                subset = data.filter((pl.col("PPI Analysis Category").str.ends_with(" Only")) & (~pl.col("graph_index").is_in(same_pos_ppi_graph_indices["graph_index"])))
+                            elif category == "Neither":
+                                subset = data.filter(pl.col("PPI Analysis Category").is_null())
+
+                            subset = subset.select(["graph_index", "psi_hat", "target"]).unique()
+                            assert subset["graph_index"].n_unique() == subset.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category.")
+
+                            r2 = r2_score(subset["target"], subset["psi_hat"])
+                            summary_data.append(
+                                [
+                                    data_partition, 
+                                    cell_line, 
+                                    model, 
+                                    category, 
+                                    r2, 
+                                    subset.shape[0], 
+                                    (subset.shape[0] / data["graph_index"].n_unique()) * 100
+                                ]
+                            )
+
+            summary_df = pd.DataFrame(summary_data, columns=["Dataset", "Cell Line", "Model", "PPI Category", "R2 Value", "# Rows", "% Dataset"]).sort_values("R2 Value", ascending=False)
+            summary_df.to_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, index=False)
+
+            logger.success("Summary PPI performance calculated and saved.")
 
 
-        for y_lim in [False, True]: 
+    def plot_summary_PPI_performance(self):
+
+        if not hasattr(self, 'summary_ppi_df'):
+            self.calculate_summary_PPI_performance()
+
+        logger.info("Plotting PPI performance.")
+
+        for data_partition in ["ALL DATA", "TEST ONLY"]:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, dpi=200)
+
+            categories = ["Same Pos. PPI", "Single Binders", "Neither"]
+            models = ["xgboost", "linear"]
+            colors = {"xgboost": "gold", "linear": "darkolivegreen"}
+            width = 0.35
+            lowest_r2_value = 0 
+            highest_r2_value = 0 
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                subset_df = self.summary_ppi_df[(self.summary_ppi_df["Dataset"] == data_partition) & (self.summary_ppi_df["Cell Line"] == cell_line)]
+
+                r2_values = {model: [] for model in models}
+                counts = {model: [] for model in models}
+                percentages = {model: [] for model in models}
+                labels = []
+
+                for category in categories:
+                    labels.append(category)
+                    for model in models:
+                        data = subset_df[(subset_df["PPI Category"] == category) & (subset_df["Model"] == model)]
+                        assert len(data) == 1, logger.error(f"Multiple rows found for {cell_line} - {category} - {model} in {data_partition} dataset.")
+
+                        r2_values[model].append(data["R2 Value"].values[0])
+                        counts[model].append(data["# Rows"].values[0])
+                        percentages[model].append(data["% Dataset"].values[0])
+
+                x = range(len(categories))
+
+                for i, model in enumerate(models):
+                    if model == "xgboost":
+                        label = "XGBoost"
+                    elif model == "linear":
+                        label = "OLS Lin. Reg."
+
+                    ax.bar([p + i * width for p in x], r2_values[model], width=width, color=colors[model], edgecolor="black", label=label)
+
+                    for j, (r2_value, pct) in enumerate(zip(r2_values[model], percentages[model])):
+                        r2_offset = 0.07
+                        percent_data_offset = 0.02
+
+                        if r2_value < 0:
+                            ax.annotate(f'{r2_value:.2f}', (j + i * width, r2_value-r2_offset), ha='center', va='top', color='red', fontsize=12)
+                            ax.annotate(f'{pct:.1f}', (j + i * width, r2_value-percent_data_offset), ha='center', va='top', color='blue', fontsize=12)
+                        else:
+                            ax.annotate(f'{r2_value:.2f}', (j + i * width, r2_value+r2_offset), ha='center', va='bottom', color='red', fontsize=12)
+                            ax.annotate(f'{pct:.1f}', (j + i * width, r2_value+percent_data_offset), ha='center', va='bottom', color='blue', fontsize=12)
+
+                ax.set_xticks([p + width / 2 for p in x])
+                ax.set_xticklabels(labels, ha='center')
+                ax.set_title(f"{cell_line}", fontsize=16)
+
+                min_r2_value = min(r2_values["xgboost"] + r2_values["linear"])
+                if min_r2_value < lowest_r2_value:
+                    lowest_r2_value = min_r2_value
+
+                max_r2_value = max(r2_values["xgboost"] + r2_values["linear"])
+                if max_r2_value > highest_r2_value:
+                    highest_r2_value = max_r2_value
+
+            if lowest_r2_value<0: 
+                y_lim_low_end = lowest_r2_value - 0.15
+            else:
+                y_lim_low_end = 0
+
+            ax.set_ylim(y_lim_low_end, highest_r2_value + 0.25)
+
+            for ax in axes:
+                ax.text(0.62, 0.9, "% of Data", ha='center', va='bottom', color='blue', fontsize=14, transform=ax.transAxes)
+                ax.text(0.5, 0.9, "--", ha='center', va='bottom', color='black', fontsize=14, transform=ax.transAxes)
+                ax.text(0.39, 0.9, "R2 Score", ha='center', va='bottom', color='red', fontsize=14, transform=ax.transAxes)
+
+            handles, labels = ax.get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+            fig.supxlabel("PPI Category", fontsize=20)
+            fig.supylabel("R2 Score", fontsize=20)
+            plt.suptitle(f"{data_partition}: R2 Scores for PPI Categories per Model\nNOTE: each row goes to ONLY 1 category", fontsize=20)
+
+            plt.tight_layout()
+            plt.show()        
+
 
             fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True, sharex=True, dpi=200)
 
