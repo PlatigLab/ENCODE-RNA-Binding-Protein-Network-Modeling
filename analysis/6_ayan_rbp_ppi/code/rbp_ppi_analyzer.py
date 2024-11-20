@@ -686,11 +686,11 @@ class RbpPpiAnalyzer:
     
     def calculate_summary_PPI_performance(self): 
         
-        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi_summary_stats/summary_ppi_performance_{self.distance_threshold}.csv"
+        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi_summary_stats/summary_ppi_performance_{self.distance_threshold}.tsv"
 
         if pathlib.Path(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE).exists():
 
-            self.summary_ppi_df = pd.read_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE)
+            self.summary_ppi_df = pd.read_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, sep="\t")
             logger.success("FROM CACHE: loaded summary PPI performance.")
 
         else: 
@@ -736,7 +736,7 @@ class RbpPpiAnalyzer:
                             )
 
             summary_df = pd.DataFrame(summary_data, columns=["Dataset", "Cell Line", "Model", "PPI Category", "R2 Value", "# Rows", "% Dataset"]).sort_values("R2 Value", ascending=False)
-            summary_df.to_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, index=False)
+            summary_df.to_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, sep="\t", index=False)
 
             logger.success("Summary PPI performance calculated and saved.")
 
