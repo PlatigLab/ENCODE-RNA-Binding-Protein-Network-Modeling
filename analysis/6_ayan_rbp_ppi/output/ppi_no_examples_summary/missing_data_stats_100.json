@@ -1,12 +1,12 @@
 {
     "K562": {
         "Possible Combinations": 330,
-        "Omitted Combinations": 114,
-        "Final Combinations": 216
+        "Omitted Combinations": 118,
+        "Final Combinations": 212
     },
     "HepG2": {
         "Possible Combinations": 234,
-        "Omitted Combinations": 82,
-        "Final Combinations": 152
+        "Omitted Combinations": 88,
+        "Final Combinations": 146
     }
 }

@@ -474,7 +474,7 @@ class RbpPpiAnalyzer:
                     for future in tqdm.tqdm(concurrent.futures.as_completed(same_pos_ppi), total=len(same_pos_ppi), desc="Same Position PPI Events"):
                         result = future.result()
 
-                        if not result.is_empty():
+                        if result.shape[0] >= 3:
                             results.append(result)
                         else:
                             rbp_pair_position_combinations.pop(same_pos_ppi[future])
