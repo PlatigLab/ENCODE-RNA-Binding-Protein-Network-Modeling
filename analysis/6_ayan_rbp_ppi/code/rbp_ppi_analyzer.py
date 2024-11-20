@@ -404,10 +404,23 @@ class RbpPpiAnalyzer:
             binding_columns = {}
             shap_columns = {}
 
-            for cell_line in self.cell_lines: 
-                linear_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear-ppi_events_and_controls.feather")
-                xgboost_ppi[cell_line] = pl.read_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-xgboost-ppi_events_and_controls.feather")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                linear_futures = {
+                    executor.submit(pl.read_ipc, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear-ppi_events_and_controls.feather"): cell_line for cell_line in self.cell_lines
+                }
+                xgboost_futures = {
+                    executor.submit(pl.read_ipc, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-xgboost-ppi_events_and_controls.feather"): cell_line for cell_line in self.cell_lines
+                }
 
+                for future in concurrent.futures.as_completed(linear_futures):
+                    cell_line = linear_futures[future]
+                    linear_ppi[cell_line] = future.result()
+
+                for future in concurrent.futures.as_completed(xgboost_futures):
+                    cell_line = xgboost_futures[future]
+                    xgboost_ppi[cell_line] = future.result()
+            
+            for cell_line in self.cell_lines:
                 binding_columns[cell_line] = [col for col in xgboost_ppi[cell_line].columns if col.endswith("_right") or col.endswith("_left")]
                 shap_columns[cell_line] = [col for col in xgboost_ppi[cell_line].columns if col.endswith("_shap")]
 
