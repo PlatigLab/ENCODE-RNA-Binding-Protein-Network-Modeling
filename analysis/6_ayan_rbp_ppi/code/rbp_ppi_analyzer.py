@@ -759,8 +759,7 @@ class RbpPpiAnalyzer:
                         data = getattr(self, f"{model}_ppi")[cell_line]
 
                         if data_partition == "TEST ONLY":
-                            data = data.filter(pl.col("Data Partition") == "test")
-
+                            data = self.return_test_ppi_data(data)
                         for category in ["Same Pos. PPI", "Single Binders", "Neither"]:
                             if category == "Same Pos. PPI":
                                 subset = data.filter(pl.col("PPI Analysis Category") == category)
@@ -771,7 +770,9 @@ class RbpPpiAnalyzer:
                                 subset = data.filter(pl.col("PPI Analysis Category").is_null())
 
                             subset = subset.select(["graph_index", "psi_hat", "target"]).unique()
+
                             assert subset["graph_index"].n_unique() == subset.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category.")
+                            assert subset.is_empty() == False, logger.error(f"No data found for {cell_line} - {model} - {category} in {data_partition} dataset.")
 
                             r2 = r2_score(subset["target"], subset["psi_hat"])
                             summary_data.append(
