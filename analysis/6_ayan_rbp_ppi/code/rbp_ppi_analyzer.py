@@ -789,6 +789,7 @@ class RbpPpiAnalyzer:
                             )
 
             summary_df = pd.DataFrame(summary_data, columns=["Dataset", "Cell Line", "Model", "PPI Category", "R2 Value", "# Rows", "% Dataset"]).sort_values("R2 Value", ascending=False)
+            summary_df["PPI Category"] = summary_df["PPI Category"].replace({"Same Pos. PPI": ">= 1 Same Pos. PPI"})
             summary_df.to_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, sep="\t", index=False)
 
             logger.success("Summary PPI performance calculated and saved.")
@@ -804,7 +805,7 @@ class RbpPpiAnalyzer:
         for data_partition in ["ALL DATA", "TEST ONLY"]:
             fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, dpi=200)
 
-            categories = ["Same Pos. PPI", "Single Binders", "Neither"]
+            categories = [">= 1 Same Pos. PPI", "Single Binders", "Neither"]
             models = ["xgboost", "linear"]
             colors = {"xgboost": "gold", "linear": "darkolivegreen"}
             width = 0.35
