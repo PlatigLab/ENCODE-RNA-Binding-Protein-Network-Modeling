@@ -760,6 +760,7 @@ class RbpPpiAnalyzer:
 
                         if data_partition == "TEST ONLY":
                             data = self.return_test_ppi_data(data)
+
                         for category in ["Same Pos. PPI", "Single Binders", "Neither"]:
                             if category == "Same Pos. PPI":
                                 subset = data.filter(pl.col("PPI Analysis Category") == category)
@@ -946,6 +947,94 @@ class RbpPpiAnalyzer:
 
             logger.success("Pair position combination R2 scores calculated and saved.")
 
+
+    def plot_pair_position_combination_r2_scores(self):
+            
+        if not hasattr(self, 'pair_position_r2_scores'):
+            self.calculate_pair_position_combination_r2_scores()
+        
+
+        logger.info("Comparing relationship between number of rows and R2 scores for each pair-position combination.")
+
+        for dataset in sorted(self.pair_position_r2_scores["Dataset"].unique()):
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, sharex=True, dpi=200)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = self.pair_position_r2_scores[(self.pair_position_r2_scores["Dataset"] == dataset) & (self.pair_position_r2_scores["Cell Line"] == cell_line)]
+                data = data[data["PPI Category"] != "Neither"]
+                
+                hue_order = ["Same Pos. PPI", "Single Binders"]
+                style_order = ["linear", "xgboost"]
+                sns.scatterplot(x="# Rows", y="R2 Value", hue="PPI Category", style="Model", hue_order = hue_order, style_order = style_order, data=data, ax=ax, palette="Set2", edgecolor="black", s=20,)
+        
+                assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(2).all(), print(data.groupby(["RBP Pair", "Position"]).size())
+
+                num_pairs = data.groupby(["RBP Pair", "Position"]).ngroups
+                spearman_corr, _ = spearmanr(data["# Rows"], data["R2 Value"])
+
+                ax.text(0.5, 0.5, f"# Pair-Position Combos: {num_pairs}\nSpearman r: {spearman_corr:.2f}", 
+                        transform=ax.transAxes, verticalalignment='center', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+                ax.set_title(f"{cell_line}", fontsize=16)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.legend().set_visible(False)
+
+            fig.suptitle(f"{dataset}: R2 Scores vs. # Rows per Pair-Position Combination", fontsize=20, y=1.0)
+            fig.supxlabel("# Rows", fontsize=18)
+            fig.supylabel("R2 Score", fontsize=18)
+            handles, labels = ax.get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.show()
+
+        logger.success("Plotted relationship between number of rows and R2 scores for each pair-position combination.")
+
+        logger.info("Plotting pair position combination R2 scores.")
+
+        for dataset in sorted(self.pair_position_r2_scores["Dataset"].unique()):
+            fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True, sharex=True, dpi=200)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                data = self.pair_position_r2_scores[(self.pair_position_r2_scores["Dataset"] == dataset) & (self.pair_position_r2_scores["Cell Line"] == cell_line)]
+                data = data[data["PPI Category"] != "Neither"]
+
+                assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(2).all(), print(data.groupby(["RBP Pair", "Position"]).size())
+
+                x_axis_order = ["Same Pos. PPI", "Single Binders"]
+                hue_order = ["linear", "xgboost"]
+                sns.swarmplot(
+                    x="PPI Category", y="R2 Value", hue="Model", data=data, ax=ax, dodge=True, palette="Set2", order=x_axis_order, edgecolor="black", size=5, hue_order=hue_order
+                )
+                
+                # sns.violinplot(
+                #     x="PPI Category", y="R2 Value", hue="Model", data=data, ax=ax, dodge=True, palette="Set2", order=x_axis_order, hue_order=hue_order
+                # )
+
+                total_points = data.groupby(["Model", "PPI Category"]).size().reset_index(name="Count")
+                assert total_points["Count"].unique().shape[0] == 1, logger.error(f"Multiple counts found for {cell_line} in {dataset} dataset.")
+                total_points = total_points["Count"].unique()[0]
+
+                unique_groups = data.groupby(["RBP Pair", "Position"]).ngroups
+                
+                ax.set_title(f"{cell_line}", fontsize=16)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.legend().set_visible(False)
+                
+                ax.text(0.5, 0.5, f"Points per each Model + Category: {total_points}\n# Pair-Position Combos: {unique_groups}", 
+                        transform=ax.transAxes, verticalalignment='top', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+            fig.suptitle(f"{dataset}: R2 Scores per Pair-Position Combination", fontsize=20, y=1.0)
+            fig.supxlabel("PPI Category", fontsize=18)
+            fig.supylabel("R2 Score", fontsize=18)
+            handles, labels = ax.get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.show()
+                        
 
             fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True, sharex=True, dpi=200)
 
