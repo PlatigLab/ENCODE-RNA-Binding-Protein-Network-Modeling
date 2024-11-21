@@ -38,14 +38,14 @@ class RbpPpiAnalyzer:
     
     def __post_init__(self):
 
-        self.load_SHAP_data()
-        self.load_linear_model_results()
+        # self.load_SHAP_data()
+        # self.load_linear_model_results()
 
-        self.get_total_binding()
-        self.check_initial_data_assertions()
+        # self.get_total_binding()
+        # self.check_initial_data_assertions()
 
         self.load_RBP_PPI_pairs()
-        # self.retrieve_rbp_ppi_events_and_controls()
+        self.retrieve_rbp_ppi_events_and_controls(test_only=True)
 
 
     def load_RBP_PPI_pairs(self):
@@ -388,7 +388,9 @@ class RbpPpiAnalyzer:
         return pl.concat([rbp1_single_binders, rbp2_single_binders], how="vertical")
 
 
-    def retrieve_rbp_ppi_events_and_controls(self): 
+    def retrieve_rbp_ppi_events_and_controls(self, test_only=None): 
+
+        assert test_only is not None, logger.error("test_only parameter must be set to True or False.")
 
         PPI_MISSING_SUMMARY_DIR = "../output/ppi_no_examples_summary/"
 
@@ -396,7 +398,12 @@ class RbpPpiAnalyzer:
             
             self.delete_non_PPI_data()
 
-            logger.info("FROM CACHE: Loading RBP PPI events and controls.")
+            if test_only:
+                data_label = "---TEST----"
+            elif not test_only:
+                data_label = "----ALL----"
+
+            logger.info(f"FROM CACHE: Loading {data_label} RBP PPI events and controls.")
 
             linear_ppi = {}
             xgboost_ppi = {}
@@ -404,21 +411,45 @@ class RbpPpiAnalyzer:
             binding_columns = {}
             shap_columns = {}
 
+            def parallel_read_ppi_files(cell_line, distance_threshold, model_type, test_only):
+                tmp_df = pl.scan_ipc(f"{self.PPI_CACHE_DIR}/{cell_line}-{distance_threshold}-{model_type}-ppi_events_and_controls.feather")
+
+                if not test_only:
+                    return tmp_df.collect(streaming=True)
+
+                elif test_only:
+                    tmp_df = tmp_df.filter(pl.col("Data Partition") == "test").collect(streaming=True)
+            
+                    result = (
+                        tmp_df.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+                        .group_by(["RBP Pair", "Position"])
+                        .agg(pl.count())
+                        .filter(pl.col("count") >= 3)
+                        .select(["RBP Pair", "Position"])
+                    ).unique()
+
+                    filtered_data = tmp_df.join(result, on=["RBP Pair", "Position"], how="inner")
+                    filtered_data = pl.concat([filtered_data, tmp_df.filter(pl.col("RBP Pair").is_null())], how="vertical")
+                    assert all(filtered_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line}.")
+
+                    return filtered_data
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
                 linear_futures = {
-                    executor.submit(pl.read_ipc, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-linear-ppi_events_and_controls.feather"): cell_line for cell_line in self.cell_lines
+                    executor.submit(parallel_read_ppi_files, cell_line, self.distance_threshold, "linear", test_only): cell_line for cell_line in self.cell_lines
                 }
                 xgboost_futures = {
-                    executor.submit(pl.read_ipc, f"{self.PPI_CACHE_DIR}/{cell_line}-{self.distance_threshold}-xgboost-ppi_events_and_controls.feather"): cell_line for cell_line in self.cell_lines
+                    executor.submit(parallel_read_ppi_files, cell_line, self.distance_threshold, "xgboost", test_only): cell_line for cell_line in self.cell_lines
                 }
 
-                for future in concurrent.futures.as_completed(linear_futures):
-                    cell_line = linear_futures[future]
-                    linear_ppi[cell_line] = future.result()
+                for future in concurrent.futures.as_completed({**linear_futures, **xgboost_futures}):
+                    cell_line = linear_futures.get(future) or xgboost_futures.get(future)
+                    df = future.result()
 
-                for future in concurrent.futures.as_completed(xgboost_futures):
-                    cell_line = xgboost_futures[future]
-                    xgboost_ppi[cell_line] = future.result()
+                    if future in linear_futures:
+                        linear_ppi[cell_line] = df
+                    else:
+                        xgboost_ppi[cell_line] = df
             
             for cell_line in self.cell_lines:
                 binding_columns[cell_line] = [col for col in xgboost_ppi[cell_line].columns if col.endswith("_right") or col.endswith("_left")]
@@ -442,6 +473,8 @@ class RbpPpiAnalyzer:
             with open(f"{PPI_MISSING_SUMMARY_DIR}/missing_data_stats_{self.distance_threshold}.json", "r") as f:
                 missing_stats_dictionary = json.load(f)
                 logger.info(f"Missing Data Stats:\n{json.dumps(missing_stats_dictionary, indent=4)}")
+
+            logger.success(f"Loaded {data_label} RBP PPI events and controls.")
 
         else: 
             
@@ -546,24 +579,8 @@ class RbpPpiAnalyzer:
             with open(f"{PPI_MISSING_SUMMARY_DIR}/missing_data_stats_{self.distance_threshold}.json", "w") as f:
                 json.dump(missing_data_stats, f, indent=4)
 
-        logger.success("Finished retrieving RBP PPI events and controls.")
+            logger.success("Finished retrieving and caching RBP PPI events and controls.")
 
-
-    def return_test_ppi_data(self, df): 
-        data = df.filter(pl.col("Data Partition") == "test")
-        
-        result = (
-            data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
-            .group_by(["RBP Pair", "Position"])
-            .agg(pl.count())
-            .filter(pl.col("count") >= 3)
-            .select(["RBP Pair", "Position"])
-        ).unique()
-
-        filtered_data = data.join(result, on=["RBP Pair", "Position"], how="inner")
-
-        return pl.concat([filtered_data, data.filter(pl.col("RBP Pair").is_null())], how="vertical")
-    
 
     def plot_same_pos_ppi_per_pair_combination(self): 
         logger.info("Plotting number of same position PPI rows per pair combination.")
