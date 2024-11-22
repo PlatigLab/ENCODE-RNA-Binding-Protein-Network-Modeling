@@ -1003,15 +1003,14 @@ class AyanXgbdtAnalyzer:
             sns.barplot(data=subset, x="Distance Threshold", y="R2 Score", hue="Cell Line", ax=ax, palette=["lightblue", "lightcoral"], edgecolor="black", width=0.5)
             ax.set_xlabel("")
             ax.set_ylabel("")
+            ax.set_ylim(0, max(subset["R2 Score"]) + 0.05)
 
-            if model=="ElasticNet":
-                ax.set_title("ElasticNet", fontsize=20)
-            else: 
-                ax.set_title(model, fontsize=18)
+            for p in ax.patches:
+                if p.get_height() > 0:
+                    ax.text(p.get_x() + p.get_width() / 2., p.get_height() + 0.01, f'{p.get_height():.2f}', ha='center', va='center', color='darkgreen', fontsize=10, fontweight='bold')
 
-        avg_r2_score = r2_results["R2 Score"].mean()
-        for ax in axes:
-            ax.axhline(y=avg_r2_score, color='green', linestyle=':', linewidth=2, label=f'Average R2: {avg_r2_score:.2f}')
+            ax.set_title(model, fontsize=18)
+
 
         plt.suptitle("Test R2 Scores by Cell Line, Model, and Window Size", fontsize=26, y=1.01)
         fig.supxlabel("Window Size", fontsize=20)
