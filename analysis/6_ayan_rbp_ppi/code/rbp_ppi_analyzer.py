@@ -908,13 +908,10 @@ class RbpPpiAnalyzer:
             self.pair_position_r2_scores = pd.read_csv(PAIR_POSITION_R2_SCORES_OUTPUT_FILE, sep="\t")
 
             # Assert that each unique combination of "Dataset", "Cell Line", "Model", "RBP Pair", "Position" columns is two total rows long
-            assert self.pair_position_r2_scores.groupby(["Dataset", "Cell Line", "Model", "RBP Pair", "Position"]).size().eq(2).all(), "Each unique combination of 'Dataset', 'Cell Line', 'Model', 'RBP Pair', 'Position' should have exactly 2 rows."
+            assert self.pair_position_r2_scores.groupby(["Cell Line", "Model", "RBP Pair", "Position"]).size().eq(3).all(), "Each unique combination of 'Cell Line', 'Model', 'RBP Pair', 'Position' should have exactly 3 rows."
 
             # Assert that there is at least one row for every combination of "Dataset", "Cell Line", and "Model" columns
-            assert self.pair_position_r2_scores.groupby(["Dataset", "Cell Line", "Model"]).size().ge(1).all(), "There should be at least one row for every combination of 'Dataset', 'Cell Line', and 'Model'."
-
-            # Assert that the number of rows with "Neither" in the "PPI Analysis Category" column equals the number of unique possibilities of "Dataset", "Cell Line", and "Model"
-            assert self.pair_position_r2_scores[self.pair_position_r2_scores["PPI Category"] == "Neither"].shape[0] == self.pair_position_r2_scores.groupby(["Dataset", "Cell Line", "Model"]).ngroups, "The number of 'Neither' rows should equal the number of unique 'Dataset', 'Cell Line', and 'Model' combinations."
+            assert self.pair_position_r2_scores.groupby(["Cell Line", "Model"]).size().ge(2).all(), "There should be at least 2 rows for every combination of 'Cell Line' and 'Model'."
 
             logger.success("FROM CACHE: loaded pair position R2 scores.")
 
@@ -927,37 +924,38 @@ class RbpPpiAnalyzer:
 
             pair_position_r2_scores = []
 
-            for data_partition in ["ALL DATA", "TEST ONLY"]:
-                for cell_line in self.cell_lines:
-                    for model in ["xgboost", "linear"]:
-                        data = getattr(self, f"{model}_ppi")[cell_line]
+            for cell_line in self.cell_lines:
+                for model in ["xgboost", "linear"]:
+                    data = getattr(self, f"{model}_ppi")[cell_line]
+                    assert data["Data Partition"].unique().to_list() == ["test"], logger.error(f"Data Partition column does not contain 'test' for {cell_line} - {model}.")
 
-                        if data_partition == "TEST ONLY":
-                            data = self.return_test_ppi_data(data)
+                    for (rbp_pair, position), group in data.group_by(["RBP Pair", "Position"]):
 
-                        for (rbp_pair, position), group in data.group_by(["RBP Pair", "Position"]):
-
-                            if rbp_pair is not None:
-
-                                same_pos_ppi_group = group.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
-                                single_binders_group = group.filter(pl.col("PPI Analysis Category").str.ends_with(" Only"))
-                            
-                                assert len(same_pos_ppi_group) >=3 and len(single_binders_group) >=3, logger.error(f"Insufficient data for {data_partition} - {cell_line} - {model} - {rbp_pair} - {position}.")
-
-                                for category, df in [("Same Pos. PPI", same_pos_ppi_group), ("Single Binders", single_binders_group)]:
-                                
-                                    subset = df.select(["graph_index", "psi_hat", "target"])
-                                    assert subset["graph_index"].n_unique() == subset.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category for {rbp_pair} at position {position}.")
-
-                                    r2 = r2_score(subset["target"], subset["psi_hat"])
-                                    pair_position_r2_scores.append([data_partition, cell_line, model, rbp_pair, position, category, r2, subset.shape[0]])
+                        if rbp_pair is not None:
+                            same_pos_ppi_group = group.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+                            single_binders_group = group.filter(pl.col("PPI Analysis Category").str.ends_with(" Only"))
+                            neither = data.filter(
+                                (pl.col("RBP Pair") != rbp_pair) |
+                                (pl.col("Position") != position)
+                            )
                         
-                        data = data.filter(pl.col("PPI Analysis Category").is_null())
-                        r2 = r2_score(data["target"], data["psi_hat"])
+                            assert len(same_pos_ppi_group) >=3 and len(single_binders_group) >=3 and len(neither)>=3, logger.error(f"Insufficient data for {cell_line} - {model} - {rbp_pair} - {position}.")
 
-                        pair_position_r2_scores.append([data_partition, cell_line, model, None, None, "Neither", r2, data.shape[0]])
+                            for category, df in [("Same Pos. PPI", same_pos_ppi_group), ("Single Binders", single_binders_group), ("Neither", neither)]:
+                            
+                                subset = df.select(["graph_index", "psi_hat", "target"])
+                                
+                                if category == "Neither":
+                                    subset = subset.unique()
 
-            self.pair_position_r2_scores = pd.DataFrame(pair_position_r2_scores, columns=["Dataset", "Cell Line", "Model", "RBP Pair", "Position", "PPI Category", "R2 Value", "# Rows"]).sort_values("R2 Value", ascending=False)
+                                assert subset["graph_index"].n_unique() == subset.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category for {rbp_pair} at position {position}.")
+
+                                r2 = r2_score(subset["target"], subset["psi_hat"])
+                                percent_rows = (subset.shape[0] / data["graph_index"].n_unique()) * 100
+
+                                pair_position_r2_scores.append([cell_line, model, rbp_pair, position, category, r2, subset.shape[0], percent_rows])
+
+            self.pair_position_r2_scores = pd.DataFrame(pair_position_r2_scores, columns=["Cell Line", "Model", "RBP Pair", "Position", "PPI Category", "R2 Value", "# Unique Graphs", "% Unique Graphs"]).sort_values("R2 Value", ascending=False)
             self.pair_position_r2_scores.to_csv(PAIR_POSITION_R2_SCORES_OUTPUT_FILE, sep="\t", index=False)
 
             logger.success("Pair position combination R2 scores calculated and saved.")
