@@ -965,171 +965,103 @@ class RbpPpiAnalyzer:
             
         if not hasattr(self, 'pair_position_r2_scores'):
             self.calculate_pair_position_combination_r2_scores()
-        
+
+        xgboost_data = self.pair_position_r2_scores[self.pair_position_r2_scores["Model"] == "xgboost"]
 
         logger.info("Comparing relationship between number of rows and R2 scores for each pair-position combination.")
 
-        for dataset in sorted(self.pair_position_r2_scores["Dataset"].unique()):
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, sharex=True, dpi=200)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, sharex=True, dpi=200)
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                data = self.pair_position_r2_scores[(self.pair_position_r2_scores["Dataset"] == dataset) & (self.pair_position_r2_scores["Cell Line"] == cell_line)]
-                data = data[data["PPI Category"] != "Neither"]
+        for ax, cell_line in zip(axes, self.cell_lines):
+            data = xgboost_data[xgboost_data["Cell Line"] == cell_line]
 
-                data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
-                
-                hue_order = ["Same Pos. PPI", "Single Binders"]
-                style_order = ["linear", "xgboost"]
-                sns.scatterplot(x="# Rows", y="R2 Value", hue="PPI Category", style="Model", hue_order = hue_order, style_order = style_order, data=data, ax=ax, palette="Set2", edgecolor="black", s=20,)
-        
-                assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(2).all(), print(data.groupby(["RBP Pair", "Position"]).size())
+            # data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
+            
+            hue_order = ["Same Pos. PPI", "Single Binders", "Neither"]
+            sns.scatterplot(x="# Unique Graphs", y="R2 Value", hue="PPI Category", hue_order = hue_order, data=data, ax=ax, palette="Set2", edgecolor="black", s=20,)
+    
+            assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(3).all(), print(data.groupby(["RBP Pair", "Position"]).size())
 
-                num_pairs = data.groupby(["RBP Pair", "Position"]).ngroups
-                spearman_corr, _ = spearmanr(data["# Rows"], data["R2 Value"])
+            num_pairs = data.groupby(["RBP Pair", "Position"]).ngroups
+            spearman_corr, _ = spearmanr(data["# Unique Graphs"], data["R2 Value"])
 
-                ax.text(0.5, 0.5, f"# Pair-Position Combos: {num_pairs}\nSpearman r: {spearman_corr:.2f}", 
-                        transform=ax.transAxes, verticalalignment='center', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+            ax.text(0.5, 0.5, f"# Pair-Position Combos: {num_pairs}\nSpearman r: {spearman_corr:.2f}", 
+                    transform=ax.transAxes, verticalalignment='center', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
 
-                ax.set_title(f"{cell_line}", fontsize=16)
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.legend().set_visible(False)
+            ax.set_title(f"{cell_line}", fontsize=16)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.legend().set_visible(False)
 
-            fig.suptitle(f"{dataset}: R2 Scores vs. # Rows per Pair-Position Combination\nNOTE: all R2 score values < 0 were made 0", fontsize=20, y=0.98)
-            fig.supxlabel("# Rows", fontsize=18)
-            fig.supylabel("R2 Score", fontsize=18)
-            handles, labels = ax.get_legend_handles_labels()
-            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+        fig.suptitle("XGBoost Test Set: R2 Scores vs. # Rows per Pair-Position Combination\nNOTE: all R2 score values < 0 were made 0", fontsize=20, y=0.98)
+        fig.supxlabel("# Rows", fontsize=18)
+        fig.supylabel("R2 Score", fontsize=18)
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
 
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
-            plt.show()
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.show()
 
         logger.success("Plotted relationship between number of rows and R2 scores for each pair-position combination.")
 
         logger.info("Plotting pair position combination R2 scores.")
 
-        for dataset in sorted(self.pair_position_r2_scores["Dataset"].unique()):
-            fig, axes = plt.subplots(1, 2, figsize=(20, 6), sharey=True, sharex=True, dpi=200)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 6), sharey=True, sharex=True, dpi=200)
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                data = self.pair_position_r2_scores[(self.pair_position_r2_scores["Dataset"] == dataset) & (self.pair_position_r2_scores["Cell Line"] == cell_line)]
-                data = data[data["PPI Category"] != "Neither"]
+        for ax, cell_line in zip(axes, self.cell_lines):
+            data = xgboost_data[xgboost_data["Cell Line"] == cell_line]
+            data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
 
-                data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
+            assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(3).all(), print(data.groupby(["RBP Pair", "Position"]).size())
 
-                assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(2).all(), print(data.groupby(["RBP Pair", "Position"]).size())
+            x_axis_order = ["Same Pos. PPI", "Single Binders", "Neither"]
+            sns.swarmplot(
+                x="PPI Category", y="R2 Value", data=data, ax=ax, palette="Set2", order=x_axis_order, edgecolor="black", size=1,
+            )
+            sns.boxplot(
+                x="PPI Category", y="R2 Value", data=data, ax=ax, palette="Set2", order=x_axis_order, 
+                boxprops={'facecolor':'None', 'linewidth': 2},
+                whiskerprops={'linewidth': 2},
+                capprops={'linewidth': 2},
+                medianprops={'linewidth': 2},
+                flierprops={'marker': 'o', 'markersize': 5, 'linestyle': 'none'}
+            )
 
-                x_axis_order = ["Same Pos. PPI", "Single Binders"]
-                hue_order = ["linear", "xgboost"]
-                sns.swarmplot(
-                    x="PPI Category", y="R2 Value", hue="Model", data=data, ax=ax, dodge=True, palette="Set2", order=x_axis_order, edgecolor="black", size=1, hue_order=hue_order
-                )
-                sns.boxplot(
-                    x="PPI Category", y="R2 Value", hue="Model", data=data, ax=ax, dodge=True, palette="Set2", order=x_axis_order, hue_order=hue_order, boxprops={'facecolor':'None'},
-                )
-
-                unique_groups = data.groupby(["RBP Pair", "Position"]).ngroups
-
-                total_points = data.groupby(["Model", "PPI Category"]).size().reset_index(name="Count")
-                assert total_points["Count"].unique()[0]== unique_groups, logger.error(f"Multiple counts found for {cell_line} in {dataset} dataset.")
-                
-                ax.set_title(f"{cell_line}", fontsize=16)
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.legend().set_visible(False)
-                
-                ax.text(0.5, 0.9, f"# Pair-Position Combos: {unique_groups}", 
-                        transform=ax.transAxes, verticalalignment='top', horizontalalignment='center', fontsize=16, bbox=dict(facecolor='white', alpha=0.8))
-
-            fig.suptitle(f"{dataset}: R2 Scores per Pair-Position Combination\nNOTE: all R2 score values < 0 were made 0", fontsize=20, y=0.98)
-            fig.supxlabel("PPI Category", fontsize=18)
-            fig.supylabel("R2 Score", fontsize=18, x=-0.01)
-            handles, labels = ax.get_legend_handles_labels()
-            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14, markerscale=5)
-
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
-            plt.show()
-                        
-
-    def calculate_num_bindings_summary_PPI_performance(self): 
-        
-        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi_summary_stats/NUM_BINDING_summary_ppi_performance_{self.distance_threshold}.tsv"
-
-        if pathlib.Path(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE).exists():
-
-            self.num_binding_summary_ppi_df = pd.read_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, sep="\t")
-            logger.success("FROM CACHE: loaded NUM BINDING SPECIFIC summary PPI performance.")
-
-        else:
-
-            if not hasattr(self, 'linear_ppi') or not hasattr(self, 'xgboost_ppi'):
-                self.retrieve_rbp_ppi_events_and_controls()
-
-            logger.info("Calculating NUM BINDING summary PPI performance.")
-
-            summary_data = []
-
-            for data_partition in ["ALL DATA", "TEST ONLY"]:
-                for cell_line in self.cell_lines:
-                    for model in ["xgboost", "linear"]:
-                        data = getattr(self, f"{model}_ppi")[cell_line]
-
-                        if data_partition == "TEST ONLY":
-                            data = self.return_test_ppi_data(data)
-
-                        for binding_value in range(1,16):
-                            if binding_value == 15:
-                                subset = data.filter(pl.col("Total Binding") >= binding_value)
-                            else:
-                                subset = data.filter(pl.col("Total Binding") == binding_value)
-
-                            assert subset.is_empty() == False, logger.error(f"No data found for {cell_line} - {model} - {binding_value} in {data_partition} dataset.")
-
-                            for category in ["Same Pos. PPI", "Single Binders"]:
-                                if category == "Same Pos. PPI":
-                                    if binding_value < 2:
-                                        continue
-                                    cat_data = subset.filter(pl.col("PPI Analysis Category") == category)
-                                elif category == "Single Binders":
-                                    same_pos_ppi_graph_indices = data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI").select("graph_index").unique()
-                                    cat_data = subset.filter((pl.col("PPI Analysis Category").str.ends_with(" Only")) & (~pl.col("graph_index").is_in(same_pos_ppi_graph_indices["graph_index"])))
-
-                                cat_data = cat_data.select(["graph_index", "psi_hat", "target"]).unique()
-
-                                assert cat_data["graph_index"].n_unique() == cat_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category for {binding_value}.")
-                                assert cat_data.is_empty() == False, logger.error(f"No data found for {cell_line} - {model} - {category} - {binding_value} in {data_partition} dataset.")
-
-                                r2 = r2_score(cat_data["target"], cat_data["psi_hat"])
-                                summary_data.append(
-                                    [
-                                        data_partition,
-                                        cell_line,
-                                        model,
-                                        binding_value,
-                                        category,
-                                        r2,
-                                        cat_data.shape[0],
-                                        (cat_data.shape[0] / data["graph_index"].n_unique()) * 100
-                                    ]
-                                )
-
-
-            summary_df = pd.DataFrame(summary_data, columns=["Dataset", "Cell Line", "Model", "Total Binding", "PPI Category", "R2 Value", "# Rows", "% Dataset"]).sort_values("R2 Value", ascending=False)
-            summary_df["PPI Category"] = summary_df["PPI Category"].replace({"Same Pos. PPI": ">= 1 Same Pos. PPI"})
-            summary_df.to_csv(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE, sep="\t", index=False)
-
-            logger.success("Summary PPI performance with binding calculated and saved.")
-
-
-    def plot_num_bindings_summary_PPI_performance(self):
+            unique_groups = data.groupby(["RBP Pair", "Position"]).ngroups
+            total_points = data.groupby(["Model", "PPI Category"]).size().reset_index(name="Count")
+            assert len(total_points["Count"].unique()) == 1 and total_points["Count"].unique()[0]== unique_groups, logger.error(f"Multiple counts found for {cell_line}.")
             
-            if not hasattr(self, 'num_binding_summary_ppi_df'):
-                self.calculate_num_bindings_summary_PPI_performance()
-    
-            logger.info("Plotting NUM BINDING specific PPI performance.")
+            ax.set_title(f"{cell_line}", fontsize=16)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.legend().set_visible(False)
 
-            for data_partition in ["ALL DATA", "TEST ONLY"]:
-                fig, axes = plt.subplots(2, 1, figsize=(20, 8), sharex=True, dpi=200)
+            ax.tick_params(axis='x', labelsize=16)
+            
+            ax.text(0.83, 0.9, f"# Pair-Position Combos: {unique_groups}", 
+                    transform=ax.transAxes, verticalalignment='top', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+            
+            top_5_points = data[data["PPI Category"] == "Same Pos. PPI"].nlargest(5, "R2 Value")
+            for i, (_, row) in enumerate(top_5_points.iterrows()):
+                ax.text(0.45, 0.95 - i * 0.05, f"{row['RBP Pair']} Pos. {row['Position']}: ", 
+                        ha='right', va='center', fontsize=12, color='black', transform=ax.transAxes
+                    )
+                ax.text(0.45, 0.95 - i * 0.05, f"{row['R2 Value']:.2f}", 
+                        ha='left', va='center', fontsize=12, color='blue', transform=ax.transAxes
+                    )
+                ax.text(0.5, 0.95 - i * 0.05, f"; {row['# Unique Graphs']} Graphs", 
+                        ha='left', va='center', fontsize=12, color='red', transform=ax.transAxes
+                    )
+                
+        fig.suptitle("XGBoost Test Dataset: R2 Scores per Pair-Position Combination\nNOTE: All R2 values < 0 set to 0", fontsize=24, y=0.98)
+        fig.supxlabel("PPI Category", fontsize=22)
+        fig.supylabel("R2 Score", fontsize=22, x=-0.01)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.show()
+
+
+
 
                 for ax, cell_line in zip(axes, self.cell_lines):
                     data = self.num_binding_summary_ppi_df[
