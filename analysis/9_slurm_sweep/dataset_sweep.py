@@ -9,12 +9,12 @@ import argparse
 WANDB_ENTITY = "platiglab"
 WANDB_PROJECT = "rbp-se"
 
-MODEL_NAME = 'hiervq'
+MODEL_NAME = 'elasticnet'
 SCRIPT_NAME = f'wandb_run_{MODEL_NAME}.py'
 SWEEP_NAME = f'{MODEL_NAME}_sweep'
 MEMORY_GB = 128
 CPUS = 8
-USE_GPU = True
+USE_GPU = False
 
 sweep_configuration = {
     'method': 'grid',
@@ -41,9 +41,9 @@ sweep_configuration = {
         # 'model.max_depth': {
         #     'values': [3, 5, 7, 9],
         # },
-        'training.seed': {
-            'values': [4232, 451, 2352, 321, 9491],
-        },
+        # 'training.seed': {
+        #     'values': [4232, 451, 2352],#, 321, 9491],
+        # },
         # 'model.hidden_dim': {
         #     'values': [4, 6, 8, 12, 16, 20, 40],
         # },
@@ -59,6 +59,9 @@ sweep_configuration = {
         #'model.temperature': {
         #    'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
         #},
+        'model.alpha': {
+           'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
+        },
     }
 }
 
