@@ -1,6 +1,6 @@
 #!/bin/bash
 
-thresholds=(25 50 75 100 125 150 175 200 225 250 500 1000 2000 5000 10000)
+thresholds=(25 50 75 100 125 150 175 200 225 250 500 1000)
 cell_lines=(HepG2 K562)
 
 for cell_line in "${cell_lines[@]}"
