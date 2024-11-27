@@ -25,8 +25,6 @@ threshold = args.threshold
 ############################################
 rmats_data_path = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/"
 
-rmats_file_column_subset = ["chr", "strand", "exonStart_0base", "exonEnd", "upstreamES", "upstreamEE", "downstreamES", "downstreamEE", "IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2", "IncLevel1", "IncLevel2"]
-
 exon_ordering = {
     "+": {
         "1": "upstreamES", 
@@ -137,7 +135,7 @@ for row in rmats_df:
             unique_id = ""
             
             unique_id = "_".join(
-                [str(row[coord_column]) for coord_column in rmats_file_column_subset[0:8]]
+                [str(row[coord_column]) for coord_column in ["chr", "strand"] + [position_definition[str(i)] for i in range(1,7)]]
             )
             
             if "KD" in sample: 
