@@ -10,7 +10,9 @@ Convert raw counts matrices into normalized counts matrices using multiple diffe
 
 📂 `3_assign_eCLIP_to_splice_junctions/`: 
 
-Get `BED` file of unique `Skipped Exon splice junctions` and `BED` file of all `eCLIP` data (per cell line) to assign `bedtools closest` splice junction for each `eCLIP` peak. 
+Get `BED` file of unique `Skipped Exon splice junctions` and `BED` file of all `eCLIP` data (per cell line) to assign `bedtools window` splice junction for each `eCLIP` peak (not a one-to-one relationship). 
+
+Each `eCLIP` peak can be assigned to as many splice junctions are within the distance threshold. 
 
 📂 `4_create_num_peaks_ML_input`:
 
