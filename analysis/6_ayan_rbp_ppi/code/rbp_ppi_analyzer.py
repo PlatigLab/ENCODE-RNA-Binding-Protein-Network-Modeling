@@ -1060,36 +1060,67 @@ class RbpPpiAnalyzer:
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
+        logger.success("Plotted pair position combination R2 scores.")
+    
 
+    def create_ppi_vs_single_binder_table(self): 
 
+        PPI_VS_SINGLE_BINDER_OUTPUT_FILE = f"../output/ppi_summary_stats/pair_position_ppi_vs_single_binder_r2_scores_{self.distance_threshold}.tsv"
 
-                for ax, cell_line in zip(axes, self.cell_lines):
-                    data = self.num_binding_summary_ppi_df[
-                        (self.num_binding_summary_ppi_df["Dataset"] == data_partition) &
-                        (self.num_binding_summary_ppi_df["Cell Line"] == cell_line)
-                    ]
+        if pathlib.Path(PPI_VS_SINGLE_BINDER_OUTPUT_FILE).exists():
+                
+                self.ppi_vs_single_binder_df = pd.read_csv(PPI_VS_SINGLE_BINDER_OUTPUT_FILE, sep="\t")
+                logger.success("FROM CACHE: loaded PPI vs. Single Binder R2 scores.")
 
-                    data = data.sort_values(["Total Binding", "PPI Category", "Model"])
-                    # data["Total Binding"] = data["Total Binding"].replace(15, ">15")
+                return self.ppi_vs_single_binder_df.head(n=30)
+        
+        else: 
+            
+            if not hasattr(self, 'pair_position_r2_scores'):
+                self.calculate_pair_position_combination_r2_scores()
 
-                    sns.scatterplot(
-                        x="Total Binding", y="R2 Value", hue="PPI Category", style="Model",
-                        data=data, ax=ax, palette="Set2", edgecolor="black", s=100
+            logger.info("Creating table comparing PPI vs. Single Binder R2 scores.")
+
+            xgboost_data = self.pair_position_r2_scores[self.pair_position_r2_scores["Model"] == "xgboost"]
+
+            new_table = []
+
+            for cell_line in self.cell_lines:
+                cell_line_data = xgboost_data[xgboost_data["Cell Line"] == cell_line]
+
+                grouped_data = cell_line_data.groupby(["RBP Pair", "Position"])
+                assert grouped_data.size().eq(3).all(), "Each unique combination of 'RBP Pair' and 'Position' should have exactly 3 rows."
+
+                for (rbp_pair, position), group in grouped_data:
+                    same_pos_ppi_r2 = group[group["PPI Category"] == "Same Pos. PPI"]
+                    assert len(same_pos_ppi_r2) == 1, logger.error(f"Multiple rows found for {cell_line} - {rbp_pair} - {position} in 'Same Pos. PPI' category.")
+
+                    single_binders_r2 = group[group["PPI Category"] == "Single Binders"]
+                    assert len(single_binders_r2) == 1, logger.error(f"Multiple rows found for {cell_line} - {rbp_pair} - {position} in 'Single Binders' category.")
+
+                    assert group["Model"].nunique() == 1 and group["Model"].unique()[0] == "xgboost", logger.error(f"Model column values are not all 'xgboost' for {cell_line} - {rbp_pair} - {position}.")
+                    
+                    new_table.append(
+                        {
+                            "Cell Line": cell_line,
+                            "Model": "xgboost",
+                            "RBP Pair": rbp_pair,
+                            "Position": position,
+                            "Same Pos. PPI R2": same_pos_ppi_r2["R2 Value"].values[0],
+                            "Single Binders R2": single_binders_r2["R2 Value"].values[0],
+                            "# Graphs (Same Pos. PPI)": same_pos_ppi_r2["# Unique Graphs"].values[0],
+                            "# Graphs (Single Binders)": single_binders_r2["# Unique Graphs"].values[0],
+                            "Difference": same_pos_ppi_r2["R2 Value"].values[0] - single_binders_r2["R2 Value"].values[0]
+                        }
                     )
 
-                    ax.set_title(f"{cell_line}", fontsize=16)
-                    ax.set_xlabel("")
-                    ax.set_ylabel("")
-                    ax.legend().set_visible(False)
+            new_table_df = pd.DataFrame(new_table).sort_values("Difference", ascending=False)
+            assert new_table_df.groupby(["Cell Line", "Model", "RBP Pair", "Position"]).size().eq(1).all(), "Each unique combination of 'Cell Line', 'Model', 'RBP Pair', 'Position' should have exactly 1 row."
+            
+            new_table_df.to_csv(PPI_VS_SINGLE_BINDER_OUTPUT_FILE, sep="\t", index=False)
 
-                handles, labels = ax.get_legend_handles_labels()
-                fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
-                fig.supxlabel("Total Binding", fontsize=16)
-                fig.supylabel("R2 Score", fontsize=16)
-                plt.suptitle(f"{data_partition}: # Bindings vs R2 Score", fontsize=20)
+            logger.success("PPI vs. Single Binder R2 scores calculated and saved.")
 
-                plt.tight_layout()
-                plt.show()
 
 
 
