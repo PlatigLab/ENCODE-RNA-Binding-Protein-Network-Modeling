@@ -1121,28 +1121,84 @@ class RbpPpiAnalyzer:
 
             logger.success("PPI vs. Single Binder R2 scores calculated and saved.")
 
+    def create_and_plot_num_bindings_vs_r2_score(self): 
 
+        if not hasattr(self, 'ppi_vs_single_binder_df'):
+            self.create_ppi_vs_single_binder_table()
+        
+        for _, row in self.ppi_vs_single_binder_df.iterrows():
+            cell_line = row["Cell Line"]
+            model = row["Model"]
+            rbp_pair = row["RBP Pair"]
+            position = row["Position"]
 
+            data = getattr(self, f"{model}_ppi")[cell_line]
+            
+            subset_data = data.filter(
+                (pl.col("RBP Pair") == rbp_pair) & 
+                (pl.col("Position") == str(position))
+            )
 
+            assert subset_data["Data Partition"].unique().to_list() == ["test"], logger.error(f"Data Partition column does not contain 'test' for {cell_line} - {model} - {rbp_pair} - {position}.")
+            unique_total_bindings = sorted(subset_data["Total Binding"].unique().to_list())
+            grouped_bindings = []
+            for i in range(0, 15, 3):
+                grouped_bindings.append(f"{i+1}-{i+3}")
+            grouped_bindings.append(">15")
 
+            r2_scores = {"Same Pos. PPI": [], "Single Binders": []}
+            binding_counts = []
+            num_rows = {"Same Pos. PPI": [], "Single Binders": []}
 
-                for idx, row in counts.iterrows():
-                    if "PPI" not in row["PPI Analysis Category"]:
-                        rbp_pair = row["RBP Pair"].split("-")
+            for group in grouped_bindings:
+                if group == ">15":
+                    filtered_data = subset_data.filter(pl.col("Total Binding") > 15)
+                else:
+                    lower, upper = map(int, group.split('-'))
+                    filtered_data = subset_data.filter((pl.col("Total Binding") >= lower) & (pl.col("Total Binding") <= upper))
 
-                        assert row["PPI Analysis Category"] in rbp_pair
+                for category in ["Same Pos. PPI", "Single Binders"]:
+                    if category == "Same Pos. PPI":
+                        category_data = filtered_data.filter(pl.col("PPI Analysis Category") == category)
+                    elif category == "Single Binders":
+                        category_data = filtered_data.filter(pl.col("PPI Analysis Category").str.contains(" Only"))
+                    
+                    if not category_data.is_empty() and category_data.shape[0] >= 3:
+                        assert category_data["graph_index"].n_unique() == category_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} in {category} category for {rbp_pair} at position {position}.")
+                        r2 = r2_score(category_data["target"], category_data["psi_hat"])
+                        if r2 < -5: 
+                            r2=0
+                        r2_scores[category].append(r2)
+                        num_rows[category].append(category_data.shape[0])
+                    else:
+                        r2_scores[category].append(None)
+                        num_rows[category].append(0)
 
-                        if row["PPI Analysis Category"] == rbp_pair[0]:
-                            counts.at[idx, "PPI Analysis Category"] = "1st Only"
-                        elif row["PPI Analysis Category"] == rbp_pair[1]:
-                            counts.at[idx, "PPI Analysis Category"] = "2nd Only"
+                binding_counts.append(group)
 
-                if y_lim: 
-                    counts = counts[counts["Count"] < 100000]
+            plt.figure(figsize=(10, 4))
+            for category in ["Same Pos. PPI", "Single Binders"]:
+                plt.plot(binding_counts, r2_scores[category], marker='o', label=category)
+                for i, (x, y) in enumerate(zip(binding_counts, r2_scores[category])):
+                    if y is not None:
+                        plt.text(x, y, str(num_rows[category][i]), fontsize=12, color='green', ha='center', va='bottom')
 
-                counts = counts.sort_values(by=["PPI Analysis Category", "RBP Pair",])
+                # Calculate and add Spearman correlation
+                valid_indices = [i for i, y in enumerate(r2_scores[category]) if y is not None]
+                if valid_indices:
+                    valid_r2_scores = [r2_scores[category][i] for i in valid_indices]
+                    valid_binding_counts = [binding_counts[i] for i in valid_indices]
+                    spearman_corr, _ = spearmanr(valid_binding_counts, valid_r2_scores)
+                    y_offset = 0.5 + (0.05 * list(r2_scores.keys()).index(category))
+                    plt.text(0.5, y_offset, f"{category} Spearman r: {spearman_corr:.2f}", transform=plt.gca().transAxes, fontsize=12, color='blue', ha='center', va='center')
 
-                category_order = ["Same Pos. PPI", "Diff. Pos. PPI", "1st Only", "2nd Only"]
+            plt.xlabel("Number of Bindings")
+            plt.ylabel("R2 Score")
+            plt.title(f"R2 Score vs. Number of Bindings for {cell_line} - {model} - {rbp_pair} - {position}")
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+
 
                 sns.stripplot(x="PPI Analysis Category", y="Count", data=counts, ax=ax, order=category_order, edgecolor="black", alpha=0.4, jitter=True, size=4)
                 
