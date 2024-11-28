@@ -961,25 +961,26 @@ class RbpPpiAnalyzer:
             logger.success("Pair position combination R2 scores calculated and saved.")
 
 
-    def plot_pair_position_combination_r2_scores(self):
+    def plot_global_pair_position_combination_r2_scores(self):
             
         if not hasattr(self, 'pair_position_r2_scores'):
             self.calculate_pair_position_combination_r2_scores()
 
-        xgboost_data = self.pair_position_r2_scores[self.pair_position_r2_scores["Model"] == "xgboost"]
+        MIN_VALUE = -0.1
+        xgboost_data = self.pair_position_r2_scores[self.pair_position_r2_scores["Model"] == "xgboost"].copy(deep=True)
+        xgboost_data.loc[xgboost_data["R2 Value"] < MIN_VALUE, "R2 Value"] = MIN_VALUE
 
+        title_addendum = f"NOTE: all R2 score values < {MIN_VALUE} were made {MIN_VALUE}"
+        
         logger.info("Comparing relationship between number of rows and R2 scores for each pair-position combination.")
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True, sharex=True, dpi=200)
 
         for ax, cell_line in zip(axes, self.cell_lines):
             data = xgboost_data[xgboost_data["Cell Line"] == cell_line]
-
-            # data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
-            
             hue_order = ["Same Pos. PPI", "Single Binders", "Neither"]
+
             sns.scatterplot(x="# Unique Graphs", y="R2 Value", hue="PPI Category", hue_order = hue_order, data=data, ax=ax, palette="Set2", edgecolor="black", s=20,)
-    
             assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(3).all(), print(data.groupby(["RBP Pair", "Position"]).size())
 
             num_pairs = data.groupby(["RBP Pair", "Position"]).ngroups
@@ -993,7 +994,7 @@ class RbpPpiAnalyzer:
             ax.set_ylabel("")
             ax.legend().set_visible(False)
 
-        fig.suptitle("XGBoost Test Set: R2 Scores vs. # Rows per Pair-Position Combination\nNOTE: all R2 score values < 0 were made 0", fontsize=20, y=0.98)
+        fig.suptitle(f"XGBoost Test Set: R2 Scores vs. # Rows per Pair-Position Combination\n{title_addendum}", fontsize=20, y=0.98)
         fig.supxlabel("# Rows", fontsize=18)
         fig.supylabel("R2 Score", fontsize=18)
         handles, labels = ax.get_legend_handles_labels()
@@ -1010,8 +1011,6 @@ class RbpPpiAnalyzer:
 
         for ax, cell_line in zip(axes, self.cell_lines):
             data = xgboost_data[xgboost_data["Cell Line"] == cell_line]
-            data.loc[data["R2 Value"] < 0, "R2 Value"] = 0
-
             assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(3).all(), print(data.groupby(["RBP Pair", "Position"]).size())
 
             x_axis_order = ["Same Pos. PPI", "Single Binders", "Neither"]
