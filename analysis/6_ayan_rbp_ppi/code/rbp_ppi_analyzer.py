@@ -1071,7 +1071,7 @@ class RbpPpiAnalyzer:
                 self.ppi_vs_single_binder_df = pd.read_csv(PPI_VS_SINGLE_BINDER_OUTPUT_FILE, sep="\t")
                 logger.success("FROM CACHE: loaded PPI vs. Single Binder R2 scores.")
 
-                return self.ppi_vs_single_binder_df.head(n=30)
+                return self.ppi_vs_single_binder_df.head()
         
         else: 
             
@@ -1119,6 +1119,49 @@ class RbpPpiAnalyzer:
             new_table_df.to_csv(PPI_VS_SINGLE_BINDER_OUTPUT_FILE, sep="\t", index=False)
 
             logger.success("PPI vs. Single Binder R2 scores calculated and saved.")
+
+
+    def plot_pair_position_category_line_r2_scores(self):
+
+        if not hasattr(self, 'ppi_vs_single_binder_df'):
+            self.create_ppi_vs_single_binder_table()
+
+        logger.info("Plotting PPI vs. Single Binder R2 scores connected lines plot.")
+
+        original_data = self.ppi_vs_single_binder_df.copy(deep=True)
+        assert original_data["Model"].nunique() == 1 and original_data["Model"].unique()[0] == "xgboost", logger.error("Model column values are not all 'xgboost'.")
+        
+        MIN_VALUE = -0.1
+        original_data.loc[original_data["Same Pos. PPI R2"] < MIN_VALUE, "Same Pos. PPI R2"] = MIN_VALUE
+        original_data.loc[original_data["Single Binders R2"] < MIN_VALUE, "Single Binders R2"] = MIN_VALUE
+        title_addendum = f"NOTE: all R2 score values < {MIN_VALUE} were set to {MIN_VALUE}"
+
+        fig, axes = plt.subplots(1, 2, figsize=(18, 8), dpi=200, sharex=True, sharey=True)
+
+        for ax, cell_line in zip(axes, self.cell_lines):
+            data = original_data[original_data["Cell Line"] == cell_line]
+
+            for _, row in data.iterrows():
+                ax.plot(["Same Pos. PPI", "Single Binders"], [row["Same Pos. PPI R2"], row["Single Binders R2"]], marker='o')
+
+                ax.set_title(f"{cell_line}", fontsize=16)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+
+            top_5_rows = data.nlargest(5, "Difference")
+            for i, (_, row) in enumerate(top_5_rows.iterrows()):
+                ax.text(0.55, 0.95 - i * 0.05, f"{row['RBP Pair']} Pos. {row['Position']}:", 
+                        ha='right', va='center', fontsize=12, color='red', transform=ax.transAxes)
+                ax.text(0.55, 0.95 - i * 0.05, f" {row['Difference']:.2f}", 
+                        ha='left', va='center', fontsize=12, color='blue', transform=ax.transAxes)
+
+        fig.supxlabel("PPI Category", fontsize=16)
+        fig.supylabel("R2 Score", fontsize=16, x=0.01)
+        plt.suptitle(f"XGBoost Test R2 Scores for Same Pos. PPI vs. Single Binders\n{title_addendum}", fontsize=20, y=1.02)
+
+        plt.tight_layout()
+        plt.show()
+
 
     def create_and_plot_num_bindings_vs_r2_score(self): 
 
