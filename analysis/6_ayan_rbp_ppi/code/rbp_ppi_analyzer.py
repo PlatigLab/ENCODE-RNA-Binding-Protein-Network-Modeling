@@ -1136,15 +1136,15 @@ class RbpPpiAnalyzer:
         original_data.loc[original_data["Single Binders R2"] < MIN_VALUE, "Single Binders R2"] = MIN_VALUE
         title_addendum = f"NOTE: all R2 score values < {MIN_VALUE} were set to {MIN_VALUE}"
 
-        fig, axes = plt.subplots(1, 2, figsize=(18, 8), dpi=200, sharex=True, sharey=True)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 7), dpi=200, sharex=True, sharey=True)
 
         for ax, cell_line in zip(axes, self.cell_lines):
             data = original_data[original_data["Cell Line"] == cell_line]
 
             for _, row in data.iterrows():
-                ax.plot(["Same Pos. PPI", "Single Binders"], [row["Same Pos. PPI R2"], row["Single Binders R2"]], marker='o')
+                ax.plot(["Same Pos. PPI", "Single Binders"], [row["Same Pos. PPI R2"], row["Single Binders R2"]], marker='o', markerfacecolor='none', markeredgecolor='black')
 
-                ax.set_title(f"{cell_line}", fontsize=16)
+                ax.set_title(f"{cell_line}", fontsize=22)
                 ax.set_xlabel("")
                 ax.set_ylabel("")
 
@@ -1155,9 +1155,11 @@ class RbpPpiAnalyzer:
                 ax.text(0.55, 0.95 - i * 0.05, f" {row['Difference']:.2f}", 
                         ha='left', va='center', fontsize=12, color='blue', transform=ax.transAxes)
 
-        fig.supxlabel("PPI Category", fontsize=16)
-        fig.supylabel("R2 Score", fontsize=16, x=0.01)
-        plt.suptitle(f"XGBoost Test R2 Scores for Same Pos. PPI vs. Single Binders\n{title_addendum}", fontsize=20, y=1.02)
+        fig.supxlabel("PPI Category", fontsize=20)
+        fig.supylabel("R2 Score", fontsize=20, x=0.01)
+        fig.text(0.51, 0.88, "Pair-Position", fontsize=16, ha='center',va='center', color='red')
+        fig.text(0.51, 0.83, "(Same Pos. R2) - (Single R2)", ha='center', va='center', fontsize=16, color='blue')
+        plt.suptitle(f"XGBoost Test R2 Scores for Same Pos. PPI vs. Single Binders\n{title_addendum}", fontsize=26, y=1.03)
 
         plt.tight_layout()
         plt.show()
