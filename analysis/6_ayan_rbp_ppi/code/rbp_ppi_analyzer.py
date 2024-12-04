@@ -61,6 +61,43 @@ class RbpPpiAnalyzer:
         logger.success(f"FROM CACHE: RBP PPI info loaded\n RBP PPIs in K562: {len(self.rbp_ppi['K562'])}\nRBP PPIs in HepG2: {len(self.rbp_ppi['HepG2'])}")
 
 
+    def check_non_tested_RBPs(self):
+        
+        rec_y2h_table = pd.read_excel("../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx")
+
+        rec_y2h_dict = {}
+        for _, row in rec_y2h_table.iterrows():
+            
+            protein_a = row["Protein A"].lower()
+            protein_b = row["Protein B"].lower()
+
+            if protein_a not in rec_y2h_dict:
+                rec_y2h_dict[protein_a] = set()
+            if protein_b not in rec_y2h_dict:
+                rec_y2h_dict[protein_b] = set()
+            
+            rec_y2h_dict[protein_a].add(protein_b)
+            rec_y2h_dict[protein_b].add(protein_a)
+
+        for cell_line in self.cell_lines:
+
+            rbps = set()
+            rbps.update(
+                [col.split('_')[0].lower() for col in self.binding_columns[cell_line]]
+            )
+            
+            rbp_combinations = list(itertools.combinations(rbps, 2))
+            num_missing = 0 
+
+            for rbp1, rbp2 in rbp_combinations:
+                if rbp1 not in rec_y2h_dict or rbp2 not in rec_y2h_dict:
+                    num_missing += 1
+                elif rbp2 not in rec_y2h_dict[rbp1] and rbp1 not in rec_y2h_dict[rbp2]:
+                    num_missing += 1
+        
+            logger.info(f"{cell_line}: Testable combinations: {len(rbp_combinations)} | Missing combinations: {num_missing}")
+    
+
     def load_SHAP_data(self):
         logger.info(f"FROM CACHE: Loading SHAP data for distance threshold {self.distance_threshold}.")
         
