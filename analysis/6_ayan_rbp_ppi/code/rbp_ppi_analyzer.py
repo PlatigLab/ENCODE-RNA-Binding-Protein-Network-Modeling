@@ -63,21 +63,12 @@ class RbpPpiAnalyzer:
 
     def check_non_tested_RBPs(self):
         
-        rec_y2h_table = pd.read_excel("../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx")
+        uniprot_mapping = pd.read_csv("../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv", sep="\t")
+        uniprot_mapping["Gene name"] = uniprot_mapping["Gene name"].str.lower()
+        uniprot_mapping["Gene Synonym"] = uniprot_mapping["Gene Synonym"].str.lower()
 
-        rec_y2h_dict = {}
-        for _, row in rec_y2h_table.iterrows():
-            
-            protein_a = row["Protein A"].lower()
-            protein_b = row["Protein B"].lower()
-
-            if protein_a not in rec_y2h_dict:
-                rec_y2h_dict[protein_a] = set()
-            if protein_b not in rec_y2h_dict:
-                rec_y2h_dict[protein_b] = set()
-            
-            rec_y2h_dict[protein_a].add(protein_b)
-            rec_y2h_dict[protein_b].add(protein_a)
+        all_rbps_screened = pd.read_excel("../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx")
+        all_rbps_screened = set(all_rbps_screened["Gene Symbol"].str.lower())
 
         for cell_line in self.cell_lines:
 
@@ -85,18 +76,19 @@ class RbpPpiAnalyzer:
             rbps.update(
                 [col.split('_')[0].lower() for col in self.binding_columns[cell_line]]
             )
-            
-            rbp_combinations = list(itertools.combinations(rbps, 2))
-            num_missing = 0 
 
-            for rbp1, rbp2 in rbp_combinations:
-                if rbp1 not in rec_y2h_dict or rbp2 not in rec_y2h_dict:
-                    num_missing += 1
-                elif rbp2 not in rec_y2h_dict[rbp1] and rbp1 not in rec_y2h_dict[rbp2]:
-                    num_missing += 1
-        
-            logger.info(f"{cell_line}: Testable combinations: {len(rbp_combinations)} | Missing combinations: {num_missing}")
-    
+            missing_rbps = []
+            for rbp in rbps: 
+                if rbp not in all_rbps_screened:
+                    tmp_df = uniprot_mapping[(uniprot_mapping["Gene name"]==rbp) | (uniprot_mapping["Gene Synonym"]==rbp)]
+                    assert len(tmp_df) > 0, print(rbp)
+
+                    tmp_all_synonyms = set([name for name in (tmp_df["Gene name"].to_list() + tmp_df["Gene Synonym"].to_list()) if name!=rbp])
+                    if not any(synonym in all_rbps_screened for synonym in tmp_all_synonyms):
+                        missing_rbps.append(rbp)
+            
+            logger.info(f"{(len(missing_rbps) / len(rbps))*100:.2f}% of RBPs in {cell_line} were not tested. RBPs: {missing_rbps}")
+
 
     def load_SHAP_data(self):
         logger.info(f"FROM CACHE: Loading SHAP data for distance threshold {self.distance_threshold}.")
