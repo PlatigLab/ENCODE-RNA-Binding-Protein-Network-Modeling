@@ -38,14 +38,14 @@ class RbpPpiAnalyzer:
     
     def __post_init__(self):
 
-        self.load_SHAP_data()
-        self.load_linear_model_results()
+        # self.load_SHAP_data()
+        # self.load_linear_model_results()
 
-        self.get_total_binding()
-        self.check_initial_data_assertions()
+        # self.get_total_binding()
+        # self.check_initial_data_assertions()
 
         self.load_RBP_PPI_pairs()
-        self.retrieve_rbp_ppi_events_and_controls(test_only=False)
+        self.retrieve_rbp_ppi_events_and_controls(test_only=True)
 
 
     def load_RBP_PPI_pairs(self):
@@ -618,36 +618,27 @@ class RbpPpiAnalyzer:
     def plot_same_pos_ppi_per_pair_combination(self): 
         logger.info("Plotting number of same position PPI rows per pair combination.")
 
-        for title in ["ALL DATA", "TEST ONLY"]: 
+        swarmplot_df = []
+        for cell_line in self.cell_lines: 
 
-            fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True, sharey=True, dpi=200)
+            data = self.xgboost_ppi[cell_line]
+            assert all(data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line}.")
+            data = data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                
-                data = self.xgboost_ppi[cell_line]
+            grouped_data = data.group_by(["RBP Pair", "Position"]).agg(pl.count()).to_pandas()
+            grouped_data["Cell Line"] = cell_line
+            swarmplot_df.append(grouped_data)
 
-                if title == "TEST ONLY":
-                    data = self.return_test_ppi_data(data)
-                
-                data = data.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+        swarmplot_df = pd.concat(swarmplot_df).sort_values(by='count', ascending=False)
 
-                grouped_data = data.group_by(["RBP Pair", "Position"]).agg(pl.count()).to_pandas()
+        plt.figure(figsize=(6,3), dpi=200)
 
-                ax.hist(grouped_data["count"], bins=50, color='skyblue', edgecolor='black')
-                ax.set_title(f"{cell_line}", fontsize=16)
+        sns.swarmplot(x="Cell Line", y="count", data=swarmplot_df, order=["K562", "HepG2"], palette=["tomato", "skyblue"], size=4)
+        sns.boxplot(x="Cell Line", y="count", data=swarmplot_df, order=["K562", "HepG2"], width=0.3, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, flierprops={'marker': 'o', 'markersize': 2, 'markerfacecolor': 'black'}, medianprops={'color': 'black'}, whiskerprops={'color': 'black'}, capprops={'color': 'black'})
 
-                num_points = grouped_data["count"].sum()
-                num_groups = grouped_data.shape[0]
-
-                ax.text(0.5, 0.9, f"# Points: {num_points}\n# Pair-Positions: {num_groups}", 
-                        transform=ax.transAxes, verticalalignment='top', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-
-            plt.suptitle(f"{title}: Distribution of # of Same Pos. PPI rows per Pair Combination", fontsize=22)
-            fig.supylabel("", fontsize=18)
-            fig.supxlabel("# Same Pos. PPI Rows per Pair-Position Combination ", fontsize=18)
-
-            plt.tight_layout()
-            plt.show()
+        plt.ylabel("# PPI Graphs")
+        plt.title("Number of PPI Examples per Pair-Position Combination")
+        plt.show()
 
     
     def amount_binding_vs_PSI(self): 
