@@ -1273,7 +1273,9 @@ class RbpPpiAnalyzer:
             plt.show()
 
 
-    def plot_pair_position_performance_and_local_shap(self): 
+    def plot_pair_position_performance_and_local_shap(self, abs_value=None):
+
+        assert abs_value in [True, False], logger.error("abs_value should be either True or False.") 
 
         position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
 
@@ -1282,9 +1284,10 @@ class RbpPpiAnalyzer:
             assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {self.cell_line}.")
 
             for (rbp_pair, position), data in original_data.group_by(["RBP Pair", "Position"]):
+                logger.info(f"{rbp_pair} @ Pos. {position}: plotting performance and local SHAP values.")
 
                 category_order = ["Same Pos. PPI"] + sorted([ category for category in data["PPI Analysis Category"].unique().to_list() if category.endswith(" Only")])
-                colors = ["gold", "deepskyblue", "tomato"]
+                colors = ["black", "deepskyblue", "tomato"]
 
                 fig, axes = plt.subplots(2, 3, figsize=(18, 8), dpi=300,)
 
@@ -1294,6 +1297,8 @@ class RbpPpiAnalyzer:
                     
                     axes[0][i].set_xlim(0, 1)
                     axes[0][i].set_ylim(0, 1)
+
+                    axes[0][i].plot([0, 1], [0, 1], linestyle=':', color='gold', linewidth=2)
 
                     r2 = r2_score(subset["target"], subset["psi_hat"])
                     num_points = len(subset)
@@ -1322,14 +1327,25 @@ class RbpPpiAnalyzer:
                         )
 
                 violinplot_df = pd.concat(violinplot_df, ignore_index=True)
+                
+                if abs_value: 
+                    violinplot_df["Local SHAP"] = violinplot_df["Local SHAP"].abs()
 
                 sns.violinplot(x="PPI Analysis Category", y="Local SHAP", hue="RBP", data=violinplot_df, ax=axes[1][0], order=category_order, palette=["deepskyblue", "tomato"], density_norm='width', gap=0.3)
                 
+                if abs_value: 
+                    max_shap_value = violinplot_df["Local SHAP"].max()
+                    axes[1][0].set_ylim(ymin=-(max_shap_value * 0.1))
+                    title_prefix="Abs. Value(Local SHAP)"
+
+                elif not abs_value: 
+                    title_prefix="Local SHAP"
+
                 axes[1][0].axhline(0, color='lime', linestyle=':', linewidth=2)
-                axes[1][0].set_title("Local SHAP per PPI Category and RBP", fontsize=20)
+                axes[1][0].set_title(f"{title_prefix} per PPI Category and RBP", fontsize=20)
                 axes[1][0].set_xlabel("PPI Analysis Category", fontsize=14)
                 axes[1][0].set_ylabel("Local SHAP", fontsize=14)
-                axes[1][0].legend(bbox_to_anchor=(0.72, 0.3), fontsize=14)
+                axes[1][0].legend(bbox_to_anchor=(0.72, 0.95), fontsize=14)
 
                 # Remove the other two axes in the second row
                 fig.delaxes(axes[1][1])
@@ -1346,9 +1362,9 @@ class RbpPpiAnalyzer:
                     dpi=200,
                     bbox_inches='tight', 
                 )
-                plt.show()
+                plt.close()
 
-        
+        logger.success("Plotted performance and local SHAP values for each pair-position combination in both cell lines.")
 
 
     def tmp(self): 
