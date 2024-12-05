@@ -1428,6 +1428,77 @@ class RbpPpiAnalyzer:
             results_df.to_csv(PSI_DIFFERENCE_FILE, sep="\t", index=False)
 
             return results_df.head()
+
+
+    def calculate_pair_position_global_SHAP_difference(self): 
+
+        GLOBAL_SHAP_DIFFERENCE=f"../output/ppi_summary_stats/pair_position_global_SHAP_difference_{self.distance_threshold}.tsv"
+
+        if pathlib.Path(GLOBAL_SHAP_DIFFERENCE).exists():
+            self.pair_position_global_SHAP_diff = pd.read_csv(GLOBAL_SHAP_DIFFERENCE, sep="\t")
+            logger.success("FROM CACHE: loaded pair position Global SHAP difference.")
+
+            return self.pair_position_global_SHAP_diff.head()
+        
+        else: 
+            results = []
+            position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
+
+            for cell_line in self.cell_lines:
+                original_data = self.xgboost_ppi[cell_line].filter(pl.col("PPI Analysis Category").is_not_null())
+                assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line}.")
+                
+                grouped_data = original_data.group_by(["RBP Pair", "Position"])
+                
+                for (rbp_pair, position), group in grouped_data:
+                    group = group.with_columns(
+                        pl.when(pl.col("PPI Analysis Category").str.ends_with(" Only"))
+                        .then(pl.lit("Single Binders"))
+                        .otherwise(pl.lit("Same Pos. PPI"))
+                        .alias("PPI Analysis Category")
+                    )
+
+                    same_pos_ppi = group.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+                    single_binders = group.filter(pl.col("PPI Analysis Category") == "Single Binders")
+
+                    rbp1, rbp2 = rbp_pair.split("-")
+                    shap_col1 = f"{rbp1}_{position_inverted_dict[position]}_shap"
+                    shap_col2 = f"{rbp2}_{position_inverted_dict[position]}_shap"
+
+                    same_pos_ppi_mean_shap1 = same_pos_ppi[shap_col1].abs().mean()
+                    same_pos_ppi_mean_shap2 = same_pos_ppi[shap_col2].abs().mean()
+
+                    single_binders_mean_shap1 = single_binders[shap_col1].abs().mean()
+                    single_binders_mean_shap2 = single_binders[shap_col2].abs().mean()
+
+                    mean_diff_shap1 = same_pos_ppi_mean_shap1 - single_binders_mean_shap1
+                    mean_diff_shap2 = same_pos_ppi_mean_shap2 - single_binders_mean_shap2
+
+                    results.append(
+                        {
+                            "Data Partition": "test",
+                            "Model": "xgboost",
+                            "Cell Line": cell_line,
+                            "RBP Pair": rbp_pair,
+                            "Position": position,
+                            "RBP 1 Same Pos. PPI Mean": same_pos_ppi_mean_shap1,
+                            "RBP 1 Single Binders Mean": single_binders_mean_shap1,
+                            "RBP 1 PPI - Single: Mean": mean_diff_shap1,
+                            "RBP 2 Same Pos. PPI Mean": same_pos_ppi_mean_shap2,
+                            "RBP 2 Single Binders Mean": single_binders_mean_shap2,
+                            "RBP 2 PPI - Single: Mean": mean_diff_shap2,
+                            "Same Pos. PPI Rows": same_pos_ppi.shape[0],
+                            "Single Binders Rows": single_binders.shape[0]
+                        }
+                    )
+
+            results_df = pd.DataFrame(results).sort_values(["Data Partition", "Model", "Cell Line", "RBP Pair", "Position"])
+            results_df.to_csv(GLOBAL_SHAP_DIFFERENCE, sep="\t", index=False)
+
+            return results_df.head()
+                
+
+
     def tmp(self): 
         pass
 
