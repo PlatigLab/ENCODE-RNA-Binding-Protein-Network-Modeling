@@ -1366,7 +1366,68 @@ class RbpPpiAnalyzer:
 
         logger.success("Plotted performance and local SHAP values for each pair-position combination in both cell lines.")
 
+    
+    def calculate_pair_position_avg_psi_difference(self): 
 
+        PSI_DIFFERENCE_FILE=f"../output/ppi_summary_stats/pair_position_avg_psi_difference_{self.distance_threshold}.tsv"
+
+        if pathlib.Path(PSI_DIFFERENCE_FILE).exists():
+            self.pair_position_avg_psi_difference = pd.read_csv(PSI_DIFFERENCE_FILE, sep="\t")
+            logger.success("FROM CACHE: loaded pair position average PSI difference.")
+
+            return self.pair_position_avg_psi_difference.head()
+        
+        else: 
+            results = []
+
+            for cell_line in self.cell_lines:
+                original_data = self.xgboost_ppi[cell_line].filter(pl.col("PPI Analysis Category").is_not_null())
+                assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line}.")
+                
+                grouped_data = original_data.group_by(["RBP Pair", "Position"])
+                
+                for (rbp_pair, position), group in grouped_data:
+                    group = group.with_columns(
+                        pl.when(pl.col("PPI Analysis Category").str.ends_with(" Only"))
+                        .then(pl.lit("Single Binders"))
+                        .otherwise(pl.lit("Same Pos. PPI"))
+                        .alias("PPI Analysis Category")
+                    )
+
+                    same_pos_ppi = group.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
+                    single_binders = group.filter(pl.col("PPI Analysis Category") == "Single Binders")
+
+                    same_pos_ppi_mean = same_pos_ppi["target"].mean()
+                    same_pos_ppi_std = same_pos_ppi["target"].std()
+
+                    single_binders_mean = single_binders["target"].mean()
+                    single_binders_std = single_binders["target"].std()
+
+                    mean_diff = same_pos_ppi_mean - single_binders_mean
+                    std_diff = same_pos_ppi_std - single_binders_std
+                    
+                    results.append(
+                        {
+                            "Data Partition": "test",
+                            "Model": "xgboost",
+                            "Cell Line": cell_line,
+                            "RBP Pair": rbp_pair,
+                            "Position": position,
+                            "Same Pos. PPI Mean": same_pos_ppi_mean,
+                            "Single Binders Mean": single_binders_mean,
+                            "PPI - Single: Mean": mean_diff,
+                            "Same Pos. PPI Std Dev": same_pos_ppi_std,
+                            "Single Binders Std Dev": single_binders_std,
+                            "PPI - Single Std Dev": std_diff,
+                            "Same Pos. PPI Rows": same_pos_ppi.shape[0],
+                            "Single Binders Rows": single_binders.shape[0]
+                        }
+                    )
+
+            results_df = pd.DataFrame(results).sort_values("PPI - Single: Mean", ascending=False)
+            results_df.to_csv(PSI_DIFFERENCE_FILE, sep="\t", index=False)
+
+            return results_df.head()
     def tmp(self): 
         pass
 
