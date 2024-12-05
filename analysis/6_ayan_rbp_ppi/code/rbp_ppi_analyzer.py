@@ -1273,39 +1273,80 @@ class RbpPpiAnalyzer:
             plt.show()
 
 
-                sns.stripplot(x="PPI Analysis Category", y="Count", data=counts, ax=ax, order=category_order, edgecolor="black", alpha=0.4, jitter=True, size=4)
-                
-                ax.set_title(f"{cell_line} (# Possible PPIs: {len(self.rbp_ppi[cell_line])})", fontsize=16)
-                ax.set_ylabel("")
-                ax.set_xlabel("")
+    def plot_pair_position_performance_and_local_shap(self): 
+
+        position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
+
+        for self.cell_line in self.cell_lines:
+            original_data = self.xgboost_ppi[self.cell_line].filter(pl.col("RBP Pair").is_not_null())
+            assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {self.cell_line}.")
+
+            for (rbp_pair, position), data in original_data.group_by(["RBP Pair", "Position"]):
+
+                category_order = ["Same Pos. PPI"] + sorted([ category for category in data["PPI Analysis Category"].unique().to_list() if category.endswith(" Only")])
+                colors = ["gold", "deepskyblue", "tomato"]
+
+                fig, axes = plt.subplots(2, 3, figsize=(18, 8), dpi=300,)
+
+                for i, (category, color) in enumerate(zip(category_order, colors)):
+                    subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
+                    axes[0][i].scatter(subset["target"], subset["psi_hat"], color=color, label=category, alpha=0.05, s=10,)
+                    
+                    axes[0][i].set_xlim(0, 1)
+                    axes[0][i].set_ylim(0, 1)
+
+                    r2 = r2_score(subset["target"], subset["psi_hat"])
+                    num_points = len(subset)
+                    axes[0][i].text(0.3, 0.1, f"R2: {r2:.2f} -- # Points: {num_points}", transform=axes[0][i].transAxes, verticalalignment='top', fontsize=12)
+
+                    axes[0][i].set_title(category, fontsize=16)
+                    axes[0][i].set_xlabel("Actual", fontsize=14)
+                    axes[0][i].set_ylabel("Predicted", fontsize=14)
+
+                violinplot_df = []
 
                 for category in category_order:
-                    unique_rb_pairs = counts[counts["PPI Analysis Category"] == category]["RBP Pair"].nunique()
+                    subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
 
-                    if y_lim: 
-                        y_coord = 90000
-                    else: 
-                        y_coord = ax.get_ylim()[1] * 0.90
+                    for rbp in rbp_pair.split("-"):
+                        shap_col = f"{rbp}_{position_inverted_dict[position]}_shap"
 
+                        violinplot_df.append(
+                            pd.DataFrame(
+                                {
+                                    "Local SHAP": subset[shap_col],
+                                    "PPI Analysis Category": category,
+                                    "RBP": rbp
+                                }
+                            )
+                        )
 
-                    ax.text(category_order.index(category)-0.05, y_coord, f"{unique_rb_pairs}", 
-                            ha='center', va='top', fontsize=14, color='red')
+                violinplot_df = pd.concat(violinplot_df, ignore_index=True)
 
+                sns.violinplot(x="PPI Analysis Category", y="Local SHAP", hue="RBP", data=violinplot_df, ax=axes[1][0], order=category_order, palette=["deepskyblue", "tomato"], density_norm='width', gap=0.3)
+                
+                axes[1][0].axhline(0, color='lime', linestyle=':', linewidth=2)
+                axes[1][0].set_title("Local SHAP per PPI Category and RBP", fontsize=20)
+                axes[1][0].set_xlabel("PPI Analysis Category", fontsize=14)
+                axes[1][0].set_ylabel("Local SHAP", fontsize=14)
+                axes[1][0].legend(bbox_to_anchor=(0.72, 0.3), fontsize=14)
 
-                print(counts.sort_values("Count", ascending=False).head(n=10))
+                # Remove the other two axes in the second row
+                fig.delaxes(axes[1][1])
+                fig.delaxes(axes[1][2])
 
-            if y_lim:
-                notice_str = "NOTE: y-axis is limited to 100,000"
-            else: 
-                notice_str = ""
+                # Adjust the layout to make the single plot span the entire row
+                axes[1][0].set_position([0.1, 0.05, 0.8, 0.35])
 
-            plt.suptitle(f"Counts per Category + RBP-Pair Combination\n{notice_str}", fontsize=20)
-            fig.supxlabel("PPI Analysis Category", fontsize=16)
-            fig.supylabel("# Category Counts per RBP-Pair", fontsize=12, x=-0.01)
+                fig.suptitle(f"(XGBoost Test) {self.cell_line}: {rbp_pair} @ Pos. {position}", fontsize=24, y=1)
 
-
-            plt.tight_layout()
-            plt.show()
+                plt.tight_layout()
+                plt.savefig(
+                    f"../output/performance_local_SHAP_plots/{self.cell_line}_{rbp_pair}_{position}.png", 
+                    dpi=200,
+                    bbox_inches='tight', 
+                )
+                plt.show()
 
         
 
