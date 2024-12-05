@@ -38,14 +38,14 @@ class RbpPpiAnalyzer:
     
     def __post_init__(self):
 
-        # self.load_SHAP_data()
-        # self.load_linear_model_results()
+        self.load_SHAP_data()
+        self.load_linear_model_results()
 
-        # self.get_total_binding()
-        # self.check_initial_data_assertions()
+        self.get_total_binding()
+        self.check_initial_data_assertions()
 
         self.load_RBP_PPI_pairs()
-        self.retrieve_rbp_ppi_events_and_controls(test_only=True)
+        self.retrieve_rbp_ppi_events_and_controls(test_only=False)
 
 
     def load_RBP_PPI_pairs(self):
@@ -419,7 +419,11 @@ class RbpPpiAnalyzer:
 
     def retrieve_rbp_ppi_events_and_controls(self, test_only=None): 
 
-        assert test_only is not None, logger.error("test_only parameter must be set to True or False.")
+        # minimum number of same position PPI examples needed 
+        # to consider the pair-position combination 
+        MIN_EXAMPLES_THRESHOLD=20
+
+        assert test_only in [True, False], logger.error("test_only parameter must be set to True or False.")
 
         PPI_MISSING_SUMMARY_DIR = "../output/ppi_no_examples_summary/"
 
@@ -453,7 +457,7 @@ class RbpPpiAnalyzer:
                         tmp_df.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
                         .group_by(["RBP Pair", "Position"])
                         .agg(pl.count())
-                        .filter(pl.col("count") >= 3)
+                        .filter(pl.col("count") >= MIN_EXAMPLES_THRESHOLD)
                         .select(["RBP Pair", "Position"])
                     ).unique()
 
@@ -536,7 +540,7 @@ class RbpPpiAnalyzer:
                     for future in tqdm.tqdm(concurrent.futures.as_completed(same_pos_ppi), total=len(same_pos_ppi), desc="Same Position PPI Events"):
                         result = future.result()
 
-                        if result.shape[0] >= 3:
+                        if result.shape[0] >= MIN_EXAMPLES_THRESHOLD:
                             results.append(result)
                         else:
                             rbp_pair_position_combinations.pop(same_pos_ppi[future])
