@@ -1,9 +1,8 @@
-import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc
+import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc, scipy
 
 from dataclasses import dataclass
 from loguru import logger
 from sklearn.metrics import r2_score
-from scipy.stats import spearmanr
 
 @dataclass
 class RbpPpiAnalyzer:
@@ -664,7 +663,7 @@ class RbpPpiAnalyzer:
                 cb.ax.set_title('Bin Counts', fontsize=12,)
 
                 num_points = len(data)
-                spearman_corr, _ = spearmanr(data["Total Binding"], data["target"])
+                spearman_corr, _ = scipy.stats.spearmanr(data["Total Binding"], data["target"])
 
                 ax.text(0.95, 0.6, f"Spearman r: {spearman_corr:.2f}\n# Points: {num_points}", 
                         transform=ax.transAxes, verticalalignment='top', horizontalalignment='right', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
@@ -689,7 +688,7 @@ class RbpPpiAnalyzer:
                 cb.ax.set_title('Bin Counts', fontsize=8,)
 
                 num_points = len(data)
-                spearman_corr, _ = spearmanr(data["Total Binding"], data["target"])
+                spearman_corr, _ = scipy.stats.spearmanr(data["Total Binding"], data["target"])
 
                 ax.text(0.95, 0.6, f"Spearman r: {spearman_corr:.2f}\n# Points: {num_points}", 
                         transform=ax.transAxes, verticalalignment='top', horizontalalignment='right', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
@@ -1008,7 +1007,7 @@ class RbpPpiAnalyzer:
             assert data.groupby(["RBP Pair", "Position", "Model"]).size().eq(3).all(), print(data.groupby(["RBP Pair", "Position"]).size())
 
             num_pairs = data.groupby(["RBP Pair", "Position"]).ngroups
-            spearman_corr, _ = spearmanr(data["# Unique Graphs"], data["R2 Value"])
+            spearman_corr, _ = scipy.stats.spearmanr(data["# Unique Graphs"], data["R2 Value"])
 
             ax.text(0.5, 0.5, f"# Pair-Position Combos: {num_pairs}\nSpearman r: {spearman_corr:.2f}", 
                     transform=ax.transAxes, verticalalignment='center', horizontalalignment='center', fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
@@ -1256,7 +1255,7 @@ class RbpPpiAnalyzer:
                 if valid_indices:
                     valid_r2_scores = [r2_scores[category][i] for i in valid_indices]
                     valid_binding_counts = [binding_counts[i] for i in valid_indices]
-                    spearman_corr, _ = spearmanr(valid_binding_counts, valid_r2_scores)
+                    spearman_corr, _ = scipy.stats.spearmanr(valid_binding_counts, valid_r2_scores)
                     y_offset = 0.5 + (0.05 * list(r2_scores.keys()).index(category))
                     plt.text(0.5, y_offset, f"{category} Spearman r: {spearman_corr:.2f}", transform=plt.gca().transAxes, fontsize=12, color='blue', ha='center', va='center')
 
