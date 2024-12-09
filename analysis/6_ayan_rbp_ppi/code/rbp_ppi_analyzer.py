@@ -1,4 +1,4 @@
-import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc, scipy
+import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc, scipy, numpy as np
 
 from dataclasses import dataclass
 from loguru import logger
@@ -1407,7 +1407,7 @@ class RbpPpiAnalyzer:
                 original_data = self.xgboost_ppi[cell_line].filter(pl.col("PPI Analysis Category").is_not_null())
                 assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line}.")
                 
-                grouped_data = original_data.group_by(["RBP Pair", "Position"])
+                grouped_data = original_data.group_by(["RBP Pair", "Position"], maintain_order=True)
                 
                 for (rbp_pair, position), group in grouped_data:
                     group = group.with_columns(
@@ -1448,12 +1448,21 @@ class RbpPpiAnalyzer:
                     mean_diff_shap1 = same_pos_ppi_mean_shap1 - single_binders_mean_shap1
                     mean_diff_shap2 = same_pos_ppi_mean_shap2 - single_binders_mean_shap2
 
+                    #######################
+                    #### Local SHAP #######
+                    #######################
+                    t_stat_shap1, t_p_value_shap1 = scipy.stats.ttest_ind(same_pos_ppi[shap_col1].cast(pl.Float64), single_binders[shap_col1].cast(pl.Float64), equal_var=False)
+                    u_stat_shap1, u_p_value_shap1 = scipy.stats.mannwhitneyu(same_pos_ppi[shap_col1].cast(pl.Float64), single_binders[shap_col1].cast(pl.Float64), alternative='two-sided')
+
+                    t_stat_shap2, t_p_value_shap2 = scipy.stats.ttest_ind(same_pos_ppi[shap_col2].cast(pl.Float64), single_binders[shap_col2].cast(pl.Float64), equal_var=False)
+                    u_stat_shap2, u_p_value_shap2 = scipy.stats.mannwhitneyu(same_pos_ppi[shap_col2].cast(pl.Float64), single_binders[shap_col2].cast(pl.Float64), alternative='two-sided')
+
                     ###########################################
                     #### Welch's T-test & Mann Whitney U ######
                     ###########################################
-                    t_stat, t_p_value = scipy.stats.ttest_ind(same_pos_ppi["target"], single_binders["target"], equal_var=False)
-                    u_stat, u_p_value = scipy.stats.mannwhitneyu(same_pos_ppi["target"], single_binders["target"], alternative='two-sided')
-                    
+                    t_stat, t_p_value = scipy.stats.ttest_ind(same_pos_ppi["target"].cast(pl.Float64), single_binders["target"].cast(pl.Float64), equal_var=False)
+                    u_stat, u_p_value = scipy.stats.mannwhitneyu(same_pos_ppi["target"].cast(pl.Float64), single_binders["target"].cast(pl.Float64), alternative='two-sided')
+
                     results.append(
                         {
                             "Data Partition": "test",
@@ -1463,32 +1472,62 @@ class RbpPpiAnalyzer:
                             "Position": position,
                             "Same Pos. PPI Rows": same_pos_ppi.shape[0],
                             "Single Binders Rows": single_binders.shape[0],
-                            "PPI Mean(Actual PSI)": same_pos_ppi_mean,
-                            "Single Binders Mean(Actual PSI)": single_binders_mean,
-                            "PPI vs Single Mean Difference": mean_diff,
-                            "PPI Std Dev(Actual PSI)": same_pos_ppi_std,
-                            "Single Binders Std Dev(Actual PSI)": single_binders_std,
-                            "PPI vs Single Std Dev Difference": std_diff,
-                            "PPI RBP 1 Global SHAP": same_pos_ppi_mean_shap1,
-                            "Single Binders RBP 1 Global SHAP": single_binders_mean_shap1,
-                            "PPI vs Single RBP 1 Global SHAP Difference": mean_diff_shap1,
-                            "PPI RBP 2 Global SHAP": same_pos_ppi_mean_shap2,
-                            "Single Binders RBP 2 Global SHAP": single_binders_mean_shap2,
-                            "PPI vs Single RBP 2 Global SHAP Difference": mean_diff_shap2,
-                            "PPI vs Single PSI Welch's T-test Statistic": t_stat,
-                            "PPI vs Single PSI Welch's T-test P-value": t_p_value,
-                            "PPI vs Single PSI Mann Whitney U Statistic": u_stat,
-                            "PPI vs Single PSI Mann Whitney U P-value": u_p_value,
+                            "Actual PSI Mean - PPI ": same_pos_ppi_mean,
+                            "Actual PSI Mean - Single Binders": single_binders_mean,
+                            "Actual PSI Mean Difference: PPI vs Single Binders": mean_diff,
+                            "Actual PSI Std Dev - PPI": same_pos_ppi_std,
+                            "Actual PSI Std Dev - Single Binders": single_binders_std,
+                            "Actual PSI Std Dev Difference: PPI vs Single Binders": std_diff,
+                            "Global SHAP RBP 1 - PPI": same_pos_ppi_mean_shap1,
+                            "Global SHAP RBP 1 - Single Binders": single_binders_mean_shap1,
+                            "Global SHAP RBP 1 Difference: PPI vs Single Binders": mean_diff_shap1,
+                            "Global SHAP RBP 2 - PPI": same_pos_ppi_mean_shap2,
+                            "Global SHAP RBP 2 - Single Binders": single_binders_mean_shap2,
+                            "Global SHAP RBP 2 Difference: PPI vs Single Binders": mean_diff_shap2,
+                            "Local SHAP RBP 1 Welch's T-test Stat": t_stat_shap1,
+                            "Local SHAP RBP 1 Welch's T-test P-value": t_p_value_shap1,
+                            "Local SHAP RBP 1 Mann Whitney U Stat": u_stat_shap1,
+                            "Local SHAP RBP 1 Mann Whitney U P-value": u_p_value_shap1,
+                            "Local SHAP RBP 2 Welch's T-test Stat": t_stat_shap2,
+                            "Local SHAP RBP 2 Welch's T-test P-value": t_p_value_shap2,
+                            "Local SHAP RBP 2 Mann Whitney U Stat": u_stat_shap2,
+                            "Local SHAP RBP 2 Mann Whitney U P-value": u_p_value_shap2,
+                            "PPI vs Single Binders PSI Welch's T-test Stat": t_stat,
+                            "PPI vs Single Binders PSI Welch's T-test P-value": t_p_value,
+                            "PPI vs Single Binders PSI Mann Whitney U Stat": u_stat,
+                            "PPI vs Single Binders PSI Mann Whitney U P-value": u_p_value,
                         }
                     )
 
             results_df = pd.DataFrame(results).sort_values(["Data Partition", "Model", "Cell Line", "RBP Pair", "Position"])
+
+            psi_welch_p_values = results_df["PPI vs Single Binders PSI Welch's T-test P-value"].tolist()
+            psi_mannwhitney_p_values = results_df["PPI vs Single Binders PSI Mann Whitney U P-value"].tolist()
+
+            # Apply FDR BH correction
+            psi_welch_corrected_p_values = scipy.stats.false_discovery_control(psi_welch_p_values, method='bh')
+            psi_mannwhitney_corrected_p_values = scipy.stats.false_discovery_control(psi_mannwhitney_p_values, method='bh')
+
+            # Insert the corrected p-values next to their respective p-value columns
+            results_df.insert(
+                results_df.columns.get_loc("PPI vs Single Binders PSI Welch's T-test P-value") + 1,
+                "PPI vs Single Binders PSI Welch's T-test FDR BH",
+                psi_welch_corrected_p_values
+            )
+            results_df.insert(
+                results_df.columns.get_loc("PPI vs Single Binders PSI Mann Whitney U P-value") + 1,
+                "PPI vs Single Binders PSI Mann Whitney U FDR BH",
+                psi_mannwhitney_corrected_p_values
+            )
             
-            results_df["PPI vs Single PSI Welch's T-test FDR BH"] = scipy.stats.false_discovery_control(results_df["PPI vs Single PSI Welch's T-test P-value"].to_list(), method='bh')
-            results_df["PPI vs Single PSI Mann Whitney U FDR BH"] = scipy.stats.false_discovery_control(results_df["PPI vs Single PSI Mann Whitney U P-value"].to_list(), method='bh')
+            null_counts = results_df.isnull().sum()
+            print("Number of null values in each column:")
+            print(null_counts[null_counts > 0])
+
             results_df.to_csv(PPI_VS_SINGLE_BINDERS_FILE, sep="\t", index=False)
             
             logger.success("PPI vs. Single Binders table created and saved.")
+    
 
 
     def tmp(self): 
