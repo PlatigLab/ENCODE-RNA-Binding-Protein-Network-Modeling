@@ -1267,9 +1267,7 @@ class RbpPpiAnalyzer:
             plt.show()
 
 
-    def plot_pair_position_performance_and_local_shap(self, abs_value=None):
-
-        assert abs_value in [True, False], logger.error("abs_value should be either True or False.") 
+    def plot_pair_position_performance_and_local_shap(self):
 
         position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
 
@@ -1281,82 +1279,112 @@ class RbpPpiAnalyzer:
                 logger.info(f"{rbp_pair} @ Pos. {position}: plotting performance and local SHAP values.")
 
                 category_order = ["Same Pos. PPI"] + sorted([ category for category in data["PPI Analysis Category"].unique().to_list() if category.endswith(" Only")])
-                colors = ["black", "deepskyblue", "tomato"]
+                colors = ["mediumorchid", "deepskyblue", "tomato"]
+            
+                for add_local_shap in [True, False]:
 
-                fig, axes = plt.subplots(2, 3, figsize=(18, 8), dpi=300,)
+                    fig, axes = plt.subplots(2, 3, figsize=(18, 8), dpi=300,)
 
-                for i, (category, color) in enumerate(zip(category_order, colors)):
-                    subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
-                    axes[0][i].scatter(subset["target"], subset["psi_hat"], color=color, label=category, alpha=0.05, s=10,)
-                    
-                    axes[0][i].set_xlim(0, 1)
-                    axes[0][i].set_ylim(0, 1)
+                    for i, (category, color) in enumerate(zip(category_order, colors)):
+                        subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
+                        axes[0][i].scatter(subset["target"], subset["psi_hat"], color=color, label=category, alpha=0.05, s=10,)
+                        
+                        axes[0][i].set_xlim(0, 1)
+                        axes[0][i].set_ylim(0, 1)
 
-                    axes[0][i].plot([0, 1], [0, 1], linestyle=':', color='gold', linewidth=2)
+                        axes[0][i].plot([0, 1], [0, 1], linestyle=':', color='gold', linewidth=2)
 
-                    r2 = r2_score(subset["target"], subset["psi_hat"])
-                    num_points = len(subset)
-                    axes[0][i].text(0.3, 0.1, f"R2: {r2:.2f} -- # Points: {num_points}", transform=axes[0][i].transAxes, verticalalignment='top', fontsize=12)
+                        r2 = r2_score(subset["target"], subset["psi_hat"])
+                        num_points = len(subset)
+                        avg_target = subset["target"].mean()
 
-                    axes[0][i].set_title(category, fontsize=16)
-                    axes[0][i].set_xlabel("Actual", fontsize=14)
-                    axes[0][i].set_ylabel("Predicted", fontsize=14)
+                        axes[0][i].text(0.9, 0.09, f"Mean(Actual PSI): {avg_target:.2f}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
+                        axes[0][i].text(0.9, 0.17, f"R2: {r2:.2f}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
+                        axes[0][i].text(0.9, 0.25, f"# Points: {num_points}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
 
-                violinplot_df = []
+                        axes[0][i].set_title(category, fontsize=16)
+                        axes[0][i].set_xlabel("Actual", fontsize=14)
+                        axes[0][i].set_ylabel("Predicted", fontsize=14)
 
-                for category in category_order:
-                    subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
+                    plotting_df = []
 
-                    for rbp in rbp_pair.split("-"):
-                        shap_col = f"{rbp}_{position_inverted_dict[position]}_shap"
+                    for category in category_order:
+                        subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
 
-                        violinplot_df.append(
-                            pd.DataFrame(
-                                {
-                                    "Local SHAP": subset[shap_col],
-                                    "PPI Analysis Category": category,
-                                    "RBP": rbp
-                                }
+                        two_shap_cols = [f"{rbp}_{position_inverted_dict[position]}_shap" for rbp in rbp_pair.split("-")]
+                        subset = subset[two_shap_cols]
+
+                        if add_local_shap:
+                            subset["Local SHAP"] = subset[two_shap_cols].sum(axis=1)
+
+                            plotting_df.append(
+                                pd.DataFrame(
+                                    {
+                                        "Summated Local SHAP": subset["Local SHAP"],
+                                        "PPI Analysis Category": category
+                                    }
+                                )
                             )
-                        )
+                        
+                        elif not add_local_shap: 
 
-                violinplot_df = pd.concat(violinplot_df, ignore_index=True)
-                
-                if abs_value: 
-                    violinplot_df["Local SHAP"] = violinplot_df["Local SHAP"].abs()
+                            for rbp in rbp_pair.split("-"):
+                                shap_col = f"{rbp}_{position_inverted_dict[position]}_shap"
 
-                sns.violinplot(x="PPI Analysis Category", y="Local SHAP", hue="RBP", data=violinplot_df, ax=axes[1][0], order=category_order, palette=["deepskyblue", "tomato"], density_norm='width', gap=0.3)
-                
-                if abs_value: 
-                    max_shap_value = violinplot_df["Local SHAP"].max()
-                    axes[1][0].set_ylim(ymin=-(max_shap_value * 0.1))
-                    title_prefix="Abs. Value(Local SHAP)"
+                                plotting_df.append(
+                                    pd.DataFrame(
+                                        {
+                                            "Local SHAP": subset[shap_col],
+                                            "PPI Analysis Category": category,
+                                            "RBP": rbp
+                                        }
+                                    )
+                                )
 
-                elif not abs_value: 
-                    title_prefix="Local SHAP"
+                    plotting_df = pd.concat(plotting_df, ignore_index=True)
+                    
+                    if add_local_shap:
+                        y="Summated Local SHAP"
+                        hue=None
+                        palette = colors
+                        gap=0
+                        subplot_title = "Summatted Local SHAP per PPI Category"
+                        plot_file_suffix= "summed_local_shap"
+                    
+                    elif not add_local_shap: 
+                        y="Local SHAP"
+                        hue="RBP"
+                        palette = ["deepskyblue", "tomato"]
+                        gap=0.3
+                        subplot_title = "Local SHAP per PPI Category and RBP"
+                        plot_file_suffix= "local_shap"
 
-                axes[1][0].axhline(0, color='lime', linestyle=':', linewidth=2)
-                axes[1][0].set_title(f"{title_prefix} per PPI Category and RBP", fontsize=20)
-                axes[1][0].set_xlabel("PPI Analysis Category", fontsize=14)
-                axes[1][0].set_ylabel("Local SHAP", fontsize=14)
-                axes[1][0].legend(bbox_to_anchor=(0.72, 0.95), fontsize=14)
+                    sns.violinplot(x="PPI Analysis Category", y=y, hue=hue, data=plotting_df, ax=axes[1][0], order=category_order, palette=palette, density_norm='width', gap=gap)
 
-                # Remove the other two axes in the second row
-                fig.delaxes(axes[1][1])
-                fig.delaxes(axes[1][2])
+                    axes[1][0].axhline(0, color='lime', linestyle=':', linewidth=2)
+                    axes[1][0].set_title(f"{subplot_title}", fontsize=20)
+                    axes[1][0].set_xlabel("PPI Analysis Category", fontsize=14)
+                    axes[1][0].set_ylabel(y, fontsize=14)
 
-                # Adjust the layout to make the single plot span the entire row
-                axes[1][0].set_position([0.1, 0.05, 0.8, 0.35])
+                    if not add_local_shap: 
+                        axes[1][0].legend(bbox_to_anchor=(0.72, 0.95), fontsize=14)
 
-                fig.suptitle(f"(XGBoost Test) {self.cell_line}: {rbp_pair} @ Pos. {position}", fontsize=24, y=1)
+                    # Remove the other two axes in the second row
+                    fig.delaxes(axes[1][1])
+                    fig.delaxes(axes[1][2])
 
-                plt.tight_layout()
-                plt.savefig(
-                    f"../output/performance_local_SHAP_plots/{self.cell_line}_{rbp_pair}_{position}.png", 
-                    dpi=200,
-                    bbox_inches='tight', 
-                )
-                plt.close()
+                    # Adjust the layout to make the single plot span the entire row
+                    axes[1][0].set_position([0.1, 0.05, 0.8, 0.35])
+
+                    fig.suptitle(f"(XGBoost Test) {self.cell_line}: {rbp_pair} @ Pos. {position}", fontsize=24, y=1)
+
+                    plt.tight_layout()
+                    plt.savefig(
+                        f"../output/performance_local_SHAP_plots/{self.cell_line}_{rbp_pair}_{position}_{plot_file_suffix}.png", 
+                        dpi=200,
+                        bbox_inches='tight', 
+                    )
+                    plt.close()
 
         logger.success("Plotted performance and local SHAP values for each pair-position combination in both cell lines.")
 
