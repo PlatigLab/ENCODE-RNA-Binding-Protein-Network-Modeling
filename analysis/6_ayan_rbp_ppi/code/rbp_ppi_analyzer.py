@@ -1147,7 +1147,7 @@ class RbpPpiAnalyzer:
     def plot_pair_position_category_line_r2_scores(self):
 
         if not hasattr(self, 'ppi_vs_single_binder_df'):
-            self.create_ppi_vs_single_binder_table()
+            self.compare_ppi_vs_single_binder_r2_table()
 
         logger.info("Plotting PPI vs. Single Binder R2 scores connected lines plot.")
 
