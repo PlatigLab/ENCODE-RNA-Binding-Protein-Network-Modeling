@@ -343,6 +343,15 @@ class RbpPpiAnalyzer:
         
         gc.collect()
 
+    
+    def delete_PPI_data(self): 
+        if hasattr(self, 'xgboost_ppi'):
+            del self.xgboost_ppi
+
+        if hasattr(self, 'linear_ppi'):
+            del self.linear_ppi
+
+        gc.collect()
 
 
     def _cache_to_featherv2(self, df, file_path):
