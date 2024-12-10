@@ -33,7 +33,7 @@ class RbpPpiAnalyzer:
         "3_right": 6
     }
 
-    position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
+    position_inverted_dict = {str(v): k for k, v in splice_junction_position_renaming.items()}
 
     psi_partition_thresholds=[0.1,0.9]
 
@@ -1537,6 +1537,121 @@ class RbpPpiAnalyzer:
             
             logger.success("PPI vs. Single Binders table created and saved.")
     
+
+    def run_pair_position_ols_linear_regression(self): 
+
+        OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/ppi_ols_lin_reg_results.tsv"
+
+        if pathlib.Path(OLS_LIN_REG_CACHE_FILE).exists():
+            self.ppi_ols_lin_reg_results = pd.read_csv(OLS_LIN_REG_CACHE_FILE, sep="\t")
+            logger.success("FROM CACHE: loaded OLS linear regression results.")
+            return self.ppi_ols_lin_reg_results.head()
+        
+
+        else: 
+            logger.info("NO CACHE... hence, running OLS linear regression per pair-position combo for coefficient testing using ALL data")
+
+            unique_combinations = {}
+
+            for cell_line in self.cell_lines:
+                data = self.xgboost_ppi[cell_line]
+                data = data.filter(pl.col("PPI Analysis Category").is_not_null())
+                combinations = data.select(["RBP Pair", "Position"]).unique().sort(["RBP Pair", "Position"]).to_dict(as_series=False)
+                unique_combinations[cell_line] = list(zip(combinations["RBP Pair"], combinations["Position"]))
+        
+            self.delete_PPI_data()
+            self.retrieve_rbp_ppi_events_and_controls(test_only=False)
+
+            results = []
+
+            for cell_line in unique_combinations:
+                for rbp_pair, position in unique_combinations[cell_line]:
+
+                    rbp1, rbp2 = rbp_pair.split("-")
+                    binding_col1 = f"{rbp1}_{self.position_inverted_dict[position]}"
+                    binding_col2 = f"{rbp2}_{self.position_inverted_dict[position]}"
+                    
+                    subset_data = self.xgboost_ppi[cell_line].filter(
+                        (pl.col("RBP Pair") == rbp_pair) & 
+                        (pl.col("Position") == position)
+                    ).select(
+                        ["target", binding_col1, binding_col2, "Data Partition", "graph_index"]
+                    )   
+
+                    assert subset_data["Data Partition"].n_unique() == 3, logger.error(f"Data Partition column does not contain 3 unique values for {cell_line} - {rbp_pair} - {position}.")
+                    subset_data = subset_data.drop("Data Partition")
+
+                    assert subset_data["graph_index"].n_unique() == subset_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {rbp_pair} - {position}.")
+                    subset_data = subset_data.drop("graph_index")
+
+                    subset_data = subset_data.with_columns(
+                        pl.when((pl.col(binding_col1) == 1) & (pl.col(binding_col2) == 1))
+                        .then(pl.lit(1))
+                        .otherwise(pl.lit(0))
+                        .alias("ppi_interaction")
+                    )
+
+                    ppi_interaction_percent = (((subset_data["ppi_interaction"] == 1).sum()) / subset_data.shape[0]) * 100
+                    rbp1_binding_percent = (((subset_data[binding_col1] == 1).sum()) / subset_data.shape[0]) * 100
+                    rbp2_binding_percent = (((subset_data[binding_col2] == 1).sum()) / subset_data.shape[0]) * 100
+
+                    # Prepare the data for OLS regression
+                    subset_data = subset_data.to_pandas()
+                    y = subset_data["target"]
+
+                    X = subset_data.drop(columns=["target"])
+                    assert X.shape[1] == 3, logger.error(f"Expected 3 columns in X, but got {X.shape[1]}")
+
+                    # Add a constant to the model (intercept)
+                    X = sm.add_constant(X)
+
+                    logger.info(f"Fitting -- {cell_line}: {rbp_pair} @ Pos. {position} | Number of observations: {X.shape[0]}")
+                    # Fit the OLS model
+                    ols_model = sm.OLS(y, X, missing="raise").fit()
+
+                    # Extract the coefficients and p-values
+                    intercept_beta = ols_model.params["const"]
+                    rbp1_beta = ols_model.params[binding_col1]
+                    rbp2_beta = ols_model.params[binding_col2]
+                    interaction_beta = ols_model.params["ppi_interaction"]
+
+                    intercept_p_value = ols_model.pvalues["const"]
+                    rbp1_p_value = ols_model.pvalues[binding_col1]
+                    rbp2_p_value = ols_model.pvalues[binding_col2]
+                    interaction_p_value = ols_model.pvalues["ppi_interaction"]
+
+                    # Append the results to a list
+                    results.append(
+                        {
+                            "Data Partition": "All",
+                            "Cell Line": cell_line,
+                            "RBP Pair": rbp_pair,
+                            "Position": position,
+                            "# Graphs Used in OLS Reg.": X.shape[0],
+                            "% Rows - RBP 1 Bound": rbp1_binding_percent,
+                            "% Rows - RBP 2 Bound": rbp2_binding_percent,
+                            "% Rows - PPI Interaction": ppi_interaction_percent,
+                            "Intercept Beta Coefficient": intercept_beta,
+                            "Intercept Param P-value": intercept_p_value,
+                            "RBP 1 Beta Coefficient": rbp1_beta,
+                            "RBP 1 Param P-value": rbp1_p_value,
+                            "RBP 2 Beta Coefficient": rbp2_beta,
+                            "RBP 2 Param P-value": rbp2_p_value,
+                            "Interaction Beta Coefficient": interaction_beta,
+                            "Interaction Param P-value": interaction_p_value,
+                        }
+                    )
+
+            # Convert the results to a DataFrame and save to a file
+            results_df = pd.DataFrame(results)
+            results_df.to_csv(OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
+
+            self.ppi_ols_lin_reg_results = results_df
+            logger.success("Pair-position combo OLS linear regression results saved.")
+            
+
+
+
 
 
     def tmp(self): 
