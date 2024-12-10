@@ -1,4 +1,5 @@
-import polars as pl, glob, matplotlib.pyplot as plt, pandas as pd, re, pathlib, json, matplotlib.colors as mcolors, concurrent.futures, tqdm, os, seaborn as sns, random, argparse, sys, itertools, gc, scipy, numpy as np
+import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, itertools, gc, scipy
+import polars as pl, matplotlib.pyplot as plt, pandas as pd, matplotlib.colors as mcolors, numpy as np, statsmodels.api as sm, seaborn as sns
 
 from dataclasses import dataclass
 from loguru import logger
