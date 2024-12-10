@@ -32,6 +32,8 @@ class RbpPpiAnalyzer:
         "3_right": 6
     }
 
+    position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
+
     psi_partition_thresholds=[0.1,0.9]
 
     
@@ -1269,8 +1271,6 @@ class RbpPpiAnalyzer:
 
     def plot_pair_position_performance_and_local_shap(self):
 
-        position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
-
         for self.cell_line in self.cell_lines:
             original_data = self.xgboost_ppi[self.cell_line].filter(pl.col("RBP Pair").is_not_null())
             assert all(original_data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {self.cell_line}.")
@@ -1311,7 +1311,7 @@ class RbpPpiAnalyzer:
                     for category in category_order:
                         subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
 
-                        two_shap_cols = [f"{rbp}_{position_inverted_dict[position]}_shap" for rbp in rbp_pair.split("-")]
+                        two_shap_cols = [f"{rbp}_{self.position_inverted_dict[position]}_shap" for rbp in rbp_pair.split("-")]
                         subset = subset[two_shap_cols]
 
                         if add_local_shap:
@@ -1329,7 +1329,7 @@ class RbpPpiAnalyzer:
                         elif not add_local_shap: 
 
                             for rbp in rbp_pair.split("-"):
-                                shap_col = f"{rbp}_{position_inverted_dict[position]}_shap"
+                                shap_col = f"{rbp}_{self.position_inverted_dict[position]}_shap"
 
                                 plotting_df.append(
                                     pd.DataFrame(
@@ -1401,7 +1401,6 @@ class RbpPpiAnalyzer:
         else: 
 
             results = []
-            position_inverted_dict = {str(v): k for k, v in self.splice_junction_position_renaming.items()}
 
             for cell_line in self.cell_lines:
                 original_data = self.xgboost_ppi[cell_line].filter(pl.col("PPI Analysis Category").is_not_null())
@@ -1436,8 +1435,8 @@ class RbpPpiAnalyzer:
                     #### Global SHAP #######
                     ########################
                     rbp1, rbp2 = rbp_pair.split("-")
-                    shap_col1 = f"{rbp1}_{position_inverted_dict[position]}_shap"
-                    shap_col2 = f"{rbp2}_{position_inverted_dict[position]}_shap"
+                    shap_col1 = f"{rbp1}_{self.position_inverted_dict[position]}_shap"
+                    shap_col2 = f"{rbp2}_{self.position_inverted_dict[position]}_shap"
 
                     same_pos_ppi_mean_shap1 = same_pos_ppi[shap_col1].abs().mean()
                     same_pos_ppi_mean_shap2 = same_pos_ppi[shap_col2].abs().mean()
