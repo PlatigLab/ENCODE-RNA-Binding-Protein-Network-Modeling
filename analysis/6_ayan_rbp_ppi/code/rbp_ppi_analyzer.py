@@ -1294,27 +1294,45 @@ class RbpPpiAnalyzer:
                 for add_local_shap in [True, False]:
 
                     fig, axes = plt.subplots(2, 3, figsize=(18, 8), dpi=300,)
-
+                    combined_psi_plotting_df = []
                     for i, (category, color) in enumerate(zip(category_order, colors)):
+
                         subset = data.filter(pl.col("PPI Analysis Category") == category).to_pandas()
-                        axes[0][i].scatter(subset["target"], subset["psi_hat"], color=color, label=category, alpha=0.05, s=10,)
-                        
-                        axes[0][i].set_xlim(0, 1)
-                        axes[0][i].set_ylim(0, 1)
+                        psi_plotting_df = pd.DataFrame({
+                            "Target": subset["target"],
+                            "PPI Analysis Category": category
+                        })
 
-                        axes[0][i].plot([0, 1], [0, 1], linestyle=':', color='gold', linewidth=2)
+                        combined_psi_plotting_df.append(psi_plotting_df)
 
-                        r2 = r2_score(subset["target"], subset["psi_hat"])
+                    combined_psi_plotting_df = pd.concat(combined_psi_plotting_df, ignore_index=True)
+
+                    sns.violinplot(x="PPI Analysis Category", y="Target", data=combined_psi_plotting_df, ax=axes[0][0], palette=colors, density_norm='width')
+
+                    axes[0][0].axhline(0, color='gold', linestyle='--', linewidth=2)
+                    axes[0][0].axhline(1, color='gold', linestyle='--', linewidth=2)
+
+                    axes[0][0].set_title("Actual PSI Distributions by PPI Analysis Category", fontsize=16)
+                    axes[0][0].set_xlabel("PPI Analysis Category", fontsize=14)
+                    axes[0][0].set_ylabel("Actual PSI", fontsize=14)
+
+                    # Extend the y-axis to fit the text
+                    axes[0][0].set_ylim(-0.1, 1.6)
+
+                    # Calculate and add the number of points and mean of actual PSI above each violin plot
+                    for category in category_order:
+                        subset = combined_psi_plotting_df[combined_psi_plotting_df["PPI Analysis Category"] == category]
                         num_points = len(subset)
-                        avg_target = subset["target"].mean()
+                        mean_psi = subset["Target"].mean()
+                        axes[0][0].text(category_order.index(category), 1.3, f'# Points: {num_points}\nMean: {mean_psi:.2f}', 
+                                        ha='center', va='bottom', fontsize=12, color='black')
 
-                        axes[0][i].text(0.9, 0.09, f"Mean(Actual PSI): {avg_target:.2f}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
-                        axes[0][i].text(0.9, 0.17, f"R2: {r2:.2f}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
-                        axes[0][i].text(0.9, 0.25, f"# Points: {num_points}", transform=axes[0][i].transAxes, verticalalignment='top', horizontalalignment='right', fontsize=12)
+                    # Remove the other two axes in the first row
+                    fig.delaxes(axes[0][1])
+                    fig.delaxes(axes[0][2])
 
-                        axes[0][i].set_title(category, fontsize=16)
-                        axes[0][i].set_xlabel("Actual", fontsize=14)
-                        axes[0][i].set_ylabel("Predicted", fontsize=14)
+                    # Adjust the layout to make the single plot span the entire row
+                    axes[0][0].set_position([0.1, 0.55, 0.8, 0.35])
 
                     plotting_df = []
 
