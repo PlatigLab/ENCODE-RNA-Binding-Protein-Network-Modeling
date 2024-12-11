@@ -1571,18 +1571,12 @@ class RbpPpiAnalyzer:
                     binding_col1 = f"{rbp1}_{self.position_inverted_dict[position]}"
                     binding_col2 = f"{rbp2}_{self.position_inverted_dict[position]}"
                     
-                    subset_data = self.xgboost_ppi[cell_line].filter(
-                        (pl.col("RBP Pair") == rbp_pair) & 
-                        (pl.col("Position") == position)
-                    ).select(
+                    subset_data = self.xgboost_ppi[cell_line].select(
                         ["target", binding_col1, binding_col2, "Data Partition", "graph_index"]
-                    )   
+                    ).unique()   
 
                     assert subset_data["Data Partition"].n_unique() == 3, logger.error(f"Data Partition column does not contain 3 unique values for {cell_line} - {rbp_pair} - {position}.")
-                    subset_data = subset_data.drop("Data Partition")
-
                     assert subset_data["graph_index"].n_unique() == subset_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {rbp_pair} - {position}.")
-                    subset_data = subset_data.drop("graph_index")
 
                     subset_data = subset_data.with_columns(
                         pl.when((pl.col(binding_col1) == 1) & (pl.col(binding_col2) == 1))
@@ -1591,9 +1585,16 @@ class RbpPpiAnalyzer:
                         .alias("ppi_interaction")
                     )
 
-                    ppi_interaction_percent = (((subset_data["ppi_interaction"] == 1).sum()) / subset_data.shape[0]) * 100
-                    rbp1_binding_percent = (((subset_data[binding_col1] == 1).sum()) / subset_data.shape[0]) * 100
-                    rbp2_binding_percent = (((subset_data[binding_col2] == 1).sum()) / subset_data.shape[0]) * 100
+                    subset_data = subset_data.sort("graph_index").drop(["graph_index", "Data Partition"])
+
+                    ppi_interaction_count = (subset_data["ppi_interaction"] == 1).sum()
+                    ppi_interaction_percent = (ppi_interaction_count / subset_data.shape[0]) * 100
+
+                    rbp1_binding_count = (subset_data[binding_col1] == 1).sum()
+                    rbp1_binding_percent = (rbp1_binding_count / subset_data.shape[0]) * 100
+
+                    rbp2_binding_count = (subset_data[binding_col2] == 1).sum()
+                    rbp2_binding_percent = (rbp2_binding_count / subset_data.shape[0]) * 100
 
                     # Prepare the data for OLS regression
                     subset_data = subset_data.to_pandas()
@@ -1628,8 +1629,11 @@ class RbpPpiAnalyzer:
                             "RBP Pair": rbp_pair,
                             "Position": position,
                             "# Graphs Used in OLS Reg.": X.shape[0],
+                            "# Rows - RBP 1 Bound": rbp1_binding_count,
                             "% Rows - RBP 1 Bound": rbp1_binding_percent,
+                            "# Rows - RBP 2 Bound": rbp2_binding_count,
                             "% Rows - RBP 2 Bound": rbp2_binding_percent,
+                            "# Rows - PPI Interaction": ppi_interaction_count,
                             "% Rows - PPI Interaction": ppi_interaction_percent,
                             "Intercept Beta Coefficient": intercept_beta,
                             "Intercept Param P-value": intercept_p_value,
@@ -1643,7 +1647,12 @@ class RbpPpiAnalyzer:
                     )
 
             # Convert the results to a DataFrame and save to a file
-            results_df = pd.DataFrame(results)
+            results_df = pd.DataFrame(results).sort_values("Interaction Param P-value")
+
+            for cell_line in self.cell_lines:
+                num_graphs = results_df[results_df["Cell Line"] == cell_line]["# Graphs Used in OLS Reg."].unique()
+                assert len(num_graphs) == 1, f"Number of graphs used in OLS regression is not consistent for {cell_line}."
+
             results_df.to_csv(OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
 
             self.ppi_ols_lin_reg_results = results_df
