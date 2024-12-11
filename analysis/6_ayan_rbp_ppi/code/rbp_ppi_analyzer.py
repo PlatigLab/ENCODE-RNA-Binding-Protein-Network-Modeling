@@ -1330,7 +1330,7 @@ class RbpPpiAnalyzer:
                             plotting_df.append(
                                 pd.DataFrame(
                                     {
-                                        "Summated Local SHAP": subset["Local SHAP"],
+                                        "Summed Local SHAP": subset["Local SHAP"],
                                         "PPI Analysis Category": category
                                     }
                                 )
@@ -1354,11 +1354,11 @@ class RbpPpiAnalyzer:
                     plotting_df = pd.concat(plotting_df, ignore_index=True)
                     
                     if add_local_shap:
-                        y="Summated Local SHAP"
+                        y="Summed Local SHAP"
                         hue=None
                         palette = colors
                         gap=0
-                        subplot_title = "Summatted Local SHAP per PPI Category"
+                        subplot_title = "Summed Local SHAP per PPI Category"
                         plot_file_suffix= "summed_local_shap"
                     
                     elif not add_local_shap: 
