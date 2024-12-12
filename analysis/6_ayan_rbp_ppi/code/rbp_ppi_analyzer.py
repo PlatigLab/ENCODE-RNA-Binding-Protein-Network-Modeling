@@ -1423,11 +1423,11 @@ class RbpPpiAnalyzer:
                         pl.when(pl.col("PPI Analysis Category").str.ends_with(" Only"))
                         .then(pl.lit("Single Binders"))
                         .otherwise(pl.lit("Same Pos. PPI"))
-                        .alias("PPI Analysis Category")
+                        .alias("PPI vs Single Binder")
                     )
 
-                    same_pos_ppi = group.filter(pl.col("PPI Analysis Category") == "Same Pos. PPI")
-                    single_binders = group.filter(pl.col("PPI Analysis Category") == "Single Binders")
+                    same_pos_ppi = group.filter(pl.col("PPI vs Single Binder") == "Same Pos. PPI")
+                    single_binders = group.filter(pl.col("PPI vs Single Binder") == "Single Binders")
 
                     ##############################
                     #### Actual PSI Values #######
@@ -1460,11 +1460,27 @@ class RbpPpiAnalyzer:
                     #######################
                     #### Local SHAP #######
                     #######################
-                    t_stat_shap1, t_p_value_shap1 = scipy.stats.ttest_ind(same_pos_ppi[shap_col1].cast(pl.Float64), single_binders[shap_col1].cast(pl.Float64), equal_var=False)
-                    u_stat_shap1, u_p_value_shap1 = scipy.stats.mannwhitneyu(same_pos_ppi[shap_col1].cast(pl.Float64), single_binders[shap_col1].cast(pl.Float64), alternative='two-sided')
+                    t_stat_shap1, t_p_value_shap1 = scipy.stats.ttest_ind(
+                        same_pos_ppi[shap_col1].cast(pl.Float64), 
+                        group.filter(pl.col("PPI Analysis Category") == f"{rbp1} Only")[shap_col1].cast(pl.Float64), 
+                        equal_var=False
+                    )
+                    u_stat_shap1, u_p_value_shap1 = scipy.stats.mannwhitneyu(
+                        same_pos_ppi[shap_col1].cast(pl.Float64), 
+                        group.filter(pl.col("PPI Analysis Category") == f"{rbp1} Only")[shap_col1].cast(pl.Float64), 
+                        alternative='two-sided'
+                    )
 
-                    t_stat_shap2, t_p_value_shap2 = scipy.stats.ttest_ind(same_pos_ppi[shap_col2].cast(pl.Float64), single_binders[shap_col2].cast(pl.Float64), equal_var=False)
-                    u_stat_shap2, u_p_value_shap2 = scipy.stats.mannwhitneyu(same_pos_ppi[shap_col2].cast(pl.Float64), single_binders[shap_col2].cast(pl.Float64), alternative='two-sided')
+                    t_stat_shap2, t_p_value_shap2 = scipy.stats.ttest_ind(
+                        same_pos_ppi[shap_col2].cast(pl.Float64), 
+                        group.filter(pl.col("PPI Analysis Category") == f"{rbp2} Only")[shap_col2].cast(pl.Float64), 
+                        equal_var=False
+                    )
+                    u_stat_shap2, u_p_value_shap2 = scipy.stats.mannwhitneyu(
+                        same_pos_ppi[shap_col2].cast(pl.Float64), 
+                        group.filter(pl.col("PPI Analysis Category") == f"{rbp2} Only")[shap_col2].cast(pl.Float64), 
+                        alternative='two-sided'
+                    )
 
                     ###########################################
                     #### Welch's T-test & Mann Whitney U ######
@@ -1493,14 +1509,14 @@ class RbpPpiAnalyzer:
                             "Global SHAP RBP 2 - PPI": same_pos_ppi_mean_shap2,
                             "Global SHAP RBP 2 - Single Binders": single_binders_mean_shap2,
                             "Global SHAP RBP 2 Difference: PPI vs Single Binders": mean_diff_shap2,
-                            "Local SHAP RBP 1 Welch's T-test Stat": t_stat_shap1,
-                            "Local SHAP RBP 1 Welch's T-test P-value": t_p_value_shap1,
-                            "Local SHAP RBP 1 Mann Whitney U Stat": u_stat_shap1,
-                            "Local SHAP RBP 1 Mann Whitney U P-value": u_p_value_shap1,
-                            "Local SHAP RBP 2 Welch's T-test Stat": t_stat_shap2,
-                            "Local SHAP RBP 2 Welch's T-test P-value": t_p_value_shap2,
-                            "Local SHAP RBP 2 Mann Whitney U Stat": u_stat_shap2,
-                            "Local SHAP RBP 2 Mann Whitney U P-value": u_p_value_shap2,
+                            "Local SHAP: RBP 1 PPI vs RBP 1 Only Welch's T-test Stat": t_stat_shap1,
+                            "Local SHAP: RBP 1 PPI vs RBP 1 Only Welch's T-test P-value": t_p_value_shap1,
+                            "Local SHAP: RBP 1 PPI vs RBP 1 Only Mann Whitney U Stat": u_stat_shap1,
+                            "Local SHAP: RBP 1 PPI vs RBP 1 Only Mann Whitney U P-value": u_p_value_shap1,
+                            "Local SHAP: RBP 2 PPI vs RBP 2 Only Welch's T-test Stat": t_stat_shap2,
+                            "Local SHAP: RBP 2 PPI vs RBP 2 Only Welch's T-test P-value": t_p_value_shap2,
+                            "Local SHAP: RBP 2 PPI vs RBP 2 Only Mann Whitney U Stat": u_stat_shap2,
+                            "Local SHAP: RBP 2 PPI vs RBP 2 Only Mann Whitney U P-value": u_p_value_shap2,
                             "PPI vs Single Binders PSI Welch's T-test Stat": t_stat,
                             "PPI vs Single Binders PSI Welch's T-test P-value": t_p_value,
                             "PPI vs Single Binders PSI Mann Whitney U Stat": u_stat,
