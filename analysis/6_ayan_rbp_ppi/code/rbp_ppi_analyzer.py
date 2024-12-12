@@ -1571,6 +1571,7 @@ class RbpPpiAnalyzer:
 
             for cell_line in self.cell_lines:
                 data = self.xgboost_ppi[cell_line]
+                assert all(data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line} - {rbp_pair} - {position}.")
                 data = data.filter(pl.col("PPI Analysis Category").is_not_null())
                 combinations = data.select(["RBP Pair", "Position"]).unique().sort(["RBP Pair", "Position"]).to_dict(as_series=False)
                 unique_combinations[cell_line] = list(zip(combinations["RBP Pair"], combinations["Position"]))
