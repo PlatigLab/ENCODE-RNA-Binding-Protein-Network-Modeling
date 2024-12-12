@@ -1560,7 +1560,7 @@ class RbpPpiAnalyzer:
 
         if pathlib.Path(OLS_LIN_REG_CACHE_FILE).exists():
             self.ppi_ols_lin_reg_results = pd.read_csv(OLS_LIN_REG_CACHE_FILE, sep="\t")
-            logger.success("FROM CACHE: loaded OLS linear regression results.")
+            logger.success("FROM CACHE: loaded pair-position specific OLS linear regression results.")
             return self.ppi_ols_lin_reg_results.head()
         
 
@@ -1690,128 +1690,163 @@ class RbpPpiAnalyzer:
             
     
     def run_all_ppi_features_and_interaction_term_ols_linear_regression(self): 
+            SUMMARY_OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_summary_results.tsv"
+            DETAILED_OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_detailed_results.tsv"
+
+            if pathlib.Path(SUMMARY_OLS_LIN_REG_CACHE_FILE).exists() and pathlib.Path(DETAILED_OLS_LIN_REG_CACHE_FILE).exists():
+                self.all_ppi_features_ols_lin_reg_summary_results = pd.read_csv(SUMMARY_OLS_LIN_REG_CACHE_FILE, sep="\t")
+                self.all_ppi_features_ols_lin_reg_detailed_results = pd.read_csv(DETAILED_OLS_LIN_REG_CACHE_FILE, sep="\t")
+                logger.success("FROM CACHE: loaded all binding + interaction term OLS linear regression results.")
+                return self.all_ppi_features_ols_lin_reg_summary_results.head(), self.all_ppi_features_ols_lin_reg_detailed_results.head()
             
-        OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_results.tsv"
+            else: 
+                logger.info("NO CACHE... hence, running OLS linear regression for all PPI features and interaction terms.")
 
-        if pathlib.Path(OLS_LIN_REG_CACHE_FILE).exists():
-            self.all_ppi_features_ols_lin_reg_results = pd.read_csv(OLS_LIN_REG_CACHE_FILE, sep="\t")
-            logger.success("FROM CACHE: loaded OLS linear regression results.")
-            return self.all_ppi_features_ols_lin_reg_results.head()
-        
+                if not hasattr(self, 'ppi_ols_lin_reg_results'):
+                    self.run_pair_position_ols_linear_regression()
 
-        else: 
-            logger.info("NO CACHE... hence, running OLS linear regression for all PPI features and interaction terms.")
+                unique_combinations = {}
+                for cell_line in self.cell_lines:
+                    cell_line_data = self.ppi_ols_lin_reg_results[self.ppi_ols_lin_reg_results["Cell Line"] == cell_line]
+                    unique_combinations[cell_line] = sorted(list(cell_line_data[["RBP Pair", "Position"]].drop_duplicates().itertuples(index=False, name=None)))
 
-            if not hasattr(self, 'ppi_ols_lin_reg_results'):
-                self.run_pair_position_ols_linear_regression()
+                summary_results = []
+                detailed_results = []
 
-            unique_combinations = {}
-            for cell_line in self.cell_lines:
-                cell_line_data = self.ppi_ols_lin_reg_results[self.ppi_ols_lin_reg_results["Cell Line"] == cell_line]
-                unique_combinations[cell_line] = sorted(list(cell_line_data[["RBP Pair", "Position"]].drop_duplicates().itertuples(index=False, name=None)))
+                for cell_line in self.cell_lines:
+                    original_data = self.xgboost_ppi[cell_line]
+                    unique_graph_ids = sorted(original_data["graph_index"].unique().to_list())
 
-            results = []
-            for cell_line in self.cell_lines:
-                original_data = self.xgboost_ppi[cell_line]
-                unique_graph_ids = sorted(original_data["graph_index"].unique().to_list())
+                    regression_data = None
 
-                regression_data = None
+                    for rbp_pair, position in unique_combinations[cell_line]:
+                        rbp1, rbp2 = rbp_pair.split("-")
+                        binding_col1 = f"{rbp1}_{self.position_inverted_dict[str(position)]}"
+                        binding_col2 = f"{rbp2}_{self.position_inverted_dict[str(position)]}"
+                        interaction_col = f"{rbp1}-{rbp2}_{position}_interaction"
 
-                for rbp_pair, position in unique_combinations[cell_line]:
-                    rbp1, rbp2 = rbp_pair.split("-")
-                    binding_col1 = f"{rbp1}_{self.position_inverted_dict[str(position)]}"
-                    binding_col2 = f"{rbp2}_{self.position_inverted_dict[str(position)]}"
-                    interaction_col = f"{rbp1}-{rbp2}_{position}_interaction"
+                        subset_data = original_data.select(
+                            ["target", "graph_index", binding_col1, binding_col2]
+                        ).unique().sort("graph_index")
 
-                    subset_data = original_data.select(
-                        ["target", "graph_index", binding_col1, binding_col2]
-                    ).unique().sort("graph_index")
+                        # Rename the binding columns using the splice junction renaming dictionary
+                        new_binding_col1 = f"{rbp1}_{position}"
+                        new_binding_col2 = f"{rbp2}_{position}"
+                        subset_data = subset_data.rename({binding_col1: new_binding_col1, binding_col2: new_binding_col2})
 
-                    # Rename the binding columns using the splice junction renaming dictionary
-                    new_binding_col1 = f"{rbp1}_{position}"
-                    new_binding_col2 = f"{rbp2}_{position}"
-                    subset_data = subset_data.rename({binding_col1: new_binding_col1, binding_col2: new_binding_col2})
-
-                    subset_data = subset_data.with_columns(
+                        subset_data = subset_data.with_columns(
                         pl.when((pl.col(new_binding_col1) == 1) & (pl.col(new_binding_col2) == 1))
                         .then(pl.lit(1))
                         .otherwise(pl.lit(0))
                         .alias(interaction_col)
+                        )
+
+                        if regression_data is None:
+                            regression_data = subset_data
+
+                        else:
+                            assert regression_data["graph_index"].to_list() == subset_data["graph_index"].to_list(), logger.error(f"Mismatch in 'graph_index' columns between regression_data and subset_data for {cell_line} - {rbp_pair} - {position}.")
+                            assert interaction_col not in regression_data.columns, logger.error(f"Column '{interaction_col}' already exists in regression_data for {cell_line} - {rbp_pair} - {position}.")
+                            
+                            subset_data = subset_data.drop("target")
+
+                            duplicate_columns = [col for col in [new_binding_col1, new_binding_col2, interaction_col] if col in regression_data.columns]
+                            if len(duplicate_columns) > 0:
+                                logger.info(f"Dropping duplicate columns: {duplicate_columns}")
+                                subset_data = subset_data.drop(duplicate_columns)
+                            
+                            regression_data = regression_data.join(subset_data, on="graph_index", how="inner", validate="1:1")
+
+                    regression_data = regression_data.sort("graph_index")
+                    assert regression_data["graph_index"].to_list() == unique_graph_ids, logger.error(f"Mismatch in 'graph_index' columns between regression_data and unique_graph_ids for {cell_line}.")
+                    
+                    regression_data = regression_data.drop("graph_index").to_pandas()
+                    
+                    expected_columns = list(
+                        set(
+                            ["target"] + 
+                            [f"{rbp}_{position}" for rbp_pair, position in unique_combinations[cell_line] for rbp in rbp_pair.split("-")] + 
+                            [f"{rbp_pair.split('-')[0]}-{rbp_pair.split('-')[1]}_{position}_interaction" for rbp_pair, position in unique_combinations[cell_line]]
+                        )
                     )
+                    assert sorted(regression_data.columns) == sorted(expected_columns), logger.error(f"Expected columns do not match the actual columns for {cell_line}.")
 
-                    if regression_data is None:
-                        regression_data = subset_data
+                    logger.info(f"Created input dataset for {cell_line} OLS linear regression model... fitting the model now.")
 
-                    else:
-                        assert regression_data["graph_index"].to_list() == subset_data["graph_index"].to_list(), logger.error(f"Mismatch in 'graph_index' columns between regression_data and subset_data for {cell_line} - {rbp_pair} - {position}.")
-                        assert interaction_col not in regression_data.columns, logger.error(f"Column '{interaction_col}' already exists in regression_data for {cell_line} - {rbp_pair} - {position}.")
-                        
-                        subset_data = subset_data.drop("target")
+                    y = regression_data["target"]
+                    X = regression_data.drop(columns=["target"])
 
-                        duplicate_columns = [col for col in [new_binding_col1, new_binding_col2, interaction_col] if col in regression_data.columns]
-                        if len(duplicate_columns) > 0:
-                            logger.info(f"Dropping duplicate columns: {duplicate_columns}")
-                            subset_data = subset_data.drop(duplicate_columns)
-                        
-                        regression_data = regression_data.join(subset_data, on="graph_index", how="inner", validate="1:1")
+                    X = sm.add_constant(X)
+                    ols_model = sm.OLS(y, X, missing="raise").fit()
 
-                regression_data = regression_data.sort("graph_index")
-                assert regression_data["graph_index"].to_list() == unique_graph_ids, logger.error(f"Mismatch in 'graph_index' columns between regression_data and unique_graph_ids for {cell_line}.")
-                
-                regression_data = regression_data.drop("graph_index").to_pandas()
-                
-                expected_columns = list(
-                    set(
-                        ["target"] + 
-                        [f"{rbp}_{position}" for rbp_pair, position in unique_combinations[cell_line] for rbp in rbp_pair.split("-")] + 
-                        [f"{rbp_pair.split('-')[0]}-{rbp_pair.split('-')[1]}_{position}_interaction" for rbp_pair, position in unique_combinations[cell_line]]
-                    )
-                )
-                assert sorted(regression_data.columns) == sorted(expected_columns), logger.error(f"Expected columns do not match the actual columns for {cell_line}.")
-
-                logger.info(f"Created input dataset for {cell_line} OLS linear regression model... fitting the model now.")
-
-                y = regression_data["target"]
-                X = regression_data.drop(columns=["target"])
-
-                X = sm.add_constant(X)
-                ols_model = sm.OLS(y, X, missing="raise").fit()
-
-                results_dict = {
+                    summary_results_dict = {
                         "Data Partition": "All",
                         "Cell Line": cell_line,
                         "# Unique Graphs": X.shape[0],
                         "# Features": X.shape[1],
                         "R2 Score": ols_model.rsquared,
                         "Adj. R2 Score": ols_model.rsquared_adj,
-                    }
+                        }
+                    summary_results.append(summary_results_dict)
+
+                    # Ensure params and pvalues have the same indices
+                    assert ols_model.params.index.equals(ols_model.pvalues.index), "Params and pvalues indices do not match."
+                    # Sort params and pvalues indices
+                    sorted_params = ols_model.params.sort_index()
+                    sorted_pvalues = ols_model.pvalues.sort_index()
+
+                    # Convert sorted params and pvalues to DataFrame
+                    detailed_results_df = pd.DataFrame({
+                        "Parameter Name": sorted_params.index,
+                        f"Beta_{cell_line}": sorted_params.values,
+                        f"Raw_P_{cell_line}": sorted_pvalues.values
+                    })
+
+                    detailed_results.append(detailed_results_df)
+                    logger.success(f"Finished fitting OLS linear regression model for {cell_line}.")
                 
-                # Ensure params and pvalues have the same indices
-                assert ols_model.params.index.equals(ols_model.pvalues.index), "Params and pvalues indices do not match."
-                # Sort params and pvalues indices
-                sorted_params = ols_model.params.sort_index()
-                sorted_pvalues = ols_model.pvalues.sort_index()
+                summary_results_df = pd.DataFrame(summary_results)
 
-                # Convert sorted params and pvalues to 1D arrays with formatted indices
-                sorted_params_dict = {f"{index}_beta": value for index, value in sorted_params.items()}
-                sorted_pvalues_dict = {f"{index}_raw_pval": value for index, value in sorted_pvalues.items()}
+                # Merge detailed results for both cell lines
+                detailed_results_df = detailed_results[0].merge(detailed_results[1], on="Parameter Name", how="outer")
 
-                results_dict.update(sorted_params_dict)
-                results_dict.update(sorted_pvalues_dict)
+                # Collect all non-NA p-values
+                all_p_values = [p for cell_line in self.cell_lines for p in detailed_results_df[f"Raw_P_{cell_line}"] if not pd.isna(p)]
+                # Apply FDR BH correction
+                corrected_p_values = sm.stats.multipletests(all_p_values, method='fdr_bh')[1]
+                # Create a list to pop corrected p-values from
+                corrected_p_values_list = corrected_p_values.tolist()
 
-                results.append(results_dict)
-                logger.success(f"Finished fitting OLS linear regression model for {cell_line}.")
-            
-            results_df = pd.DataFrame(results)
+                # Iterate through each cell line and fill the FDR column
+                for cell_line in self.cell_lines:
+                    fdr_column = f"FDR_{cell_line}"
+                    detailed_results_df[fdr_column] = np.nan  # Initialize the FDR column with NaN
 
-            non_feature_columns = [col for col in results_df.columns if "_" not in col]
-            feature_columns = sorted([col for col in results_df.columns if "_" in col])
-            results_df = results_df[non_feature_columns + feature_columns]
+                    for idx in detailed_results_df.index:
+                        if not pd.isna(detailed_results_df.at[idx, f"Raw_P_{cell_line}"]):
+                            detailed_results_df.at[idx, fdr_column] = corrected_p_values_list.pop(0)
 
-            results_df.to_csv(OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
+                # Ensure all corrected p-values have been used
+                assert len(corrected_p_values_list) == 0, "Not all corrected p-values were used."
+                # Reorder columns
+                detailed_results_df = detailed_results_df[["Parameter Name", "Beta_K562", "Beta_HepG2", "Raw_P_K562", "Raw_P_HepG2", "FDR_K562", "FDR_HepG2"]]
+                
+                # Assert that for each row the FDR columns are higher than the raw p columns (if there are not na values)
+                for cell_line in self.cell_lines:
+                    raw_p_col = f"Raw_P_{cell_line}"
+                    fdr_col = f"FDR_{cell_line}"
+                    assert all(
+                        (detailed_results_df[fdr_col] >= detailed_results_df[raw_p_col]) | detailed_results_df[fdr_col].isna() | detailed_results_df[raw_p_col].isna()
+                    ), f"FDR values are not higher than raw p-values for {cell_line}"
 
-            self.all_ppi_features_ols_lin_reg_results = results_df
-            logger.success("OLS linear regression results for all PPI features and interaction terms saved.")
+                summary_results_df.to_csv(SUMMARY_OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
+                
+                detailed_results_df = detailed_results_df.sort_values(by="Parameter Name")
+                detailed_results_df.to_csv(DETAILED_OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
+
+                self.all_ppi_features_ols_lin_reg_summary_results = summary_results_df
+                self.all_ppi_features_ols_lin_reg_detailed_results = detailed_results_df
+                logger.success("OLS linear regression results for all PPI features and interaction terms saved.")
 
 
     def tmp(self): 
