@@ -1669,6 +1669,19 @@ class RbpPpiAnalyzer:
                 num_graphs = results_df[results_df["Cell Line"] == cell_line]["# Graphs Used in OLS Reg."].unique()
                 assert len(num_graphs) == 1, f"Number of graphs used in OLS regression is not consistent for {cell_line}."
 
+            # Extract all columns containing "P-value"
+            p_value_columns = [col for col in results_df.columns if "P-value" in col]
+
+            # Perform FDR BH correction
+            p_values = results_df[p_value_columns].values.flatten()
+            corrected_p_values = sm.stats.multipletests(p_values, method='fdr_bh')[1]
+
+            # Insert corrected p-values next to their respective raw p-value columns
+            corrected_p_values = corrected_p_values.reshape(results_df[p_value_columns].shape)
+            for i, col in enumerate(p_value_columns):
+                corrected_col_name = col.replace("P-value", "FDR BH")
+                results_df.insert(results_df.columns.get_loc(col) + 1, corrected_col_name, corrected_p_values[:, i])
+
             results_df.to_csv(OLS_LIN_REG_CACHE_FILE, sep="\t", index=False)
 
             self.ppi_ols_lin_reg_results = results_df
