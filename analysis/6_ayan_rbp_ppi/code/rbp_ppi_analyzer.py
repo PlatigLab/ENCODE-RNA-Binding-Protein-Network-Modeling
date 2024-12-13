@@ -1849,6 +1849,70 @@ class RbpPpiAnalyzer:
                 logger.success("OLS linear regression results for all PPI features and interaction terms saved.")
 
 
+    def plot_srsf_and_hnrnp_local_shap_distributions(self): 
+        logger.info("Plotting local SHAP distributions for SRSF and HNRNP RBPs.")
+
+        for cell_line in self.cell_lines:
+            for rbp_type in ["SRSF", "HNRNP"]:
+
+                fig, axes = plt.subplots(2, 3, figsize=(20, 9), dpi=200, sharex=True, sharey=True)
+
+                for ax, (position, position_key) in zip(axes.flatten(), self.position_inverted_dict.items()):
+                    binding_cols = [col for col in self.xgboost_ppi[cell_line].columns if col.startswith(rbp_type) and col.endswith(f"_{position_key}")]
+                    
+                    plotting_df = []
+                    for col in binding_cols:
+
+                        shap_col = f"{col}_shap"
+                        subset = self.xgboost_ppi[cell_line].select(["graph_index", col, f"{shap_col}"]).filter(pl.col(col) == 1).unique()
+
+                        assert subset["graph_index"].n_unique() == subset.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {rbp_type} - {position}.")
+                        subset = subset.drop(["graph_index", col])
+                        
+                        feature_name = col.split("_")[0]
+                        local_shap_values = subset[shap_col].to_list()
+                        feature_df = pd.DataFrame({
+                            "Feature Name": feature_name,
+                            "Local SHAP Value": local_shap_values
+                        })
+
+                        plotting_df.append(feature_df)
+                    
+                    plotting_df = pd.concat(plotting_df, ignore_index=True).sort_values("Feature Name")    
+
+                    color = "tomato" if rbp_type == "SRSF" else "dodgerblue"
+                    
+                    sns.violinplot(x="Feature Name", y="Local SHAP Value", data=plotting_df, ax=ax, color=color, inner=None, density_norm="width")
+                    sns.boxplot(x="Feature Name", y="Local SHAP Value", data=plotting_df, ax=ax, width=0.3, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, flierprops={'marker': 'o', 'markersize': 2, 'markerfacecolor': 'black'}, medianprops={'color': 'black'}, whiskerprops={'color': 'black'}, capprops={'color': 'black'})
+
+                    ax.set_title(f"Position {position}", fontsize=20)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    ax.axhline(0, color='green', linestyle='--', linewidth=2)
+                    ax.tick_params(axis='x', labelsize=16, rotation=45)
+                    ax.tick_params(axis='y', labelsize=14)
+
+                    total_points = plotting_df["Feature Name"].value_counts().sort_index()
+                    assert total_points.index.tolist() == sorted(plotting_df["Feature Name"].unique()), logger.error(f"Index order of total_points does not match the sorted order of plotting_df['Feature Name'] for {cell_line} - {rbp_type} - {position}.")
+
+                    for feature_name, count in total_points.items():
+                        ax.text(feature_name, 0.92, f"{count}", ha='center', va='bottom', color="purple", fontsize=14, transform=ax.get_xaxis_transform())
+
+                fig.suptitle(f"{cell_line} - {rbp_type}'s: Local SHAP when Bound", fontsize=30, y=1.01)
+                fig.supxlabel("RBP", fontsize=26)
+                fig.supylabel("Local SHAP Value", fontsize=26, x=0)
+                
+                plt.tight_layout()
+                plt.savefig(
+                    f"../output/srsf_and_hnrnp_local_SHAP/{cell_line}_{rbp_type}_all_positions_local_shap_distributions.png", 
+                    bbox_inches='tight', 
+                    dpi=200
+                )
+                plt.show()
+
+        logger.success("Plotted local SHAP distributions for SRSF and HNRNP RBPs.")
+
+
     def tmp(self): 
         pass
 
