@@ -4,7 +4,6 @@
 
 Code related to recalculating p-values for `ENCODE`'s provided data. 
 
-
 📂 `2_Ayan_hg38_vs_ENCODE_hg19_comparison/`: 
 
 Compare number of total and differential `AS` events between `hg19 ENCODE` and `hg38 Ayan` data.
@@ -16,3 +15,7 @@ Compare number of total and differential `AS` events between `hg19 ENCODE` and `
 Understanding whether batch correction affects `PSI` and `deltaPSI` values much. 
 
 This is using `ENCODE`'s `hg19` data that they provide on their portal. 
+
+📂 `4_compare_yogi_and_ayan_datasets/`: 
+
+Compare RBP binding amount and positional preferences between the dataset created by Yogi vs Ayan. 
