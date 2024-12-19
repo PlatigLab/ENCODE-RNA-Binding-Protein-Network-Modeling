@@ -6,7 +6,7 @@ from loguru import logger
 from sklearn.metrics import r2_score
 
 @dataclass
-class RbpPpiAnalyzer:
+class RbpInteractionAnalyzer:
 
     # initate the class with the following parameters
     distance_threshold: int = None
@@ -1927,7 +1927,7 @@ if __name__ == "__main__":
     parser.add_argument('--parallel-task', type=str, required=False, help='Parallel task to run')
     args = parser.parse_args()
 
-    analyzer = RbpPpiAnalyzer(distance_threshold=args.distance)
+    analyzer = RbpInteractionAnalyzer(distance_threshold=args.distance)
 
     match args.parallel_task:
 
