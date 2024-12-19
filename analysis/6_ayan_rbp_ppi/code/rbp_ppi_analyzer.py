@@ -1,4 +1,4 @@
-import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, itertools, gc, scipy
+import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, gc, scipy
 import polars as pl, matplotlib.pyplot as plt, pandas as pd, matplotlib.colors as mcolors, numpy as np, statsmodels.api as sm, seaborn as sns
 
 from dataclasses import dataclass
@@ -16,7 +16,7 @@ class RbpPpiAnalyzer:
     ##########################################
     FEATHER_CACHE_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/4_Ayans_XGBDT_SHAP_analysis/outputs/__featherv2-cache__/"
     LINEAR_MODEL_DIR = "/project/PlatigLab/data/collaborators/BWH/6_ols_regression_and_xgbdt_models_2024_11/linear-models-ols-2024-11/linear-models-ols-100-0599cbc0/"
-    PPI_CACHE_DIR = "../output/ppi_cache_data/"
+    PPI_CACHE_DIR = "../output/ppi/ppi_cache_data/"
 
     cell_lines = ["K562", "HepG2"]
 
@@ -233,7 +233,7 @@ class RbpPpiAnalyzer:
 
     def check_mismatch_graphs(self):  
 
-        MISMATCH_CACHE_FILE= "../output/mismatch_graph_stats/mismatch_stats.tsv"
+        MISMATCH_CACHE_FILE= "../output/ppi/mismatch_graph_stats/mismatch_stats.tsv"
 
         if pathlib.Path(MISMATCH_CACHE_FILE).exists():
 
@@ -436,7 +436,7 @@ class RbpPpiAnalyzer:
 
         assert test_only in [True, False], logger.error("test_only parameter must be set to True or False.")
 
-        PPI_MISSING_SUMMARY_DIR = "../output/ppi_no_examples_summary/"
+        PPI_MISSING_SUMMARY_DIR = "../output/ppi/ppi_no_examples_summary/"
 
         if len(glob.glob(f"{self.PPI_CACHE_DIR}/*-{self.distance_threshold}-*")) == 4:
             
@@ -789,7 +789,7 @@ class RbpPpiAnalyzer:
     
     def calculate_summary_PPI_performance(self): 
         
-        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi_summary_stats/summary_ppi_performance_{self.distance_threshold}.tsv"
+        SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE = f"../output/ppi/ppi_summary_stats/summary_ppi_performance_{self.distance_threshold}.tsv"
 
         if pathlib.Path(SUMMARY_PPI_PERFORMANCE_OUTPUT_FILE).exists():
 
@@ -936,7 +936,7 @@ class RbpPpiAnalyzer:
 
     def calculate_pair_position_combination_r2_scores(self): 
             
-        PAIR_POSITION_R2_SCORES_OUTPUT_FILE = f"../output/ppi_summary_stats/pair_position_r2_scores_{self.distance_threshold}.tsv"
+        PAIR_POSITION_R2_SCORES_OUTPUT_FILE = f"../output/ppi/ppi_summary_stats/pair_position_r2_scores_{self.distance_threshold}.tsv"
 
         if pathlib.Path(PAIR_POSITION_R2_SCORES_OUTPUT_FILE).exists():
 
@@ -1099,7 +1099,7 @@ class RbpPpiAnalyzer:
 
     def compare_ppi_vs_single_binder_r2_table(self): 
 
-        PPI_VS_SINGLE_BINDER_OUTPUT_FILE = f"../output/ppi_summary_stats/pair_position_ppi_vs_single_binder_r2_scores_{self.distance_threshold}.tsv"
+        PPI_VS_SINGLE_BINDER_OUTPUT_FILE = f"../output/ppi/ppi_summary_stats/pair_position_ppi_vs_single_binder_r2_scores_{self.distance_threshold}.tsv"
 
         if pathlib.Path(PPI_VS_SINGLE_BINDER_OUTPUT_FILE).exists():
                 
@@ -1390,7 +1390,7 @@ class RbpPpiAnalyzer:
 
                     plt.tight_layout()
                     plt.savefig(
-                        f"../output/performance_local_SHAP_plots/{self.cell_line}_{rbp_pair}_{position}_{plot_file_suffix}.png", 
+                        f"../output/ppi/performance_local_SHAP_plots/{self.cell_line}_{rbp_pair}_{position}_{plot_file_suffix}.png", 
                         dpi=200,
                         bbox_inches='tight', 
                     )
@@ -1401,7 +1401,7 @@ class RbpPpiAnalyzer:
 
     def create_ppi_vs_single_binders_table(self): 
 
-        PPI_VS_SINGLE_BINDERS_FILE=f"../output/ppi_summary_stats/summary_pair_position_metrics_{self.distance_threshold}.tsv"
+        PPI_VS_SINGLE_BINDERS_FILE=f"../output/ppi/ppi_summary_stats/summary_pair_position_metrics_{self.distance_threshold}.tsv"
 
         if pathlib.Path(PPI_VS_SINGLE_BINDERS_FILE).exists():
             self.ppi_vs_single_binders_df = pd.read_csv(PPI_VS_SINGLE_BINDERS_FILE, sep="\t")
@@ -1556,7 +1556,7 @@ class RbpPpiAnalyzer:
 
     def run_pair_position_ols_linear_regression(self): 
 
-        OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/ppi_ols_lin_reg_results.tsv"
+        OLS_LIN_REG_CACHE_FILE="../output/ppi/ols_lin_reg_ppi_results/ppi_ols_lin_reg_results.tsv"
 
         if pathlib.Path(OLS_LIN_REG_CACHE_FILE).exists():
             self.ppi_ols_lin_reg_results = pd.read_csv(OLS_LIN_REG_CACHE_FILE, sep="\t")
@@ -1690,8 +1690,8 @@ class RbpPpiAnalyzer:
             
     
     def run_all_ppi_features_and_interaction_term_ols_linear_regression(self): 
-            SUMMARY_OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_summary_results.tsv"
-            DETAILED_OLS_LIN_REG_CACHE_FILE="../output/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_detailed_results.tsv"
+            SUMMARY_OLS_LIN_REG_CACHE_FILE="../output/ppi/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_summary_results.tsv"
+            DETAILED_OLS_LIN_REG_CACHE_FILE="../output/ppi/ols_lin_reg_ppi_results/all_ppi_features_and_interaction_terms_ols_lin_reg_detailed_results.tsv"
 
             if pathlib.Path(SUMMARY_OLS_LIN_REG_CACHE_FILE).exists() and pathlib.Path(DETAILED_OLS_LIN_REG_CACHE_FILE).exists():
                 self.all_ppi_features_ols_lin_reg_summary_results = pd.read_csv(SUMMARY_OLS_LIN_REG_CACHE_FILE, sep="\t")
@@ -1904,14 +1904,13 @@ class RbpPpiAnalyzer:
                 
                 plt.tight_layout()
                 plt.savefig(
-                    f"../output/srsf_and_hnrnp_local_SHAP/{cell_line}_{rbp_type}_all_positions_local_shap_distributions.png", 
+                    f"../output/ppi/srsf_and_hnrnp_local_SHAP/{cell_line}_{rbp_type}_all_positions_local_shap_distributions.png", 
                     bbox_inches='tight', 
                     dpi=200
                 )
                 plt.show()
 
         logger.success("Plotted local SHAP distributions for SRSF and HNRNP RBPs.")
-
 
     def tmp(self): 
         pass
