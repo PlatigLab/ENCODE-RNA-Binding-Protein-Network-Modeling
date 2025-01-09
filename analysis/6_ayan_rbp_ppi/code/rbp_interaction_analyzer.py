@@ -1,4 +1,4 @@
-import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, gc, scipy
+import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, gc, scipy, itertools
 import polars as pl, matplotlib.pyplot as plt, pandas as pd, matplotlib.colors as mcolors, numpy as np, statsmodels.api as sm, seaborn as sns
 
 from dataclasses import dataclass
@@ -47,7 +47,6 @@ class RbpInteractionAnalyzer:
         # self.check_initial_data_assertions()
 
         self.load_RBP_PPI_pairs()
-        self.retrieve_rbp_ppi_events_and_controls(test_only=True)
 
 
     def load_RBP_PPI_pairs(self):
@@ -1912,6 +1911,76 @@ class RbpInteractionAnalyzer:
 
         logger.success("Plotted local SHAP distributions for SRSF and HNRNP RBPs.")
 
+
+    def create_feature_interaction_r2_table(self):
+        FEATURE_INTERACTION_R2_FILE="../output/feature_interactions/r2_tables/feature_interaction_r2_table.tsv"
+
+        if pathlib.Path(FEATURE_INTERACTION_R2_FILE).exists():
+            self.feature_interaction_r2_df = pd.read_csv(FEATURE_INTERACTION_R2_FILE, sep="\t")
+            logger.success("FROM CACHE: loaded feature interaction R2 table.")
+            return self.feature_interaction_r2_df.head()
+
+        else: 
+            logger.info("NO CACHE... hence, creating feature interaction R2 table.")
+
+            if set(self.xgboost_ppi["K562"]["Data Partition"].unique().to_list()) != {"train", "validate", "test"}:
+                self.retrieve_rbp_ppi_events_and_controls(test_only=False)
+
+            results = []
+
+            for cell_line in self.cell_lines:
+                
+                original_data = self.xgboost_ppi[cell_line]
+                assert set(original_data["Data Partition"].unique()) == {"validate", "test", "train"}, logger.error(f"Unexpected values in 'Data Partition' column for {cell_line}.")
+
+                binding_columns = [col for col in original_data.columns if col.endswith("_left") or col.endswith("_right")]
+                # get 2 length combinations of the binding columns
+                feature_combinations = list(itertools.combinations(binding_columns, 2))
+
+                def process_feature_combination(binding_col1, binding_col2):
+                    subset_data = original_data.select(["graph_index", "target", "psi_hat", binding_col1, binding_col2])
+
+                    xor_data = subset_data.filter(pl.col(binding_col1) != pl.col(binding_col2)).unique()
+                    both_bound = subset_data.filter((pl.col(binding_col1) == 1) & (pl.col(binding_col2) == 1)).unique()
+
+                    if len(xor_data) > 20 and len(both_bound) > 20:
+                        xor_r2 = r2_score(xor_data["target"].to_numpy(), xor_data["psi_hat"].to_numpy())
+                        both_bound_r2 = r2_score(both_bound["target"].to_numpy(), both_bound["psi_hat"].to_numpy())
+
+                        if both_bound_r2 > 0.3:
+
+                            binding_col1 = f'{binding_col1.split("_")[0]}_{self.splice_junction_position_renaming["_".join(binding_col1.split("_")[1:3])]}'
+                            binding_col2 = f'{binding_col2.split("_")[0]}_{self.splice_junction_position_renaming["_".join(binding_col2.split("_")[1:3])]}'
+
+                            return {
+                                "Data Partition": "All",
+                                "Model": "xgboost",
+                                "Cell Line": cell_line,
+                                "Feature Pair": "-".join(sorted([binding_col1, binding_col2])),
+                                '# Rows - Both Bound': both_bound.shape[0],
+                                '# Rows - Either Bound': xor_data.shape[0],
+                                'R2 - Both': both_bound_r2,
+                                'R2 - Either': xor_r2,
+                                "Difference R2 - (Both vs. Either)": both_bound_r2 - xor_r2
+                            }
+                    
+                    return None
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_number_SLURM_CPUs()) as executor:
+                    futures = [executor.submit(process_feature_combination, binding_col1, binding_col2) for binding_col1, binding_col2 in feature_combinations]
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing feature combinations", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]"):
+                        result = future.result()
+                        if result:
+                            results.append(result)
+
+            results_df = pd.DataFrame(results).sort_values("Difference R2 - (Both vs. Either)", ascending=False)
+            results_df.to_csv(FEATURE_INTERACTION_R2_FILE, sep="\t", index=False)
+
+            self.feature_interaction_r2_df = results_df
+            logger.success("Feature interaction R2 table created and saved.")
+
+
+
     def tmp(self): 
         pass
 
@@ -1929,11 +1998,8 @@ if __name__ == "__main__":
 
     analyzer = RbpInteractionAnalyzer(distance_threshold=args.distance)
 
-    match args.parallel_task:
-
-        case "mismatch_graphs":
-            analyzer.check_mismatch_graphs()
-
-        case "compare_model_binding_graphs": 
-            analyzer.check_binding_graphs_equal_for_shap_vs_linear_regression()
+    if args.parallel_task == "mismatch_graphs":
+        analyzer.check_mismatch_graphs()
+    elif args.parallel_task == "compare_model_binding_graphs":
+        analyzer.check_binding_graphs_equal_for_shap_vs_linear_regression()
 
