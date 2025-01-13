@@ -1555,7 +1555,7 @@ class RbpInteractionAnalyzer:
 
     def run_pair_position_ols_linear_regression(self): 
 
-        OLS_LIN_REG_CACHE_FILE="../output/ppi/ols_lin_reg_ppi_results/ppi_ols_lin_reg_results.tsv"
+        OLS_LIN_REG_CACHE_FILE="../output/ppi/ols_lin_reg_ppi_results/pair_position/ppi_ols_lin_reg_results.tsv"
 
         if pathlib.Path(OLS_LIN_REG_CACHE_FILE).exists():
             self.ppi_ols_lin_reg_results = pd.read_csv(OLS_LIN_REG_CACHE_FILE, sep="\t")
