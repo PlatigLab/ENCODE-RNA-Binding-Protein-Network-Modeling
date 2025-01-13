@@ -1570,13 +1570,11 @@ class RbpInteractionAnalyzer:
 
             for cell_line in self.cell_lines:
                 data = self.xgboost_ppi[cell_line]
-                assert all(data["Data Partition"] == "test"), logger.error(f"Not all values in 'Data Partition' column are 'test' for {cell_line} - {rbp_pair} - {position}.")
+                assert set(data["Data Partition"].unique()) == {"validate", "train", "test"}, logger.error(f"Data Partition column does not contain 'validate', 'train', 'test' for {cell_line}.")
+                
                 data = data.filter(pl.col("PPI Analysis Category").is_not_null())
                 combinations = data.select(["RBP Pair", "Position"]).unique().sort(["RBP Pair", "Position"]).to_dict(as_series=False)
                 unique_combinations[cell_line] = list(zip(combinations["RBP Pair"], combinations["Position"]))
-        
-            self.delete_PPI_data()
-            self.retrieve_rbp_ppi_events_and_controls(test_only=False)
 
             results = []
 
@@ -1645,12 +1643,12 @@ class RbpInteractionAnalyzer:
                             "RBP Pair": rbp_pair,
                             "Position": position,
                             "# Graphs Used in OLS Reg.": X.shape[0],
+                            "# Rows - PPI Interaction": ppi_interaction_count,
+                            "% Rows - PPI Interaction": ppi_interaction_percent,
                             "# Rows - RBP 1 Bound": rbp1_binding_count,
                             "% Rows - RBP 1 Bound": rbp1_binding_percent,
                             "# Rows - RBP 2 Bound": rbp2_binding_count,
                             "% Rows - RBP 2 Bound": rbp2_binding_percent,
-                            "# Rows - PPI Interaction": ppi_interaction_count,
-                            "% Rows - PPI Interaction": ppi_interaction_percent,
                             "Intercept Beta Coefficient": intercept_beta,
                             "Intercept Param P-value": intercept_p_value,
                             "RBP 1 Beta Coefficient": rbp1_beta,
