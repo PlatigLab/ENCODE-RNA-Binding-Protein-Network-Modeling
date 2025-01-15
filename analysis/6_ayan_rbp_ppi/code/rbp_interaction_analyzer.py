@@ -1906,6 +1906,53 @@ class RbpInteractionAnalyzer:
 
             logger.success("OLS linear regression results for same & all position PPI interaction terms saved.")
 
+    def plot_all_term_ppi_ols_lin_reg_performance(self):
+        prediction_files = glob.glob("../output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/*_Train-and-Validate.feather")
+        assert len(prediction_files) ==3
+
+        all_data = []
+        for file in prediction_files:
+            cell_line, flavor, _ = pathlib.Path(file).stem.split("_")
+
+            data = pl.scan_ipc(file).select(["Actual PSI", "Pred. PSI", "Data Partition"]).collect().to_pandas()
+            data = data[data["Data Partition"] == "test"].loc[:, ["Actual PSI", "Pred. PSI"]]
+
+            logger.info(f"Loaded {data.shape[0]} rows for {cell_line} - {flavor}.")
+
+            data["Cell Line"] = cell_line
+            data["Flavor"] = flavor
+
+            all_data.append(data)
+
+        all_data = pd.concat(all_data)
+        mincnt, gridsize = 1, 100
+
+        max_count = max([plt.hexbin(data["Actual PSI"], data["Pred. PSI"], gridsize=gridsize, mincnt=mincnt).get_array().max() for name, data in all_data.groupby(["Cell Line", "Flavor"])])
+        fig, axes = plt.subplots(2, 2, figsize=(6,5), dpi=200, sharex=True, sharey=True)
+
+        for (cell_line, flavor), data in all_data.groupby(["Cell Line", "Flavor"]):
+            row, col = (0 if cell_line == "K562" else 1), (0 if flavor == "Same-Pos-PPI" else 1)
+
+            ax = axes[row, col]
+            hb = ax.hexbin(data["Actual PSI"], data["Pred. PSI"], gridsize=gridsize, cmap='Reds', mincnt=mincnt, vmin=0, vmax=max_count)
+
+            ax.plot([0, 1], [0, 1], linestyle='-', color='blue', linewidth=1)
+            ax.axhline(0, color='blue', linestyle='--', linewidth=1)
+            ax.axhline(1, color='blue', linestyle='--', linewidth=1)
+
+            ax.text(0.9, 0.05, f"R2: {r2_score(data['Actual PSI'], data['Pred. PSI']):.3f}", transform=ax.transAxes, verticalalignment='bottom', horizontalalignment='right', fontsize=10)
+            
+            ax.set_title(f"{cell_line} - {flavor.replace('-', ' ')}", fontsize=10)
+
+        fig.suptitle("PPI All Term OLS 'Test' Performance\nNOTE: all models trained with 'test & validate'", fontsize=12, y=0.98)
+        fig.supxlabel("Actual PSI", fontsize=14, y=0.04)
+        fig.supylabel("Predicted PSI", fontsize=14, x=0.07)
+
+        fig.colorbar(hb, ax=axes.ravel().tolist(), label='Counts', fraction=0.02, pad=0.1, )
+        
+        plt.tight_layout(rect=[0, 0, 0.9, 1])
+        plt.savefig("../output/ppi/ols_lin_reg_ppi_results/all_term/results/all_term_ppi_ols_lin_reg_performance.png", bbox_inches='tight', dpi=200)
+        plt.show()
 
 
     def plot_srsf_and_hnrnp_local_shap_distributions(self): 
