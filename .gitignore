@@ -21,3 +21,6 @@ SLURM_logs/
 
 # ignore weights & biases output
 wandb/
+
+# ignore ols regression matrices
+analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/*
