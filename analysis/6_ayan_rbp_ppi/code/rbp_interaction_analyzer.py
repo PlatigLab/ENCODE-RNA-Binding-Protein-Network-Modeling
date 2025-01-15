@@ -1716,7 +1716,7 @@ class RbpInteractionAnalyzer:
                     [col for col in original_data.columns if col.endswith("_left") or col.endswith("_right")] 
                 ).unique().sort("graph_index")
 
-                for flavor in ["All Pos. PPI", "Same Pos. PPI"]: 
+                for flavor in ["Same Pos. PPI", "All Pos. PPI"]: 
 
                     unique_pair_position_combos = self.ppi_ols_lin_reg_results[
                             self.ppi_ols_lin_reg_results["Cell Line"] == cell_line
@@ -1780,7 +1780,7 @@ class RbpInteractionAnalyzer:
                     assert regression_data["graph_index"].n_unique() == regression_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {flavor}.")
                     assert set(regression_data["graph_index"].to_list()) == unique_graph_ids, logger.error(f"'graph_index' values in regression_data do not match unique_graph_ids for {cell_line} - {flavor}.")
 
-                    for training_partition in ["All Data", "Train & Validate"]: 
+                    for training_partition in ["All Data", "Train & Validate",]: 
 
                         if training_partition == "Train & Validate":
                             X_train = regression_data.filter(pl.col("Data Partition").is_in(["train", "validate"])).sort("graph_index").to_pandas()
@@ -1796,6 +1796,8 @@ class RbpInteractionAnalyzer:
 
                         X_test = regression_data.filter(pl.col("Data Partition") == "test").sort("graph_index").to_pandas()
                         y_test = X_test["target"]
+                        graph_index_test = X_test["graph_index"]
+                        data_partition_test = X_test["Data Partition"]
                         X_test = X_test.drop(columns=["target", "graph_index", "Data Partition"])
                         assert X_test.shape[0] == y_test.shape[0], logger.error(f"Number of rows in X_test and y_test do not match for {cell_line} - {flavor} - {training_partition}.")
                                                 
@@ -1845,8 +1847,22 @@ class RbpInteractionAnalyzer:
                             X_train["graph_index"] = graph_index_train
                             X_train["Data Partition"] = data_partition_train
 
-                            logger.info(f"Saving prediction matrices for {cell_line} - {flavor} - {training_partition}.")
-                            X_train.reset_index(drop=True).to_feather(
+                            # Get predictions for the test set
+                            X_test["Pred. PSI"] = y_pred
+                            X_test["Actual PSI"] = y_test
+                            X_test["graph_index"] = graph_index_test
+                            X_test["Data Partition"] = data_partition_test
+
+                            assert set(X_train.columns) == set(X_test.columns), logger.error(f"Columns in X_train and X_test do not match for {cell_line} - {flavor} - {training_partition}.")
+
+                            # Concatenate X_train and X_test
+                            combined_data = pd.concat([X_train, X_test]).drop_duplicates("graph_index", keep="first", inplace=False).reset_index(drop=True, inplace=False)
+                            assert combined_data["graph_index"].nunique() == combined_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {flavor} - {training_partition}.")
+                            assert set(combined_data["graph_index"].to_list()) == unique_graph_ids, logger.error(f"'graph_index' values in combined_data do not match unique_graph_ids for {cell_line} - {flavor} - {training_partition}.")
+                            assert not combined_data.isnull().values.any(), logger.error(f"Null values found in combined_data for {cell_line} - {flavor} - {training_partition}.")
+
+                            logger.info(f"Saving prediction matrices for {cell_line} - {flavor} - {training_partition}. Combined data shape: {combined_data.shape}")
+                            combined_data.reset_index(drop=True).to_feather(
                                 f"../output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/{cell_line}_{flavor.replace('.', '').replace(' ', '-')}_{training_partition.replace(' ', '-').replace('&', 'and')}.feather",
                                 compression="lz4"
                             )
@@ -1862,7 +1878,7 @@ class RbpInteractionAnalyzer:
                                 "Adjusted R2 Score": 1 - (1 - r2) * (len(y_test) - 1) / (len(y_test) - X_test.shape[1] - 1)
                             }
                             summary_results.append(summary_results_dict)
-
+                            
                         except np.linalg.LinAlgError as e:
                             logger.error(f"LinAlgError encountered for {cell_line} - {flavor} - {training_partition}: {e}")
                     
