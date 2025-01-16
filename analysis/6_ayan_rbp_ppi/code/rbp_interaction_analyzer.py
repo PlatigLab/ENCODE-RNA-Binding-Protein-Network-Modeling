@@ -1,4 +1,4 @@
-import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, gc, scipy, itertools
+import glob, re, pathlib, json, concurrent.futures, tqdm, os, random, argparse, sys, gc, scipy, itertools, warnings
 import polars as pl, matplotlib.pyplot as plt, pandas as pd, matplotlib.colors as mcolors, numpy as np, statsmodels.api as sm, seaborn as sns
 
 from dataclasses import dataclass
@@ -1847,7 +1847,7 @@ class RbpInteractionAnalyzer:
                             X_train["graph_index"] = graph_index_train
                             X_train["Data Partition"] = data_partition_train
 
-                            # Get predictions for the test set
+                            # Append predictions back to test set
                             X_test["Pred. PSI"] = y_pred
                             X_test["Actual PSI"] = y_test
                             X_test["graph_index"] = graph_index_test
@@ -1906,6 +1906,7 @@ class RbpInteractionAnalyzer:
 
             logger.success("OLS linear regression results for same & all position PPI interaction terms saved.")
 
+
     def plot_all_term_ppi_ols_lin_reg_performance(self):
         prediction_files = glob.glob("../output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/*_Train-and-Validate.feather")
         assert len(prediction_files) ==3
@@ -1953,6 +1954,169 @@ class RbpInteractionAnalyzer:
         plt.tight_layout(rect=[0, 0, 0.9, 1])
         plt.savefig("../output/ppi/ols_lin_reg_ppi_results/all_term/results/all_term_ppi_ols_lin_reg_performance.png", bbox_inches='tight', dpi=200)
         plt.show()
+
+    
+    def plot_all_position_ppi_interaction_psi_distributions_and_local_SHAP(self): 
+
+        missing_data = {}
+
+        for cell_line in self.cell_lines:
+
+            original_shap_data = self.xgboost_ppi[cell_line].unique("graph_index")
+            cell_line_data = pl.scan_ipc(
+                f"../output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/{cell_line}_All-Pos-PPI_All-Data.feather", 
+                memory_map = False
+            )
+            interaction_terms = [col for col in cell_line_data.collect_schema().names() if col.endswith("_interaction")]
+            
+            assert cell_line_data.select("Data Partition").collect()["Data Partition"].n_unique() == 3, logger.error(f"Data Partition column does not contain 3 unique values for {cell_line}.")
+            assert original_shap_data["Data Partition"].n_unique() ==3, logger.error(f"Data Partition column does not contain 3 unique values for {cell_line}.")
+
+            missing_data[cell_line] = set()
+            for interaction_term in tqdm.tqdm(interaction_terms, desc="Creating performance/local SHAP plots for interaction terms", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]"):
+                PLOT_FILE = f'../output/ppi/ols_lin_reg_ppi_results/all_term/performance_local_SHAP_plots/{interaction_term.replace("_interaction", "")}_{cell_line}.png'
+
+                if not pathlib.Path(PLOT_FILE).exists():
+
+                    binding_col1, binding_col2 = interaction_term.split("_")[0:2]
+                    binding_col1 = binding_col1.replace("-", "_")
+                    binding_col2 = binding_col2.replace("-", "_")
+
+                    interaction_data = cell_line_data.filter(
+                        pl.col(interaction_term) == 1
+                    ).select(
+                        ["graph_index", "Actual PSI"]
+                    ).unique().collect()
+
+                    if interaction_data.shape[0] > 20:
+
+                        binding_col1_exclusive = cell_line_data.filter(
+                            (pl.col(binding_col1) == 1) & (pl.col(binding_col2) == 0)
+                        ).select(
+                            ["graph_index", "Actual PSI"]
+                        ).collect()
+
+                        binding_col2_exclusive = cell_line_data.filter(
+                            (pl.col(binding_col2) == 1) & (pl.col(binding_col1) == 0)
+                        ).select(
+                            ["graph_index", "Actual PSI"]
+                        ).collect()
+
+                        # make sure all graph_index values are unique between datasets
+                        assert not any(interaction_data["graph_index"].is_in(binding_col1_exclusive["graph_index"])), logger.error(f"Overlap found in 'graph_index' between interaction_data and binding_col1_exclusive for {cell_line} - {interaction_term}.")
+                        assert not any(interaction_data["graph_index"].is_in(binding_col2_exclusive["graph_index"])), logger.error(f"Overlap found in 'graph_index' between interaction_data and binding_col2_exclusive for {cell_line} - {interaction_term}.")
+                        assert not any(binding_col1_exclusive["graph_index"].is_in(binding_col2_exclusive["graph_index"])), logger.error(f"Overlap found in 'graph_index' between binding_col1_exclusive and binding_col2_exclusive for {cell_line} - {interaction_term}.")
+
+                        ayan_shap_col1 = f"{binding_col1.split('_')[0]}_{self.position_inverted_dict[binding_col1.split('_')[1]]}_shap"
+                        ayan_shap_col2 = f"{binding_col2.split('_')[0]}_{self.position_inverted_dict[binding_col2.split('_')[1]]}_shap"
+
+                        interaction_shap_data = original_shap_data.filter(
+                            pl.col("graph_index").is_in(interaction_data["graph_index"])
+                        ).select(["graph_index", ayan_shap_col1, ayan_shap_col2])
+
+                        binding_col1_shap_data = original_shap_data.filter(
+                            pl.col("graph_index").is_in(binding_col1_exclusive["graph_index"])
+                        ).select(["graph_index", ayan_shap_col1, ayan_shap_col2])
+
+                        binding_col2_shap_data = original_shap_data.filter(
+                            pl.col("graph_index").is_in(binding_col2_exclusive["graph_index"])
+                        ).select(["graph_index", ayan_shap_col1, ayan_shap_col2])
+
+                        for df in [interaction_data, binding_col1_exclusive, binding_col2_exclusive, interaction_shap_data, binding_col1_shap_data, binding_col2_shap_data]:
+                            assert df["graph_index"].n_unique() == df.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {interaction_term}.")
+
+                        assert interaction_data.shape[0] == interaction_shap_data.shape[0], logger.error(f"Number of rows do not match between interaction_data and interaction_shap_data for {cell_line} - {interaction_term}.")
+                        assert binding_col1_exclusive.shape[0] == binding_col1_shap_data.shape[0], logger.error(f"Number of rows do not match between binding_col1_exclusive and binding_col1_shap_data for {cell_line} - {interaction_term}.")
+                        assert binding_col2_exclusive.shape[0] == binding_col2_shap_data.shape[0], logger.error(f"Number of rows do not match between binding_col2_exclusive and binding_col2_shap_data for {cell_line} - {interaction_term}.")
+                        
+                        # Violin plot for "Actual PSI" distributions
+                        combined_data = pd.concat([
+                            interaction_data.with_columns(pl.lit("Interaction").alias("Category")).to_pandas(),
+                            binding_col1_exclusive.with_columns(pl.lit(f'{binding_col1.replace("_", " @ ")}').alias("Category")).to_pandas(),
+                            binding_col2_exclusive.with_columns(pl.lit(f'{binding_col2.replace("_", " @ ")}').alias("Category")).to_pandas()
+                        ])
+                        assert combined_data["graph_index"].nunique() == combined_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {interaction_term}.")
+                        
+                        combined_shap_data = pd.concat([
+                            interaction_shap_data.with_columns(pl.lit("Interaction").alias("Category")).to_pandas(),
+                            binding_col1_shap_data.with_columns(pl.lit(f'{binding_col1.replace("_", " @ ")}').alias("Category")).to_pandas(),
+                            binding_col2_shap_data.with_columns(pl.lit(f'{binding_col2.replace("_", " @ ")}').alias("Category")).to_pandas()
+                        ])
+                        assert combined_shap_data["graph_index"].nunique() == combined_shap_data.shape[0], logger.error(f"Duplicate values found in 'graph_index' for {cell_line} - {interaction_term}.")
+                        assert set(combined_data["graph_index"]) == set(combined_shap_data["graph_index"]), logger.error(f"Mismatch in 'graph_index' values between combined_data and combined_shap_data for {cell_line} - {interaction_term}.")
+
+                        combined_summed_shap_data = combined_shap_data
+                        combined_summed_shap_data["Summed SHAP"] = combined_summed_shap_data[ayan_shap_col1] + combined_summed_shap_data[ayan_shap_col2]
+                    
+                        combined_shap_data = pd.concat([
+                            combined_shap_data.rename(columns={ayan_shap_col1: "Local SHAP"}).assign(RBP=binding_col1.split("_")[0]),
+                            combined_shap_data.rename(columns={ayan_shap_col2: "Local SHAP"}).assign(RBP=binding_col2.split("_")[0])
+                        ])
+                        assert combined_shap_data["graph_index"].value_counts().eq(2).all(), logger.error(f"Each unique value in 'graph_index' should appear twice in combined_shap_data for {cell_line} - {interaction_term}.")
+
+                        category_order = [
+                            "Interaction", 
+                            f'{binding_col1.replace("_", " @ ")}', 
+                            f'{binding_col2.replace("_", " @ ")}'
+                        ]                    
+                        rbp_order = [binding_col1.split("_")[0], binding_col2.split("_")[0]]
+                        plot_colors = ["mediumseagreen", "royalblue", "orange", ]
+
+                        fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=200, sharex=False, sharey=False)
+
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", FutureWarning)
+                            sns.violinplot(x="Category", y="Actual PSI", data=combined_data, ax=axes[0, 0], order=category_order, palette=plot_colors, inner=None, density_norm="width")
+                        
+                        sns.boxplot(x="Category", y="Actual PSI", data=combined_data, ax=axes[0, 0], width=0.2, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black', 'linewidth': 1.5}, flierprops={'marker': 'o', 'markersize': 2, 'markerfacecolor': 'black'}, medianprops={'color': 'black', 'linewidth': 1.5}, whiskerprops={'color': 'black', 'linewidth': 1.5}, capprops={'color': 'black', 'linewidth': 1.5})
+                        axes[0, 0].set_title("Actual PSI Distributions", fontsize=16)
+                        axes[0, 0].set_xlabel("")
+                        axes[0, 0].tick_params(axis='x', labelsize=12)
+                        axes[0, 0].set_ylabel("Actual PSI", fontsize=14)
+                        
+                        axes[0, 0].axhline(0, color='red', linestyle='--', linewidth=2)
+                        axes[0, 0].axhline(1, color='red', linestyle='--', linewidth=2)
+                        axes[0, 0].set_ylim(-0.1, 1.5)
+
+                        for category in category_order:
+                            category_data = combined_data[combined_data["Category"] == category]
+                            num_points = len(category_data)
+                            avg_psi = category_data["Actual PSI"].mean()
+                            axes[0, 0].text(
+                                category, 1.25, f"# Points: {num_points}\nAvg PSI: {avg_psi:.2f}", 
+                                ha='center', va='bottom', color="black", fontsize=12, 
+                            )
+
+                        assert interaction_shap_data.shape[0] > 20, logger.error(f"Interaction SHAP data has less than 20 rows for {cell_line} - {interaction_term}.")
+                        # Placeholder for SHAP data related plots
+                        sns.violinplot(x="Category", y="Local SHAP", hue="RBP", data=combined_shap_data, ax=axes[1, 0], order=category_order, hue_order=rbp_order, palette=plot_colors[1:], density_norm="width")
+                        axes[1, 0].set_title("Non-Summed Local SHAP", fontsize=14)
+                        axes[1, 0].set_ylabel("Local SHAP", fontsize=14)
+                        axes[1, 0].legend(loc='lower right', fontsize=10)
+                        axes[1, 0].tick_params(axis='x', labelsize=12)
+                        axes[1, 0].set_xlabel("")
+
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", FutureWarning)
+                            sns.violinplot(x="Category", y="Summed SHAP", data=combined_summed_shap_data, ax=axes[1, 1], order=category_order, palette=plot_colors, density_norm="width")
+                        
+                        axes[1, 1].set_title("Summed Local SHAP", fontsize=14)
+                        axes[1, 1].set_ylabel("Summed Local SHAP", fontsize=14)
+                        axes[1, 1].tick_params(axis='x', labelsize=12)
+                        axes[1, 1].set_xlabel("")
+
+                        axes[1, 0].axhline(0, color='red', linestyle='--', linewidth=2)
+                        axes[1, 1].axhline(0, color='red', linestyle='--', linewidth=2)
+
+                        # Remove the first row second column plot
+                        fig.delaxes(axes[0, 1])
+                        axes[0, 0].set_position([0.1, 0.55, 0.8, 0.35])
+                        
+                        fig.suptitle(f"{cell_line}: {binding_col1.replace('_', ' @ ')} & {binding_col2.replace('_', ' @ ')}\nNOTE: all plots made with ENTIRE dataset.", fontsize=18, y=1.02)
+                        plt.savefig(PLOT_FILE, bbox_inches='tight', dpi=200)
+                        plt.close()
+                    else: 
+                        missing_data[cell_line].add(interaction_term)
 
 
     def plot_srsf_and_hnrnp_local_shap_distributions(self): 
