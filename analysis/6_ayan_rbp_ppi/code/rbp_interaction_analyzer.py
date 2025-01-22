@@ -1803,37 +1803,84 @@ class RbpInteractionAnalyzer:
 
                     subset_data = data.select([interaction_col, binding_col1, binding_col2, "Actual PSI"]).to_pandas()
 
-                    X = subset_data[[interaction_col, binding_col1, binding_col2]]
-                    y = subset_data["Actual PSI"]
-
-                    X = sm.add_constant(X)
-                    ols_model = sm.OLS(y, X).fit()
-
                     interaction_count = subset_data[interaction_col].sum()
                     exclusive_binding_count = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])].shape[0]
 
                     interaction_mean_psi = subset_data[subset_data[interaction_col] == 1]["Actual PSI"].mean()
                     exclusive_binding_mean_psi = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])]["Actual PSI"].mean()
 
-                    interaction_mean_psi = subset_data[subset_data[interaction_col] == 1]["Actual PSI"].mean()
-                    exclusive_binding_mean_psi = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])]["Actual PSI"].mean()
+                    if interaction_count > 0:
+                        X = subset_data[[binding_col1, binding_col2, interaction_col]]
+                        y = subset_data["Actual PSI"]
 
-                        f"{cell_line} - Mean Actual PSI (Interaction Rows)": interaction_mean_psi,
+                        X = sm.add_constant(X)
+                        ols_model = sm.OLS(y, X).fit()
+                        
+                        interaction_beta_coefficient = ols_model.params[interaction_col]
+                        interaction_p_value = ols_model.pvalues[interaction_col]
+                    else:
+                        interaction_beta_coefficient = np.nan
+                        interaction_p_value = np.nan
+
                     results[cell_line].append({
-                        f"{cell_line} - Mean Actual PSI (Single Binders)": exclusive_binding_mean_psi,
                         "Interaction Term": interaction_col,
                         f"{cell_line} - # Interaction Rows": interaction_count,
-                        f"{cell_line} - Mean Actual PSI (Interaction Rows)": interaction_mean_psi,
+                        f"{cell_line} - Mean PSI (Interaction Rows)": interaction_mean_psi,
                         f"{cell_line} - # Single Binders": exclusive_binding_count,
-                        f"{cell_line} - Mean Actual PSI (Single Binders)": exclusive_binding_mean_psi,
-                        f"{cell_line} - Interaction Beta Coefficient": ols_model.params[interaction_col],
-                        f"{cell_line} - Interaction P-value": ols_model.pvalues[interaction_col],
+                        f"{cell_line} - Mean PSI (Single Binders)": exclusive_binding_mean_psi,
+                        f"{cell_line} - Difference in Mean PSI(Interaction - Single)": interaction_mean_psi - exclusive_binding_mean_psi,
+                        f"{cell_line} - Interaction Beta Coefficient": interaction_beta_coefficient,
+                        f"{cell_line} - Interaction P-value": interaction_p_value,
                     })
 
                 results[cell_line] = pd.DataFrame(results[cell_line]).set_index("Interaction Term")
             
             results_df = results["K562"].join(results["HepG2"], how="outer")
             results_df.to_csv(INDIVIDUAL_INTERACTION_TERM_OLS_CACHE_FILE, sep="\t", index=True)
+
+        
+    def merge_interaction_term_regression_tables(self): 
+        logger.info("Aggregating regression tables and statistics for All Position PPIs.")
+
+        if not hasattr(self, 'detailed_all_term_ppi_ols_lin_reg_results'):
+            self.run_all_ppi_features_and_interaction_term_ols_linear_regression()
+
+        if not hasattr(self, 'individual_interaction_term_ols_lin_reg_results'):
+            self.run_individual_interaction_term_ols_linear_regressions()
+
+        # Extract relevant columns
+        columns_of_interest = [col for col in self.detailed_all_term_ppi_ols_lin_reg_results.columns if "_All Data_" in col and "_All Pos. PPI" in col]
+        columns_of_interest.append("Parameter Name")
+        assert len(columns_of_interest) == 5, "Expected 5 columns in the subset."
+        # Subset the dataframe
+        
+
+        merged_df =  self.individual_interaction_term_ols_lin_reg_results.set_index(
+            "Interaction Term"
+        ).join(
+            self.detailed_all_term_ppi_ols_lin_reg_results[columns_of_interest].set_index("Parameter Name"), 
+            how="inner"
+        )
+
+        # Rename columns that begin with "Beta_" and "P-value_"
+        for col in merged_df.columns:
+            if col.startswith(("Beta_", "P-value_")):
+                cell_line = col.split("_")[2]
+                metric = "Beta" if col.startswith("Beta_") else "P-value"
+                new_col_name = f"{cell_line} - {metric} (trained on All Data and All Position PPI)"
+                merged_df = merged_df.rename(columns={col: new_col_name})
+                
+
+        merged_df["Same Position"] = merged_df.index.to_series().apply(
+            lambda x: x.split("_")[0].split("-")[1] == x.split("_")[1].split("-")[1]
+        )
+        merged_df.index.name = "Interaction Term"
+
+        column_order = ['Same Position', 'K562 - # Interaction Rows', 'K562 - Mean PSI (Interaction Rows)', 'K562 - # Single Binders', 'K562 - Mean PSI (Single Binders)', 'K562 - Difference in Mean PSI(Interaction - Single)', 'K562 - Interaction Beta Coefficient', 'K562 - Interaction P-value', 'K562 - Beta (trained on All Data and All Position PPI)', 'K562 - P-value (trained on All Data and All Position PPI)', 'HepG2 - # Interaction Rows', 'HepG2 - Mean PSI (Interaction Rows)', 'HepG2 - # Single Binders', 'HepG2 - Mean PSI (Single Binders)', 'HepG2 - Difference in Mean PSI(Interaction - Single)', 'HepG2 - Interaction Beta Coefficient', 'HepG2 - Interaction P-value', 'HepG2 - Beta (trained on All Data and All Position PPI)', 'HepG2 - P-value (trained on All Data and All Position PPI)']
+        merged_df = merged_df[column_order]
+
+        merged_df.to_csv("../output/ppi/ols_lin_reg_ppi_results/merged_interaction_term_regression_results.tsv", sep="\t", index=True)
+        return merged_df
 
 
     def plot_all_term_ppi_ols_lin_reg_performance(self):
