@@ -1812,10 +1812,20 @@ class RbpInteractionAnalyzer:
                     interaction_count = subset_data[interaction_col].sum()
                     exclusive_binding_count = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])].shape[0]
 
+                    interaction_mean_psi = subset_data[subset_data[interaction_col] == 1]["Actual PSI"].mean()
+                    exclusive_binding_mean_psi = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])]["Actual PSI"].mean()
+
+                    interaction_mean_psi = subset_data[subset_data[interaction_col] == 1]["Actual PSI"].mean()
+                    exclusive_binding_mean_psi = subset_data[(subset_data[binding_col1] != subset_data[binding_col2])]["Actual PSI"].mean()
+
+                        f"{cell_line} - Mean Actual PSI (Interaction Rows)": interaction_mean_psi,
                     results[cell_line].append({
+                        f"{cell_line} - Mean Actual PSI (Single Binders)": exclusive_binding_mean_psi,
                         "Interaction Term": interaction_col,
                         f"{cell_line} - # Interaction Rows": interaction_count,
+                        f"{cell_line} - Mean Actual PSI (Interaction Rows)": interaction_mean_psi,
                         f"{cell_line} - # Single Binders": exclusive_binding_count,
+                        f"{cell_line} - Mean Actual PSI (Single Binders)": exclusive_binding_mean_psi,
                         f"{cell_line} - Interaction Beta Coefficient": ols_model.params[interaction_col],
                         f"{cell_line} - Interaction P-value": ols_model.pvalues[interaction_col],
                     })
