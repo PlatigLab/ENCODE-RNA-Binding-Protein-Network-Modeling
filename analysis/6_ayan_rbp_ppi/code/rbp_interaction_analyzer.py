@@ -2119,6 +2119,135 @@ class RbpInteractionAnalyzer:
                         missing_data[cell_line].add(interaction_term)
 
 
+    def plot_summary_beta_coefficient_and_significance_from_all_term_ols_lin_reg(self): 
+
+        if not hasattr(self, 'detailed_all_term_ppi_ols_lin_reg_results'):
+            self.run_all_ppi_features_and_interaction_term_ols_linear_regression()
+
+        # Extract relevant columns
+        columns_of_interest = [col for col in self.detailed_all_term_ppi_ols_lin_reg_results.columns if "_All Data_" in col and "_All Pos. PPI" in col]
+        columns_of_interest.append("Parameter Name")
+        assert len(columns_of_interest) == 5, "Expected 5 columns in the subset."
+
+        # Subset the dataframe
+        subset_df = self.detailed_all_term_ppi_ols_lin_reg_results[columns_of_interest]
+        subset_df = subset_df[subset_df["Parameter Name"].str.endswith("_interaction")]
+
+        # Add "Both Cell Lines" column
+        subset_df["Both Cell Lines"] = subset_df.filter(like="Beta_").notnull().all(axis=1)
+        subset_df["Both Cell Lines"] = subset_df["Both Cell Lines"].astype(pd.CategoricalDtype(categories=[True, False], ordered=True))
+        
+        for col in columns_of_interest:
+            if col.startswith("P-value_"):
+                new_col_name = f"-log10(nominal P) {col}"
+                subset_df[new_col_name] = -np.log10(subset_df[col])
+
+        # Replace p-value columns in columns_of_interest with the -log10(nominal P) version
+        columns_of_interest = [
+            col if not col.startswith("P-value_") else f"-log10(nominal P) {col}" 
+            for col in columns_of_interest
+        ]
+
+        fig, axes = plt.subplots(2, 1, figsize=(8,8), dpi=200, sharex=True, sharey=True)
+
+        for ax, cell_line in zip(axes, self.cell_lines):
+            beta_col = f"Beta_All Data_{cell_line}_All Pos. PPI"
+            p_value_col = f"-log10(nominal P) P-value_All Data_{cell_line}_All Pos. PPI"
+
+            data = subset_df[["Parameter Name", beta_col, p_value_col, "Both Cell Lines"]]
+
+            scatter = sns.scatterplot(
+                x=beta_col, y=p_value_col, data=data, ax=ax, hue="Both Cell Lines", palette=["red", "blue"], legend=True
+            )
+
+            scatter.set_title(f"{cell_line}", fontsize=16)
+            scatter.set_xlabel("")
+            scatter.set_ylabel("")
+
+        fig.supxlabel("Beta Coefficient", fontsize=18)
+        fig.supylabel("-log10(nominal P)", fontsize=18)
+        fig.suptitle("Interaction Term Beta & Significance for Models\nNOTE: Trained on ALL Data AND Using All Position PPIs", fontsize=16, y=1)
+
+        plt.tight_layout()
+        plt.savefig("../output/ppi/ols_lin_reg_ppi_results/all_term/results/interaction_term_volcano_plot.png", bbox_inches='tight', dpi=200)
+        plt.show()
+
+        # Filter rows where "Both Cell Lines" is True
+        both_cell_lines_df = subset_df[subset_df["Both Cell Lines"] == True]
+
+        # Extract beta coefficient columns for the two cell lines
+        beta_col_k562 = "Beta_All Data_K562_All Pos. PPI"
+        beta_col_hepg2 = "Beta_All Data_HepG2_All Pos. PPI"
+
+        # Create scatter plot
+        plt.figure(figsize=(5,5), dpi=200)
+        sns.scatterplot(x=beta_col_k562, y=beta_col_hepg2, data=both_cell_lines_df, color='lightblue', edgecolor='black', s=20)
+
+        # Calculate Spearman correlation
+        spearman_corr, _ = scipy.stats.spearmanr(both_cell_lines_df[beta_col_k562], both_cell_lines_df[beta_col_hepg2])
+
+        # Add annotations
+        #TODO update title to say which models
+        plt.title("Beta Coefficients for Both Cell Lines", fontsize=16)
+        plt.xlabel("K562 Beta Coefficients", fontsize=14)
+        plt.ylabel("HepG2 Beta Coefficients", fontsize=14)
+        plt.text(0.05, 0.95, f"# Points: {both_cell_lines_df.shape[0]}\nSpearman r: {spearman_corr:.2f}", 
+            transform=plt.gca().transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+        plt.plot([-1.5, 1.5], [-1.5, 1.5], linestyle='--', color='red', linewidth=2)
+
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("../output/ppi/ols_lin_reg_ppi_results/all_term/results/both_cell_lines_beta_coefficients_scatter.png", bbox_inches='tight', dpi=200)
+        plt.show()
+
+        # Add RBP 1 and RBP 2 columns
+        subset_df["RBP 1"] = subset_df["Parameter Name"].str.split("_").str[0]
+        subset_df["RBP 2"] = subset_df["Parameter Name"].str.split("_").str[1]
+
+        # Create symmetric matrices for Beta coefficients and P values
+        beta_matrix = {}
+        p_value_matrix = {}
+
+        all_rbps = sorted(set(subset_df["RBP 1"]).union(set(subset_df["RBP 2"])))
+        for col in columns_of_interest:
+            if "Beta" in col:
+                cell_line = col.split("_")[2]
+                beta_matrix[cell_line] = subset_df.pivot(index="RBP 1", columns="RBP 2", values=col).reindex(index=all_rbps, columns=all_rbps, fill_value=np.nan).sort_index(axis=0).sort_index(axis=1)
+
+            elif "P-value" in col:
+                cell_line = col.split("_")[2]
+                p_value_matrix[cell_line] = subset_df.pivot(index="RBP 1", columns="RBP 2", values=col).reindex(index=all_rbps, columns=all_rbps, fill_value=np.nan).sort_index(axis=0).sort_index(axis=1)
+
+        for cell_line in beta_matrix:
+            assert beta_matrix[cell_line].index.equals(beta_matrix[cell_line].columns), f"Index and columns do not match for beta_matrix in {cell_line}"
+            assert p_value_matrix[cell_line].index.equals(p_value_matrix[cell_line].columns), f"Index and columns do not match for p_value_matrix in {cell_line}"
+            
+            assert beta_matrix[cell_line].index.is_unique, f"Duplicate values found in beta_matrix index for {cell_line}"
+            assert beta_matrix[cell_line].columns.is_unique, f"Duplicate values found in beta_matrix columns for {cell_line}"
+            assert p_value_matrix[cell_line].index.is_unique, f"Duplicate values found in p_value_matrix index for {cell_line}"
+            assert p_value_matrix[cell_line].columns.is_unique, f"Duplicate values found in p_value_matrix columns for {cell_line}"
+        
+        for matrix_type, matrix_dict in [("Beta Coefficient", beta_matrix), ("P-value", p_value_matrix)]:
+            for cell_line, matrix in matrix_dict.items():
+            
+                plt.figure(figsize=(60,60), dpi=200)
+                cmap = "bwr" if matrix_type == "Beta Coefficient" else "YlOrRd"
+                sns.heatmap(matrix, cmap=cmap, cbar=True, linewidths=0, linecolor='none', square=True, 
+                        cbar_kws={'label': matrix_type, 'shrink': 0.7, 'aspect': 30}, annot=False, 
+                        # vmin=matrix.min().min(), vmax=matrix.max().max(), 
+                        mask=matrix.isnull(), 
+                        edgecolor='yellow')
+                plt.title(f"{cell_line} - {matrix_type} (Trained Using All Data with All Pos. PPI)", fontsize=30)
+                plt.ylabel("RBPs Alphabetically Sorted", fontsize=20)
+                plt.xlabel("RBPs Alphabetically Sorted", fontsize=20)
+                plt.xticks(rotation=90)
+                plt.yticks(rotation=0)
+                plt.tight_layout()
+                plt.savefig(f"../output/ppi/ols_lin_reg_ppi_results/all_term/results/{cell_line}_{matrix_type.replace(' ', '_')}_heatmap.png", bbox_inches='tight', dpi=200)
+                plt.show()
+
+
     def plot_srsf_and_hnrnp_local_shap_distributions(self): 
         logger.info("Plotting local SHAP distributions for SRSF and HNRNP RBPs.")
 
