@@ -3,7 +3,7 @@ from loguru import logger
 from dataclasses import dataclass
 
 @dataclass
-class YogiRbpMlDataCreator:
+class YogiRbpMlDataValidatorAndExonAdder:
 
     cell_line: str
     distance: int
@@ -14,7 +14,7 @@ class YogiRbpMlDataCreator:
         logger.remove()
         logger.add(sys.stdout, level="INFO")
         logger.add(sys.stderr, level="ERROR")
-        logger.info(f"Creating YogiRbpMlDataCreator object for {self.cell_line} and {self.distance}")
+        logger.info(f"Creating YogiRbpMlDataValidatorAndExonAdder object for {self.cell_line} and {self.distance}")
 
         self.read_gtf()
         self.read_data()
@@ -141,7 +141,7 @@ class YogiRbpMlDataCreator:
 
         logger.info("Outputting data to CSV file and GZIP compressing")
 
-        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/2_yogi_dataset_RBP_ML_data_november_2024/"
+        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/3_yogi_dataset_january_2025/all_events/"
 
         # Output the DataFrame to a CSV file
         self.df.write_csv(f"{OUTPUT_DIR}/{self.cell_line}_{self.distance}_num-peaks-no-kd.tsv", separator="\t")
@@ -165,21 +165,21 @@ if __name__ == "__main__":
         assert not args.cell_line and not args.distance, "Both cell_line and distance arguments must be provided"
 
         cell_lines = ["K562", "HepG2",]
-        distances = ["25", "50", "75", "100", "125", "150", "175", "200", "225", "250", "500", "1000"]
+        distances = ["25", "50", "75", "100", "150", "200", "250", "500", "1000"]
 
         for cell_line in cell_lines: 
             for distance in distances:
 
-                output_file = f"/project/PlatigLab/data/RBP_ML/2_yogi_dataset_RBP_ML_data_november_2024/{cell_line}_{distance}_num-peaks-no-kd.tsv.gz"
+                output_file = f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_january_2025/all_events/{cell_line}_{distance}_num-peaks-no-kd.tsv.gz"
                 
                 if not os.path.exists(output_file):
                     os.system(
-                        f"sbatch --partition=standard --account=platiglab -N1 --mem=200GB --output=../SLURM_logs/exon_assignment_and_data_assertions_{cell_line}_{distance}.out --error=../SLURM_logs/exon_assignment_and_data_assertions_{cell_line}_{distance}.err --wrap='python3 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance}'"
+                        f"sbatch --partition=standard --account=platiglab -N1 -n7 --mem=200GB --output=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}.out --error=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}.err --wrap='python3.11 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance}'"
                     )
         
     else: 
         assert args.cell_line and args.distance, "Both cell_line and distance arguments must be provided"
-        YogiRbpMlDataCreator(args.cell_line, args.distance)
+        YogiRbpMlDataValidatorAndExonAdder(args.cell_line, args.distance)
 
 
 
