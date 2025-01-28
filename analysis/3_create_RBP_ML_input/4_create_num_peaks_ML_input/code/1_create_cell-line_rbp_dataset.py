@@ -74,7 +74,7 @@ control_associations = tmp_df.set_index("RBP KD").to_dict()["Control Accession"]
 ############################################
 # Get the rMATS file #
 ############################################
-rmats_file = [file for file in glob.glob("{}/{}-*{}*/SE.*".format(rmats_data_path, rbp, cell_line)) if "Transfection" not in file and rbp in selected_rbps]
+rmats_file = [file for file in glob.glob("{}/{}-*-{}/SE.*.txt".format(rmats_data_path, rbp, cell_line)) if "Transfection" not in file and rbp in selected_rbps]
 assert len(rmats_file)==1, print(rmats_file)
 
 rmats_file = rmats_file[0]
@@ -82,7 +82,7 @@ rmats_file = rmats_file[0]
 # paranoia check: the cell line should be the same as what's labeled on the folder 
 assert rmats_file.split("/")[-2].split("-")[2] == cell_line
 
-# read rMATS file and subset for relevant columns
+# read rMATS file
 rmats_df = pd.read_csv(rmats_file, sep="\t")
 
 
@@ -112,10 +112,11 @@ rmats_df =  rmats_df.to_dict(orient="records")
 ############################################
 junction_to_num_peaks = {}
 
-with gzip.GzipFile(f"../../3_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/{cell_line}_{threshold}.pkl.gz", 'rb') as in_file: 
+with gzip.GzipFile("../../3_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/all_RBP_peaks_num_per_splice_junction.pkl.gz", 'rb') as in_file: 
     junction_to_num_peaks = pickle.load(in_file)
-        
-        
+    junction_to_num_peaks = junction_to_num_peaks[cell_line][threshold]
+    
+    
 ############################################
 # CRUX OF THE SCRIPT #
 # Create the ML input data #
@@ -240,7 +241,6 @@ for row in rmats_df:
 print(
     [{"all_zero_events": all_zero_events, "total_events": len(ML_input_data), "kd_binding_present": kd_binding_present}]
 )
-
 
 ML_input_data = pd.DataFrame.from_dict(ML_input_data, orient="index")
 
