@@ -2356,9 +2356,24 @@ class RbpInteractionAnalyzer:
             logger.success("Feature interaction R2 table created and saved.")
 
 
-
     def tmp(self): 
-        pass
+        
+        fig, axes = plt.subplots(2, 2, figsize=(16, 8), dpi=200, sharex=False, sharey=True)
+
+        for row, cell_line in enumerate(self.cell_lines):
+            data = self.xgboost_ppi[cell_line].select(["Data Partition", "graph_index", "target", "Total Binding"]).unique("graph_index").to_pandas()
+
+            for col, column in enumerate(["Total Binding", "target"]):
+                ax = axes[row, col]
+                sns.histplot(data=data, x=column, hue="Data Partition", hue_order=["train", "validate", "test"], multiple="dodge", ax=ax, palette=["red", "green", "blue"], bins=50, stat="percent", shrink=0.7)
+
+                ax.set_title(f"{cell_line} - {column}", fontsize=14)
+                ax.set_xlabel(column, fontsize=12)
+                ax.set_ylabel("Percentage", fontsize=12)
+
+        fig.suptitle("Distributions of Total Binding and Target by Data Partition", fontsize=16)
+        plt.tight_layout()
+        plt.show()
 
 
 if __name__ == "__main__":

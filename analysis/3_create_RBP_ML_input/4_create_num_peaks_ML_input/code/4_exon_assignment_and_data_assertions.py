@@ -55,7 +55,8 @@ class YogiRbpMlDataValidatorAndExonAdder:
         df = df.rename({df.columns[0]: "index"})
 
         self.df = df 
-
+        # Save the original number of rows and columns
+        self.original_shape = self.df.shape
 
     def check_coordinate_ordering(self):
             
@@ -143,6 +144,9 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
         OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/3_yogi_dataset_january_2025/all_events/"
 
+        # Check that there are the same number of rows and 3 more columns compared to the original shape
+        assert self.df.shape[0] == self.original_shape[0], "Number of rows has changed"
+        assert self.df.shape[1] == self.original_shape[1] + 3, "Number of columns is not as expected"
         # Output the DataFrame to a CSV file
         self.df.write_csv(f"{OUTPUT_DIR}/{self.cell_line}_{self.distance}_num-peaks-no-kd.tsv", separator="\t")
 
