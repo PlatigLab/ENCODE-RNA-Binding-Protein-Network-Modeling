@@ -3,7 +3,7 @@ import argparse
 import wandb
 import os
 
-from platiglib.model.model_evaluation import XGBoostModelEvaluation, get_default_params
+from platiglib.model.evaluation import XGBoostModelEvaluation, get_default_params
 from platiglib.data.rbpse_dataset import RBPSEDataset                  # here for dynamic class loading
 from xgboost import XGBRegressor
 

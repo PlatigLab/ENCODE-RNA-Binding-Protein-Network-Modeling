@@ -7,14 +7,14 @@ import argparse
 
 # WandB entity and project
 WANDB_ENTITY = "platiglab"
-WANDB_PROJECT = "rbp-se"
+WANDB_PROJECT = "rbp-se-pipeline-dev2"
 
-MODEL_NAME = 'elasticnet'
+MODEL_NAME = 'hiervq'
 SCRIPT_NAME = f'wandb_run_{MODEL_NAME}.py'
 SWEEP_NAME = f'{MODEL_NAME}_sweep'
-MEMORY_GB = 128
-CPUS = 8
-USE_GPU = False
+MEMORY_GB = 64
+CPUS = 4
+USE_GPU = True
 
 sweep_configuration = {
     'method': 'grid',
@@ -23,9 +23,25 @@ sweep_configuration = {
         'goal': 'maximize'
     },
     'parameters': {
-        # 'dataset.cell_line': {
-        #     'values': ['HepG2', 'K562'],
+        # 'training.optim.lr': {
+        #     'values': [1e-5, 1e-3, 1e-1],
         # },
+        # 'model.ent_reg': {
+        #     'values': [0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+        # },
+        # 'model.allow_negative': {
+        #     'values': [False, True],
+        # },
+        'model.l2_reg': {
+           'values': [0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+        },
+        'model.temperature': {
+           # 'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
+            'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1e0],
+        },
+        #'dataset.cell_line': {
+         #    'values': ['HepG2', 'K562'],
+         #},
         #'dataset.min_read_count': {
             #'values': [None, 10, 20, 40, 100, 200, 400],
         #},
@@ -38,12 +54,24 @@ sweep_configuration = {
         # 'model.n_estimators': {
         #     'values': [100, 200, 500],
         # },
-        # 'model.max_depth': {
-        #     'values': [3, 5, 7, 9],
+        # 'model.nhead': {
+        #     'values': [1, 2, 4],
         # },
-        # 'training.seed': {
-        #     'values': [4232, 451, 2352],#, 321, 9491],
+        # 'model.d_model': {
+        #     'values': [4, 8, 16, 32, 64],
         # },
+        # 'model.dropout': {
+        #     'values': [0.1, 0.5],
+        # },
+        # 'model.num_encoder_layers': {
+        #     'values': [1, 2],
+        # },
+        # 'model.dim_feedforward': {
+        #     'values': [8, 16, 64, 128],
+        # },
+        #  'training.seed': {
+        #      'values': list(range(1000, 1100)),#[4232, 451, 2352],#, 321, 9491],
+        #  },
         # 'model.hidden_dim': {
         #     'values': [4, 6, 8, 12, 16, 20, 40],
         # },
@@ -53,15 +81,15 @@ sweep_configuration = {
         # 'model.num_codewords': {
         #     'values': [(i, j) for i in [4, 6] for j in [6, 8, 10, 12]],
         # },
-        #'model.l1_reg': {
+        #'model.alpha': {
+        #   'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
+        #},
+        # 'model.comm_reg': {
         #    'values': [0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
-        #},
-        #'model.temperature': {
-        #    'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
-        #},
-        'model.alpha': {
-           'values': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 0.2, 0.3, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0],
-        },
+        # },
+        # 'model.comm_beta': {
+        #     'values': [0.1, 0.25, 0.5, 0.75, 0.9],
+        # },
     }
 }
 

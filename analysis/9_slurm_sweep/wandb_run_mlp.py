@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from platiglib.model.model_evaluation import PytorchModelEvaluation, get_default_params
+from platiglib.model.evaluation import PytorchModelEvaluation, get_default_params
 from platiglib.data.rbpse_dataset import RBPSEDataset                  # here for dynamic class loading
 
 # Configure logging

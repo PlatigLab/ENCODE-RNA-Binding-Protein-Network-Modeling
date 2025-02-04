@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --time=01:00:00
+#SBATCH --time=24:00:00
 #SBATCH --job-name=python_script
 #SBATCH --output=./logs/%x.out
 #SBATCH --error=./logs/%x.err
