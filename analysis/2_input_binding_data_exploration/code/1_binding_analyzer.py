@@ -800,10 +800,98 @@ class YogiBindingPatternAnalyzer:
         logger.success(f"Chromosomes used table saved as image to {TABLE_DIR / 'chromosomes_used.png'}")
 
 
+    def calculate_stability_of_xgboost_expected_values(self):
 
-    def calculate_SHAP_values(self):
-        
-        pass 
+        self.shap_expected_values = {}
+        pickle_file_path = pathlib.Path("../outputs/shap/stability/shap_expected_values.pkl")
+
+        if pickle_file_path.exists():
+            logger.info("FROM CACHE: Loading SHAP expected values...")
+
+            with open(pickle_file_path, "rb") as f:
+                self.shap_expected_values = pickle.load(f)
+            
+            for key, values_dict in self.shap_expected_values.items():
+                for cell_line, values in values_dict.items():
+                    for i, value in enumerate(values):
+                        if not isinstance(value, (int, float)):
+                            assert isinstance(value, np.ndarray) and value.size == 1, f"Expected a numpy array of size 1, but got {value}"
+                            self.shap_expected_values[key][cell_line][i] = value.item()
+
+            logger.success("SHAP expected values loaded successfully.")
+
+        else:
+            logger.info("Calculating SHAP expected values...")
+            self.shap_expected_values = {"reinstantiated_training_data": {}, "no_training_data": {}}
+
+            for cell_line in self.cell_lines:
+                expected_values = []
+
+                for _ in range(50):
+                    X_test = self.modeling_input_data[cell_line].filter(pl.col("chr").is_in(self.test_set)).select(self.binding_cols[cell_line])
+                    X_test = X_test.sample(fraction=1, with_replacement=False).to_pandas()
+                    
+                    explainer = shap.TreeExplainer(self.xgboost_fitted_models[cell_line], data=X_test)
+                    expected_values.append(explainer.expected_value)
+                
+                self.shap_expected_values["reinstantiated_training_data"][cell_line] = expected_values
+            
+            for cell_line in self.cell_lines:
+                expected_values = []
+
+                for _ in range(50):
+                    explainer = shap.TreeExplainer(self.xgboost_fitted_models[cell_line])
+                    expected_values.append(explainer.expected_value)  
+                
+                self.shap_expected_values["no_training_data"][cell_line] = expected_values
+
+            with open(pickle_file_path, "wb") as f:
+                pickle.dump(self.shap_expected_values, f)
+
+            logger.success("SHAP expected values calculated and saved successfully.")
+
+
+    def plot_stability_of_xgboost_expected_values(self):
+
+        if not hasattr(self, "shap_expected_values"):
+            self.calculate_stability_of_xgboost_expected_values()
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharey=True, sharex=True)
+
+        for ax, (key, values_dict) in zip(axes, self.shap_expected_values.items()):
+            data = []
+            for cell_line, values in values_dict.items():
+                for value in values:
+                    data.append([cell_line, value])
+            
+            df = pd.DataFrame(data, columns=["Cell Line", "Expected Value"])
+
+            sns.swarmplot(
+                x="Cell Line", 
+                y="Expected Value", 
+                data=df, 
+                ax=ax, 
+                color="red", 
+                edgecolor="black", 
+                size=2, 
+                linewidth= 0.5
+            )
+
+            
+            subplot_title = "Re-retrieving and Randomly Ordering \nTraining Data each Time" if key == "reinstantiated_training_data" else "No Input Data for SHAP Explainer"
+            num_points = len(df[df["Cell Line"] == df["Cell Line"].unique()[0]])
+            
+            ax.set_title(f"{subplot_title} (n={num_points})", fontsize=16)
+            ax.set_ylabel('')
+            ax.set_xlabel('')
+
+        plt.suptitle("Expected Value of SHAP Explainer by Method", fontsize=20)
+        fig.supxlabel("Cell Line", fontsize=16, y=0.02)
+        fig.supylabel("Expected Value", fontsize=16, x=-0.02)
+
+        plt.tight_layout()
+        plt.show()
+
 
 
 
