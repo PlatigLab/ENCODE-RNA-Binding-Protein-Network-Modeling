@@ -7,6 +7,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
     cell_line: str
     distance: int
+    data_mode: str 
 
     
     def __post_init__(self):
@@ -14,7 +15,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
         logger.remove()
         logger.add(sys.stdout, level="INFO")
         logger.add(sys.stderr, level="ERROR")
-        logger.info(f"Creating YogiRbpMlDataValidatorAndExonAdder object for {self.cell_line} and {self.distance}")
+        logger.info(f"Creating YogiRbpMlDataValidatorAndExonAdder object for {self.cell_line}, {self.distance}, {self.data_mode}")
 
         self.read_gtf()
         self.read_data()
@@ -44,10 +45,10 @@ class YogiRbpMlDataValidatorAndExonAdder:
         self.gtf = gtf
 
     
-    def read_data(self,): 
+    def read_data(self): 
 
-        file = glob.glob(f"../final_modeling_input_datasets/{self.cell_line}_{self.distance}_*.gz")
-        assert len(file)==1, f"More than one file found for {self.cell_line} and {self.distance}"
+        file = glob.glob(f"../final_modeling_input_datasets/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv.gz")
+        assert len(file)==1, f"More than one file found for {self.cell_line}, {self.distance}, {self.data_mode}"
 
         # Load the DataFrame
         df = pl.read_csv(file[0], has_header=True, separator="\t")
@@ -57,6 +58,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
         self.df = df 
         # Save the original number of rows and columns
         self.original_shape = self.df.shape
+
 
     def check_coordinate_ordering(self):
             
@@ -142,48 +144,57 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
         logger.info("Outputting data to CSV file and GZIP compressing")
 
-        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/3_yogi_dataset_january_2025/all_events/"
+        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/"
 
         # Check that there are the same number of rows and 3 more columns compared to the original shape
         assert self.df.shape[0] == self.original_shape[0], "Number of rows has changed"
         assert self.df.shape[1] == self.original_shape[1] + 3, "Number of columns is not as expected"
         # Output the DataFrame to a CSV file
-        self.df.write_csv(f"{OUTPUT_DIR}/{self.cell_line}_{self.distance}_num-peaks-no-kd.tsv", separator="\t")
+        self.df.write_csv(f"{OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv", separator="\t", include_header=True)
 
         # Compress the CSV file
-        os.system(f"gzip {OUTPUT_DIR}/{self.cell_line}_{self.distance}_num-peaks-no-kd.tsv")
+        os.system(f"gzip {OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv")
 
         logger.success("Data outputted and compressed successfully")
 
 
 if __name__ == "__main__":
 
+    DATA_VERSION = "Version 3 - February 9th, 2025\n"
+
     parser = argparse.ArgumentParser(description="Create exon assignment and run data assertions for Yogi RBP ML data")
     parser.add_argument("--parallelize", action="store_true", help="Flag to parallelize the process")
     parser.add_argument("--cell_line", type=str, help="Specify the cell line")
     parser.add_argument("--distance", type=int, help="Specify the distance")
+    parser.add_argument("--data_mode", type=str, help="Specify the data mode")
 
     args = parser.parse_args()
 
     if args.parallelize:
-        assert not args.cell_line and not args.distance, "Both cell_line and distance arguments must be provided"
+        assert not args.cell_line and not args.distance and not args.data_mode, "cell_line, distance, and data_mode arguments must not be provided"
+
+        with open("/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/version.txt", "w") as version_file:
+            version_file.write(DATA_VERSION)
 
         cell_lines = ["K562", "HepG2",]
-        distances = ["25", "50", "75", "100", "150", "200", "250", "500", "1000"]
+        distances = [25, 50, 75, 100, 150, 200, 250, 500, 1000]
+        data_modes = ["all-events", "non-overlapping"]
+
 
         for cell_line in cell_lines: 
             for distance in distances:
+                for data_mode in data_modes:
 
-                output_file = f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_january_2025/all_events/{cell_line}_{distance}_num-peaks-no-kd.tsv.gz"
-                
-                if not os.path.exists(output_file):
-                    os.system(
-                        f"sbatch --partition=standard --account=platiglab -N1 -n7 --mem=200GB --output=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}.out --error=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}.err --wrap='python3.11 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance}'"
-                    )
+                    output_file = f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{distance}_{data_mode}_num-peaks-no-kd.tsv.gz"
+                    
+                    if not os.path.exists(output_file):
+                        os.system(
+                            f"sbatch --partition=standard --account=platiglab -N1 -n20 --mem=200GB --output=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.out --error=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.err --wrap='python3.11 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance} --data_mode {data_mode}'"
+                        )
         
     else: 
-        assert args.cell_line and args.distance, "Both cell_line and distance arguments must be provided"
-        YogiRbpMlDataValidatorAndExonAdder(args.cell_line, args.distance)
+        assert args.cell_line and args.distance and args.data_mode, "cell_line, distance, and data_mode arguments must be provided"
+        YogiRbpMlDataValidatorAndExonAdder(args.cell_line, args.distance, args.data_mode)
 
 
 
