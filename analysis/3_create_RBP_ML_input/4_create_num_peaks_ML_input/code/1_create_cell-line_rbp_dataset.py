@@ -12,12 +12,14 @@ parser = argparse.ArgumentParser(description='Process arguments.')
 parser.add_argument('--cell_line', type=str, help='Cell line')
 parser.add_argument('--rbp', type=str, help='RNA Binding Protein')
 parser.add_argument('--threshold', type=int, help='Threshold value')
+parser.add_argument('--data_mode', type=str, help='Data mode (i.e. all data or non-overlapping exon data)')
 
 args = parser.parse_args()
 
 cell_line = args.cell_line
 rbp = args.rbp
 threshold = args.threshold
+data_mode = args.data_mode
 
 
 ############################################
@@ -50,14 +52,22 @@ sample_names = ["KD-1", "KD-2", "CTRL-1", "CTRL-2"]
 ############################################
 # Get the RBPs chosen for the cell line  #
 ############################################
-file = glob.glob("../../3_assign_eCLIP_to_splice_junctions/output/bedtools_input/*{}*_sorted.bed".format(cell_line))
+file = glob.glob("../../3_assign_eCLIP_to_splice_junctions/output/eclip_and_shrna_rbps/{}_eclip_rbps.txt".format(cell_line))
 assert len(file)==1
 
-tmp_df = pd.read_csv(file[0], sep="\t", header=None) 
+with open(file[0], 'r') as f:
+    selected_rbps = sorted([line.strip() for line in f])
 
-selected_rbps = sorted(tmp_df[3].str.split("_").str[0].unique().tolist())
 
+############################################
+# Get the event ids that should be included #
+############################################
+expected_events_file = "../../3_assign_eCLIP_to_splice_junctions/output/SE_events/{}_{}.tsv".format(cell_line, data_mode)
 
+with open(expected_events_file, 'r') as f:
+    event_ids_to_include = {line.strip() for line in f}
+
+    
 ############################################
 # Get the association of RBP KD to control experiments #
 ############################################
@@ -85,7 +95,6 @@ assert rmats_file.split("/")[-2].split("-")[2] == cell_line
 # read rMATS file
 rmats_df = pd.read_csv(rmats_file, sep="\t")
 
-
 ############################################
 # Add RBP and sample-specific PSI and counts columns #
 ############################################
@@ -112,10 +121,9 @@ rmats_df =  rmats_df.to_dict(orient="records")
 ############################################
 junction_to_num_peaks = {}
 
-with gzip.GzipFile("../../3_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/all_RBP_peaks_num_per_splice_junction.pkl.gz", 'rb') as in_file: 
+with gzip.GzipFile("../../3_assign_eCLIP_to_splice_junctions/output/splice_junction_rbp_num_peaks/{}_RBP_peaks_per_splice_junction.pkl.gz".format(cell_line), 'rb') as in_file: 
     junction_to_num_peaks = pickle.load(in_file)
-    junction_to_num_peaks = junction_to_num_peaks[cell_line][threshold]
-    
+    junction_to_num_peaks = junction_to_num_peaks[data_mode][threshold]
     
 ############################################
 # CRUX OF THE SCRIPT #
@@ -139,105 +147,115 @@ for row in rmats_df:
                 [str(row[coord_column]) for coord_column in ["chr", "strand"] + [position_definition[str(i)] for i in range(1,7)]]
             )
             
-            if "KD" in sample: 
-                kd_ctrl_string = row["RBP_KD_Target"] 
-                associated_experiment = control_associations[row["RBP_KD_Target"]]
-            elif "CTRL" in sample: 
-                kd_ctrl_string = control_associations[row["RBP_KD_Target"]]
-                associated_experiment = row["RBP_KD_Target"]
-            
-            unique_id = "_".join(
-                [unique_id, kd_ctrl_string, sample]
-            )
-                                
-            if unique_id not in events_encountered: 
-                                
-                events_encountered.add(unique_id)
+            if all(substring not in unique_id for substring in ["_random", "chrUn_", "_alt"]):
+
+                if data_mode=="all-events": 
+                    assert unique_id in event_ids_to_include, print(unique_id)
                 
-                binding_present=False
-                binding_dict = {}
-                
-                for position in position_definition: 
-                    
-                    splice_junction_id = "_".join(
-                        [row["chr"], str(row[position_definition[position]]), row["strand"]]
-                    )
-                    
-                    if splice_junction_id in junction_to_num_peaks: 
-                        junction_present=True
-                    else: 
-                        junction_present=False
-                        
-                    for rbp in selected_rbps: 
+                if unique_id in event_ids_to_include:   
 
-                        feature_string = "_".join(
-                            [rbp, position, "binding"]
-                        ) 
-
-                        if junction_present: 
-                            tmp_num_peaks = junction_to_num_peaks[splice_junction_id][rbp]
-                            binding_dict[feature_string] = tmp_num_peaks
-
-                            if tmp_num_peaks > 0: 
-                                binding_present=True
-
-                        elif not junction_present: 
-                            binding_dict[feature_string] = 0
-                
-                if binding_present: 
-
-                    ML_input_data[unique_id] = copy.deepcopy(binding_dict)
-                    ML_input_data[unique_id]["chr"] = row["chr"]
-                                            
                     if "KD" in sample: 
-                        tmp_kd_target = row["RBP_KD_Target"]
-                        ML_input_data[unique_id]["RBP_KD_Target"] = row["RBP_KD_Target"]
-
-                        for i in range(1,7): 
-                            feature_string = "_".join([tmp_kd_target, str(i), "binding"])
-                            if ML_input_data[unique_id][feature_string] > 0: 
-                                kd_binding_present+=1
-
+                        kd_ctrl_string = row["RBP_KD_Target"] 
+                        associated_experiment = control_associations[row["RBP_KD_Target"]]
                     elif "CTRL" in sample: 
-                        ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"    
-
-                    ML_input_data[unique_id]["Sample Name"] = "_".join(
-                        [kd_ctrl_string, sample]
-                    )                    
+                        kd_ctrl_string = control_associations[row["RBP_KD_Target"]]
+                        associated_experiment = row["RBP_KD_Target"]
                     
-                    if sample=="KD-1": 
-                        ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_1"].split(",")[0])
-                        ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_1"].split(",")[0])
-                    
-                    elif sample=="KD-2": 
-                        ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_1"].split(",")[1])
-                        ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_1"].split(",")[1])
+                    unique_id = "_".join(
+                        [unique_id, kd_ctrl_string, sample]
+                    )
+                                        
+                    if unique_id not in events_encountered: 
+                                        
+                        events_encountered.add(unique_id)
                         
-                    elif sample=="CTRL-1": 
-                        ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_2"].split(",")[0])
-                        ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_2"].split(",")[0])
+                        binding_present=False
+                        binding_dict = {}
+
+                        for position in position_definition: 
+                            
+                            splice_junction_id = "_".join(
+                                [row["chr"], row["strand"], str(row[position_definition[position]])]
+                            )
+                            
+                            if splice_junction_id in junction_to_num_peaks: 
+                                junction_present=True
+                            else: 
+                                junction_present=False
+                                
+                            for rbp in selected_rbps: 
+
+                                feature_string = "_".join(
+                                    [rbp, position, "binding"]
+                                ) 
+
+                                if junction_present: 
+                                    tmp_num_peaks = junction_to_num_peaks[splice_junction_id][rbp]
+                                    binding_dict[feature_string] = tmp_num_peaks
+
+                                    if tmp_num_peaks > 0: 
+                                        binding_present=True
+
+                                elif not junction_present: 
+                                    binding_dict[feature_string] = 0
                         
-                    elif sample=="CTRL-2": 
-                        ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_2"].split(",")[1])
-                        ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_2"].split(",")[1])
+                        if binding_present: 
 
-                    ML_input_data[unique_id]["Total Read Counts"] = row["Counts_" + sample]
-                    ML_input_data[unique_id]["Target_PSI"] = row["PSI_"+sample] 
+                            ML_input_data[unique_id] = copy.deepcopy(binding_dict)
+                            ML_input_data[unique_id]["chr"] = row["chr"]
+                            ML_input_data[unique_id]["has_RBP_KD"] = False
+                                                    
+                            if "KD" in sample: 
+                                tmp_kd_target = row["RBP_KD_Target"]
+                                ML_input_data[unique_id]["RBP_KD_Target"] = row["RBP_KD_Target"]
 
-                    ML_input_data[unique_id]["rMATS Event ID"] = row["ID"]
-                    ML_input_data[unique_id]["ENSEMBL Gene ID"] = row["GeneID"]
-                    ML_input_data[unique_id]["Gene Name"] = row["geneSymbol"]
-                    ML_input_data[unique_id]["Associated Experiment"] = associated_experiment
-                    ML_input_data[unique_id]["Inclusion Isoform Length"] = row["IncFormLen"]
-                    ML_input_data[unique_id]["Skipping Isoform Length"] = row["SkipFormLen"]
+                                for i in range(1,7): 
+                                    feature_string = "_".join([tmp_kd_target, str(i), "binding"])
+                                    if ML_input_data[unique_id][feature_string] > 0: 
+                                        kd_binding_present+=1
+                                        row["has_RBP_KD"] = True    
 
-                    ML_input_data[unique_id]["Raw P-Val"] = row["PValue"]
-                    ML_input_data[unique_id]["FDR"] = row["FDR"]
-                    ML_input_data[unique_id]["DeltaPSI"] = row["IncLevelDifference"]
+                            elif "CTRL" in sample: 
+                                ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"    
 
-                else: 
-                    all_zero_events+=1
+                            ML_input_data[unique_id]["Sample Name"] = "_".join(
+                                [kd_ctrl_string, sample]
+                            )                    
+                            
+                            if sample=="KD-1": 
+                                ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_1"].split(",")[0])
+                                ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_1"].split(",")[0])
+                            
+                            elif sample=="KD-2": 
+                                ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_1"].split(",")[1])
+                                ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_1"].split(",")[1])
+                                
+                            elif sample=="CTRL-1": 
+                                ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_2"].split(",")[0])
+                                ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_2"].split(",")[0])
+                                
+                            elif sample=="CTRL-2": 
+                                ML_input_data[unique_id]["Inclusion Counts"] = int(row["IJC_SAMPLE_2"].split(",")[1])
+                                ML_input_data[unique_id]["Skipping Counts"] = int(row["SJC_SAMPLE_2"].split(",")[1])
 
+                            ML_input_data[unique_id]["Total Read Counts"] = row["Counts_" + sample]
+                            ML_input_data[unique_id]["Target_PSI"] = row["PSI_"+sample] 
+
+                            ML_input_data[unique_id]["rMATS Event ID"] = row["ID"]
+                            ML_input_data[unique_id]["ENSEMBL Gene ID"] = row["GeneID"]
+                            ML_input_data[unique_id]["Gene Name"] = row["geneSymbol"]
+                            ML_input_data[unique_id]["Associated Experiment"] = associated_experiment
+                            ML_input_data[unique_id]["Inclusion Isoform Length"] = row["IncFormLen"]
+                            ML_input_data[unique_id]["Skipping Isoform Length"] = row["SkipFormLen"]
+
+                            ML_input_data[unique_id]["Raw P-Val"] = row["PValue"]
+                            ML_input_data[unique_id]["FDR"] = row["FDR"]
+                            ML_input_data[unique_id]["DeltaPSI"] = row["IncLevelDifference"]
+
+
+                        else: 
+                            all_zero_events+=1
+    
 print(
     [{"all_zero_events": all_zero_events, "total_events": len(ML_input_data), "kd_binding_present": kd_binding_present}]
 )
@@ -245,7 +263,7 @@ print(
 ML_input_data = pd.DataFrame.from_dict(ML_input_data, orient="index")
 
 ML_input_data.to_csv(
-    "../output/{}_{}_{}_num-peaks-no-kd.tsv.gz".format(cell_line, args.rbp, threshold), 
+    "../output/{}_{}_{}_{}_num-peaks-no-kd.tsv.gz".format(cell_line, args.rbp, threshold, data_mode), 
     sep="\t",
     compression="gzip"
 )
