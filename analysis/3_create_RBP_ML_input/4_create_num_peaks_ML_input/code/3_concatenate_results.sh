@@ -5,12 +5,13 @@
 #SBATCH -n 2
 #SBATCH --output=../SLURM_output/final_dataset_creation_output_%A_%a.txt
 #SBATCH --error=../SLURM_output/final_dataset_creation_error_%A_%a.txt
-#SBATCH --mem=50GB
-#SBATCH --array=0-17
+#SBATCH --mem=55GB
+#SBATCH --array=0-35
 
 
 thresholds=(25 50 75 100 150 200 250 500 1000)
 cell_lines=(HepG2 K562)
+data_modes=("all-events" "non-overlapping")
 # data_value_variations=("binary-binding-only" "num-peaks-only" "expression-getmm_no-log_dose-dependent-expression" "expression-getmm_no-log_dose-independent-expression" "expression-getmm_yes-log_dose-dependent-expression" "expression-getmm_yes-log_dose-independent-expression" "expression-tmm_no-log_dose-dependent-expression" "expression-tmm_no-log_dose-independent-expression" "expression-tmm_yes-log_dose-dependent-expression" "expression-tmm_yes-log_dose-independent-expression")
 
 
@@ -22,7 +23,12 @@ do
     for threshold in "${thresholds[@]}"
     do
 
-        combo+=("${cell_line}_*_${threshold}_*.tsv.gz")
+        for data_mode in "${data_modes[@]}"
+        do 
+
+            combo+=("${cell_line}_*_${threshold}_${data_mode}_*.tsv.gz")
+
+        done
 
     done
 
@@ -36,9 +42,9 @@ combo=("${sorted_combo[@]}")
 
 # get the index of the combo array for this iteration
 find_string="${combo[${SLURM_ARRAY_TASK_ID}]}"
-echo $find_string
 
 files=($(find ../output/ -name "${find_string}" -type f | sort))
+echo "# files to concatenate: ${#files[@]}"
 
 # Replace asteriks/underscores and provide correct suffix in find_string
 output_file=../final_modeling_input_datasets/$(echo $find_string | sed 's/_//' | sed 's/\*//g' | sed 's/.tsv.gz//g')num-peaks-no-kd.tsv
@@ -61,8 +67,8 @@ do
 
 done
 
-# Remove rows containing "chrUn_" or "_random"
-sed -i '/chrUn_\|_random/d' "$output_file"
+# Remove rows containing "chrUn_" or "_random" or "_alt"
+sed -i '/chrUn_\|_random\|_alt/d' "$output_file"
 
 # Remove duplicate rows based on the first column
 awk '!seen[$1]++' "$output_file" > "${output_file}_temp"
