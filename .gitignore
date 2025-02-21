@@ -2,16 +2,16 @@
 __pycache__/
 
 # ignore individual counts files 
-analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/output/*
-analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/SLURM_output/*
+analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/output/
+analysis/3_create_RBP_ML_input/1_get_expression_from_BAMs/SLURM_output/
 
 # ignore normalized counts matrices
-analysis/3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs/*
+analysis/3_create_RBP_ML_input/2_normalize_raw_counts_matrices/outputs/
 
 # ignore the large data and SLURM output from creating the pre-cursor to the input ML data
-analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/final_modeling_input_datasets/*
-analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/output/*
-analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/SLURM_output/*
+analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/final_modeling_input_datasets/
+analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/output/
+analysis/3_create_RBP_ML_input/4_create_num_peaks_ML_input/SLURM_output/
 
 # ignore cache files 
 *.feather
@@ -23,4 +23,4 @@ SLURM_logs/
 wandb/
 
 # ignore ols regression matrices
-analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/*
+analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/
