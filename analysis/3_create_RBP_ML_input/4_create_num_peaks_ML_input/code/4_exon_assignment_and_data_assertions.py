@@ -160,7 +160,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
 if __name__ == "__main__":
 
-    DATA_VERSION = "Version 3 - February 9th, 2025\n"
+    DATA_VERSION = "Version_3.0_2025-02-09\n"
 
     parser = argparse.ArgumentParser(description="Create exon assignment and run data assertions for Yogi RBP ML data")
     parser.add_argument("--parallelize", action="store_true", help="Flag to parallelize the process")
