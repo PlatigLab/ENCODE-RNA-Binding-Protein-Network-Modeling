@@ -1,5 +1,5 @@
 import polars as pl, pandas as pd, seaborn as sns, matplotlib.pyplot as plt, numpy as np, xgboost as xgb
-import pathlib, glob, wandb, pickle, os
+import pathlib, glob, wandb, pickle, os, shap
 from matplotlib.colors import LogNorm
 
 from dataclasses import dataclass
@@ -893,6 +893,45 @@ class YogiBindingPatternAnalyzer:
         plt.show()
 
 
+
+    def calculate_xgboost_SHAP_values(self): 
+
+        SHAP_DIR = pathlib.Path("../outputs/shap/local_shap_values/")
+        self.shap_values = {}
+
+        if len(list(SHAP_DIR.glob("*.tsv"))) == 2:
+            pass
+            # logger.info("FROM CACHE: Loading SHAP values...")
+
+            # self.shap_values = {}
+            # for cell_line in self.cell_lines:
+            #     shap_file_path = SHAP_DIR / f"{cell_line}_shap_values.tsv"
+            #     self.shap_values[cell_line] = pd.read_csv(shap_file_path, sep='\t', index_col=0)
+
+            # logger.success("SHAP values loaded successfully.")
+
+        else:
+
+
+            for cell_line in self.cell_lines:
+
+                logger.info(f"Calculating SHAP values for {cell_line}...")
+
+                X_test = self.modeling_input_data[cell_line].filter(pl.col("chr").is_in(self.train_set)).select(self.binding_cols[cell_line] + ["index"]).sort("index").to_pandas().set_index("index")
+                all_data = self.modeling_input_data[cell_line].select(self.binding_cols[cell_line] + ["index"]).sort("index").to_pandas().set_index("index")
+
+                explainer = shap.TreeExplainer(self.xgboost_fitted_models[cell_line], data= X_test, feature_names=X_test.columns)
+
+                shap_values = pl.DataFrame(
+                    explainer.shap_values(all_data), 
+                    schema=all_data.columns.tolist()
+                )
+                shap_values = shap_values.with_columns(pl.Series("index", all_data.index).alias("index")).select(["index"] + all_data.columns.tolist())
+
+                output_path = SHAP_DIR / f"{cell_line}_xgboost_shap_values.feather"
+                shap_values.write_ipc(output_path, compression='lz4')
+
+                logger.success(f"SHAP values for {cell_line} saved to {output_path}")
 
 
 
