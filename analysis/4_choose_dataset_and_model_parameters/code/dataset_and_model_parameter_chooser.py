@@ -17,6 +17,11 @@ class DatasetAndModelParameterAnalyzer:
         'dataset.features.binding_matrix.window': "Junction Window"
     }
 
+    train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
+    validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
+    test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
+
+
     def __post_init__(self):
 
         self.retrieve_wandb_summary_tables()
@@ -115,7 +120,7 @@ class DatasetAndModelParameterAnalyzer:
                         separator='\t'
                     )
 
-                    
+
 
 
                     

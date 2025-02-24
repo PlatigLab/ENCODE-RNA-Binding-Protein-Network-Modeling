@@ -28,9 +28,9 @@ class YogiBindingPatternAnalyzer:
 
     psi_bins = [0.2, 0.8]
 
-    train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21', 'chrY']
+    train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
     validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
-    test_set = ["chr2", "chr8", "chr12", "chr16", "chr20", "chrX"]
+    test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
 
     random_seed = 17
 
