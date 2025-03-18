@@ -203,14 +203,25 @@ class DatasetAndModelParameterAnalyzer:
 
             data = self.sweep_results[type]
 
-            plt.figure(figsize=(5,3), dpi=200)
+            plt.figure(figsize=(8, 3), dpi=200)
 
-            sns.swarmplot(x='dataset.cell_line', y='val_r2_score', data=data, palette=['lightblue', 'lightcoral'], linewidth=1, edgecolor='black')
-            sns.boxplot(x='dataset.cell_line', y='val_r2_score', data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+            if type == 'dataset':
+                y_variable = 'val_r2_score'
+                y_label = 'Validation R2 Score'
+                size=5
+                linewidth=1
+            else:
+                y_variable = 'holdout_r2_score'
+                y_label = 'Holdout R2 Score'
+                size=1
+                linewidth=0.2
+
+            sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
+            sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
 
             plt.title(f'{type.capitalize()} Sweep: R2 Score Distribution')
             plt.xlabel('Cell Line')
-            plt.ylabel('Validation R2 Score')
+            plt.ylabel(y_label)
 
             plt.savefig(f"../output/summary_plots/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
             plt.show()
