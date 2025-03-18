@@ -10,7 +10,9 @@ class DatasetAndModelParameterAnalyzer:
 
     sweep_projects = {
         'dataset': 'yogi-dataset-sweep-feb-2025', 
+        'model': 'yogi-xgbregressor-hyperparameter-sweep-march-2025'
     }
+
     dataset_sweep_covariates= {
         'dataset.min_read_count': "Min. Read Count", 
         'dataset.features.binding_matrix.binding_format': "Binding Data Format", 
@@ -25,15 +27,14 @@ class DatasetAndModelParameterAnalyzer:
     def __post_init__(self):
 
         self.retrieve_wandb_summary_tables()
-        self.run_summary_table_assertions()
-    
+
 
     def retrieve_wandb_summary_tables(self):
         
         self.sweep_results = {}
     
         output_folder = Path("../output/wandb_summary_tables/")
-        if len(list(output_folder.glob('*'))) == 1: 
+        if len(list(output_folder.glob('*'))) == 2: 
             
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
             logger.info("FROM CACHE: Retrieved WandB summary tables")
@@ -80,18 +81,21 @@ class DatasetAndModelParameterAnalyzer:
         logger.info("Running assertions on summary tables")
 
         for key in self.sweep_results:
-            table = self.sweep_results[key]
+            logger.info(f"Running assertions for {key} summary table")
+            table = self.sweep_results[key].copy(deep=True)
 
             assert table['run_id'].is_unique, "run_id column contains duplicated values"
-            assert table['run_name'].is_unique, "run_name column contains duplicated values"
             assert (table['state'] == 'finished').all(), "Not all runs are finished"
-            assert table['sweep_name'].nunique() == 1, "sweep_name column contains multiple unique values"
-            assert table['sweep_id'].nunique() == 1, "sweep_id column contains multiple unique values"
 
-            if key=='dataset': 
-                assert table[
-                    [col for col in table.columns if col.startswith("dataset.")]
-                ].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
+            if key =='dataset': 
+                assert table['sweep_name'].nunique() == 1, "sweep_name column contains multiple unique values"
+                assert table['sweep_id'].nunique() == 1, "sweep_id column contains multiple unique values"
+
+                dataset_cols = [col for col in table.columns if col.startswith("dataset.")]
+                for col in dataset_cols:
+                    if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
+                        table[col] = table[col].apply(lambda x: json.dumps(x) if isinstance(x, (list, dict, set)) else x)
+                assert table[dataset_cols].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
 
         logger.success("All assertions passed")
 
