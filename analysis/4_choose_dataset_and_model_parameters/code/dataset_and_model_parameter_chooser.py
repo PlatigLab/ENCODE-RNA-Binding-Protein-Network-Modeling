@@ -197,48 +197,15 @@ class DatasetAndModelParameterAnalyzer:
         self.matrix_stats_df = data_stats_df
 
                     
-    def plot_r2_distributions(self): 
 
-        for type in self.sweep_results:
+            
 
-            data = self.sweep_results[type]
-
-            plt.figure(figsize=(8, 3), dpi=200)
-
-            if type == 'dataset':
-                y_variable = 'val_r2_score'
-                y_label = 'Validation R2 Score'
-                size=5
-                linewidth=1
-            else:
-                y_variable = 'holdout_r2_score'
-                y_label = 'Holdout R2 Score'
-                size=1
-                linewidth=0.2
-
-            sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
-            sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
-
-            plt.title(f'{type.capitalize()} Sweep: R2 Score Distribution')
-            plt.xlabel('Cell Line')
-            plt.ylabel(y_label)
-
-            plt.savefig(f"../output/summary_plots/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-
-    
-    def plot_r2_per_covariate(self, type=None): 
-
-        assert type in self.sweep_results, f"Type {type} not found in sweep results"
+    def plot_dataset_r2_per_covariate(self): 
 
         if not hasattr(self, 'matrix_stats_df'):
             self.load_aggreated_data_stats()
-
-        if type == 'dataset': 
-            covariates = self.dataset_sweep_covariates
         
-        for covariate in covariates:
+        for covariate in self.dataset_sweep_covariates:
             if covariate in ['dataset.min_read_count', 'dataset.features.binding_matrix.window']:
                 fig, axes = plt.subplots(2, 1, figsize=(8, 7), dpi=300, sharex=True, gridspec_kw={'hspace': 0.3})
                 ax_top, ax_bottom = axes
@@ -246,8 +213,8 @@ class DatasetAndModelParameterAnalyzer:
                 fig, ax_top = plt.subplots(figsize=(8, 3), dpi=300)
                 ax_bottom = None
 
-            sns.swarmplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, palette='Set2', linewidth=1, edgecolor='black', ax=ax_top)
-            sns.boxplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False, ax=ax_top)
+            sns.swarmplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, palette='Set2', linewidth=1, edgecolor='black', ax=ax_top)
+            sns.boxplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False, ax=ax_top)
 
             handles, labels = ax_top.get_legend_handles_labels()
             n = len(handles) // 2
