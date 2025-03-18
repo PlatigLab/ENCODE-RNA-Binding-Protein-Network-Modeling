@@ -326,6 +326,39 @@ class DatasetAndModelParameterAnalyzer:
         plt.close()
 
 
+    def plot_1D_sweep_results(self): 
+
+        model_sweep = self.sweep_results["model"].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['sweep_name'].str.startswith("1D_")]
+
+        model_sweep['xgboost_hyperparameter'] = model_sweep['sweep_name'].apply(lambda x: "_".join(x.split("_")[1:]))
+        unique_hyperparameters = model_sweep['xgboost_hyperparameter'].unique()
+
+        for hyperparameter in unique_hyperparameters:
+            subset = model_sweep[model_sweep['xgboost_hyperparameter'] == hyperparameter]
+            subset = subset.sort_values(by=f"model.{hyperparameter}")
+
+            plt.figure(figsize=(12, 4), dpi=300)
+            sns.swarmplot(
+                x=f"model.{hyperparameter}", y="holdout_r2_score", hue="dataset.cell_line", 
+                data=subset, palette=['red', 'blue'], linewidth=1, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
+            )
+            sns.boxplot(
+                x=f"model.{hyperparameter}", y="holdout_r2_score", hue="dataset.cell_line", 
+                data=subset, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
+                whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+                showfliers=False, hue_order=["K562", "HepG2"], dodge=True
+            )
+
+            handles, labels = plt.gca().get_legend_handles_labels()
+            n = len(handles) // 2
+            plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line')
+
+            plt.title(f'1D Hyperparameter Sweep: {hyperparameter}')
+            plt.xlabel(f'Value for "{hyperparameter}"')
+            plt.ylabel('Holdout R2 Score')
+
+            plt.savefig(f"../output/summary_plots/model_{hyperparameter}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
             plt.show()
             plt.close()
 
