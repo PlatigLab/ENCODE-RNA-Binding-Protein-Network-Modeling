@@ -1,5 +1,5 @@
 import pandas as pd, seaborn as sns, matplotlib.pyplot as plt, polars as pl
-import wandb, json, pickle
+import wandb, json, argparse, os, sys, glob
 
 from dataclasses import dataclass
 from loguru import logger
@@ -13,8 +13,8 @@ class DatasetAndModelParameterAnalyzer:
     }
     dataset_sweep_covariates= {
         'dataset.min_read_count': "Min. Read Count", 
-        'dataset.features.binding_matrix.binding_format': "eCLIP Data Type", 
-        'dataset.features.binding_matrix.window': "Junction Window"
+        'dataset.features.binding_matrix.binding_format': "Binding Data Format", 
+        'dataset.features.binding_matrix.window': "Window"
     }
 
     train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
@@ -96,36 +96,103 @@ class DatasetAndModelParameterAnalyzer:
         logger.success("All assertions passed")
 
 
-    def calculate_num_examples_and_average_binding(self): 
+    def calculate_num_examples_and_average_binding(self, cell_line, window, min_read_count): 
+        min_read_count = int(min_read_count)
+        
+        df = pl.scan_csv(
+            f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{window}_all-events_num-peaks-no-kd.tsv.gz", 
+            has_header=True, 
+            separator='\t'
+        ).filter(
+            pl.col("Total Read Counts") > min_read_count
+        ).collect()
+        assert df['index'].n_unique() == df.shape[0], "The 'index' column contains duplicate values"
 
-        pkl_file = Path("../output/data_matrix_stats/").glob("*.pkl")
+        validate_count = df.filter(pl.col("chr").is_in(self.validate_set)).shape[0]
+        test_count = df.filter(pl.col("chr").is_in(self.test_set)).shape[0]
 
-        if len(pkl_file) == 1:
-            logger.info("FROM CACHE: Loading num examples and average binding from pickle file")
+        binding_cols = [col for col in df.columns if col.endswith("_binding")]
+        df = df.with_columns([
+            pl.when(pl.col(col) > 1).then(1).otherwise(pl.col(col)).alias(col) 
+            for col in binding_cols
+        ])
+        
+        assert all(df[col].max() <= 1 for col in binding_cols), "Some values in binding columns are greater than 1"
+        original_binding_data_shape = df.shape
 
-            with open(pkl_file[0], 'rb') as f:
-                data_matrix_stats = pickle.load(f)
+        unique_rbp_kd_targets = sorted(df["RBP_KD_Target"].unique().to_list())
+        modified_dfs = []
+        for rbp_kd_target in unique_rbp_kd_targets:
+            subset_df = df.filter(pl.col("RBP_KD_Target") == rbp_kd_target)
 
-        else:
-            logger.info("Calculating num examples and average binding")
+            if rbp_kd_target != "CTRL":
+                binding_cols_to_zero = [col for col in binding_cols if col.startswith(f"{rbp_kd_target}_")]
+                assert len(binding_cols_to_zero) ==6, print(binding_cols_to_zero)
+                
+                subset_df = subset_df.with_columns([
+                    pl.lit(0).alias(col) for col in binding_cols_to_zero
+                ])
 
-            data_matrix_stats = {}
+            modified_dfs.append(subset_df)
 
-            for cell_line in self.sweep_results['dataset']['dataset.cell_line'].unique(): 
-                for window in self.sweep_results['dataset']['dataset.features.binding_matrix.window'].unique():
+        df = pl.concat(modified_dfs, how='vertical_relaxed')
+        assert df.shape == original_binding_data_shape, "Dataframe shape changed after modification"
 
-                    tmp_df = pl.scan_csv(
-                        f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{window}_all-events_num-peaks-no-kd.tsv.gz", 
-                        has_header=True, 
-                        separator='\t'
-                    )
+        horizontal_sum = df.select(binding_cols).sum_horizontal()
+        average_binding = (horizontal_sum.sum()) / (df.shape[0] * 6)
+
+        output_dict = {
+            "cell_line": cell_line,
+            "window": window,
+            "min_read_count": min_read_count,
+            "avg_binding_per_graph_per_window": average_binding,
+            "total_examples": df.shape[0],
+            "validate_count": validate_count,
+            "test_count": test_count
+        }
+
+        output_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_stats.json"
+        with open(output_file, 'w') as f:
+            json.dump(output_dict, f, indent=4)
+        
+        # Plot the histogram of the distribution of these sums
+        plt.figure(figsize=(7, 4), dpi=200)
+
+        bins = list(range(1, 12))  # Bins from 1 to 10, and one bin for >10
+        horizontal_sum = horizontal_sum.clip(upper_bound=11)  # Clip values greater than 10 to 11
+        sns.histplot(horizontal_sum, bins=bins, color='skyblue', edgecolor='black')
+
+        plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nValues greater than 10 clipped to 11', y=1.01)
+        plt.xlabel('# Bindings per Graph')
+        plt.ylabel('Frequency')
+
+        # Save the plot
+        plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_bindings_per_graph.png"
+        plt.savefig(plot_file, dpi=200)
+        plt.close()
+
+        # Plot the histogram of the "Target_PSI" values
+        plt.figure(figsize=(7, 4), dpi=200)
+        sns.histplot(df['Target_PSI'], bins=50, color='skyblue', edgecolor='black')
+
+        plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nDistribution of Target_PSI', y=1.01)
+        plt.xlabel('Target_PSI')
+        plt.ylabel('Frequency')
+
+        # Save the plot
+        psi_plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_target_psi_distribution.png"
+        plt.savefig(psi_plot_file, dpi=200)
+        plt.close()
+
+        logger.success(f"Calculated and saved stats for {cell_line}, {window}, {min_read_count}")
 
 
-
+    def load_aggreated_data_stats(self):
+        
+        data_stats_df = pd.read_csv("../output/data_matrix_stats/data_stats.tsv", sep="\t")
+        self.matrix_stats_df = data_stats_df
 
                     
-
-    
     def plot_r2_distributions(self): 
 
         for type in self.sweep_results:
@@ -166,3 +233,69 @@ class DatasetAndModelParameterAnalyzer:
 
             plt.show()
             plt.close()
+
+if __name__ == "__main__":
+
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Remove the existing logger
+    logger.remove()
+    # Reinstantiate the logger to send regular output to stdout and error messages to stderr
+    logger.add(sys.stdout, level="INFO", format="{time} {level} {message}", filter=lambda record: record["level"].name in ["INFO", "SUCCESS"])
+    logger.add(sys.stderr, level="ERROR", format="{time} {level} {message}", filter=lambda record: record["level"].name == "ERROR")
+
+    parser = argparse.ArgumentParser(description="Dataset and Model Parameter Analyzer")
+    parser.add_argument('--parallelize', action='store_true', help="Run the analysis in parallel")
+    parser.add_argument('--aggregate', action='store_true', help="Aggregate the results")
+    parser.add_argument('--cell_line', type=str, help="Specify the cell line for analysis")
+    parser.add_argument('--distance', type=int, help="Specify the distance parameter for analysis")
+    parser.add_argument('--min_read_count', type=int, help="Specify the minimum read count for analysis")
+
+    args = parser.parse_args()
+
+    if args.parallelize:
+
+        wandb_dataset_sweep = pd.read_csv("../output/wandb_summary_tables/dataset_sweep_summary.tsv", sep="\t")
+        unique_combinations = wandb_dataset_sweep[['dataset.cell_line', 'dataset.features.binding_matrix.window', 'dataset.min_read_count']].drop_duplicates()
+
+        cell_lines = sorted(unique_combinations['dataset.cell_line'].unique())
+        windows = sorted(unique_combinations['dataset.features.binding_matrix.window'].unique())
+        min_read_counts = sorted(unique_combinations['dataset.min_read_count'].unique())
+
+        for cell_line in cell_lines:
+            for window in windows:
+                for min_read_count in min_read_counts:
+
+                    os.system(
+                        f"sbatch --partition=standard --account=platiglab -N1 -n10 --mem=200GB --output=../SLURM_logs/{cell_line}_{window}_{min_read_count}.out --error=../SLURM_logs/{cell_line}_{window}_{min_read_count}.err --wrap='python3.11 dataset_and_model_parameter_chooser.py --cell_line {cell_line} --distance {window} --min_read_count {min_read_count}'"
+                    )
+        
+    elif args.aggregate:
+
+        json_files = glob.glob("../output/data_matrix_stats/*.json")
+        data_list = []
+
+        for file in json_files:
+            with open(file, 'r') as f:
+                data = json.load(f)
+                data_list.append(data)
+
+            os.remove(file)
+
+        data_stats_df = pd.DataFrame(data_list)
+        data_stats_df.sort_values(by=['cell_line', 'window', 'min_read_count']).to_csv("../output/data_matrix_stats/data_stats.tsv", sep="\t", index=False)
+        logger.success("Aggregated data stats and saved to data_stats.tsv")
+
+
+    else:
+        assert args.cell_line is not None, "Cell line must be specified"
+        assert args.distance is not None, "Distance (window) must be specified"
+        assert args.min_read_count is not None, "Minimum read count must be specified"
+        
+        analyzer = DatasetAndModelParameterAnalyzer()
+
+        analyzer.calculate_num_examples_and_average_binding(
+            args.cell_line, 
+            args.distance, 
+            args.min_read_count
+        )
