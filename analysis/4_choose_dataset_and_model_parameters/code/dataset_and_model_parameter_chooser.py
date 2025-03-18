@@ -206,33 +206,81 @@ class DatasetAndModelParameterAnalyzer:
 
             plt.title(f'{type.capitalize()} Sweep: R2 Score Distribution')
             plt.xlabel('Cell Line')
-            plt.ylabel('Test R2 Score')
+            plt.ylabel('Validation R2 Score')
+
+            plt.savefig(f"../output/summary_plots/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
             plt.show()
-    
+            plt.close()
+
     
     def plot_r2_per_covariate(self, type=None): 
 
         assert type in self.sweep_results, f"Type {type} not found in sweep results"
 
+        if not hasattr(self, 'matrix_stats_df'):
+            self.load_aggreated_data_stats()
+
         if type == 'dataset': 
             covariates = self.dataset_sweep_covariates
         
         for covariate in covariates:
-            plt.figure(figsize=(8, 3), dpi=300)
+            if covariate in ['dataset.min_read_count', 'dataset.features.binding_matrix.window']:
+                fig, axes = plt.subplots(2, 1, figsize=(8, 7), dpi=300, sharex=True, gridspec_kw={'hspace': 0.3})
+                ax_top, ax_bottom = axes
+            else:
+                fig, ax_top = plt.subplots(figsize=(8, 3), dpi=300)
+                ax_bottom = None
 
-            swarm = sns.swarmplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, palette='Set2', linewidth=1, edgecolor='black')
-            sns.boxplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+            sns.swarmplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, palette='Set2', linewidth=1, edgecolor='black', ax=ax_top)
+            sns.boxplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results[type], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False, ax=ax_top)
 
-            # Remove the boxplot legend and place it outside the plot in the middle
-            handles, labels = swarm.get_legend_handles_labels()
-            plt.legend(handles=handles, labels=labels, title=covariate.split(".")[-1], bbox_to_anchor=(1.02, 0.5), loc='center left', borderaxespad=0.)
+            handles, labels = ax_top.get_legend_handles_labels()
+            n = len(handles) // 2
+            legend_title = self.dataset_sweep_covariates[covariate]
+            ax_top.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title=legend_title)
 
-            plt.title(f'{type.capitalize()} Sweep: R2 Score by {covariate.split(".")[-1]}')
-            plt.xlabel('Cell Line')
-            plt.ylabel('Test R2 Score')
+            if covariate!='dataset.features.binding_matrix.binding_format':
+                ax_top.set_title(f'Validation R2 Score by {legend_title}\nNOTE: includes both binary and expression representation of binding data', y=1)
+            else: 
+                ax_top.set_title(f'Validation R2 Score by {legend_title}')
+                ax_top.set_xlabel('Cell Line')
 
+            ax_top.set_ylabel('Validation R2 Score')            
+
+            if ax_bottom is not None:
+
+                if covariate == 'dataset.min_read_count':
+                    y_axis_param = 'validate_count'
+                    hue='min_read_count'
+                elif covariate == 'dataset.features.binding_matrix.window':
+                    y_axis_param = 'avg_binding_per_graph_per_window'
+                    hue='window'
+
+                sns.swarmplot(
+                    x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
+                    edgecolor='black', linewidth=1, dodge=True
+                )
+                sns.boxplot(
+                    x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
+                    showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2},
+                    medianprops={'color':'black'}, showfliers=False, dodge=True
+                )
+                
+                handles, labels = ax_bottom.get_legend_handles_labels()
+                n = len(handles) // 2
+                ax_bottom.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Min. Read Count' if hue == 'min_read_count' else 'Window')
+
+                ax_bottom.set_ylabel('# Validation Graphs' if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph \nper Splice Junction')
+                ax_bottom.set_xlabel('Cell Line')
+
+                bottom_title_suffix="\nNOTE: includes ONLY binary representation of binding data"
+                bottom_title_prefix = "# Validation Graphs vs. Min. Read Count" if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph per Splice Junction vs. Window'
+                ax_bottom.set_title(f'{bottom_title_prefix}{bottom_title_suffix}', y=1)
+
+            plt.savefig(f"../output/summary_plots/{type}_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
             plt.show()
             plt.close()
+
 
 if __name__ == "__main__":
 
