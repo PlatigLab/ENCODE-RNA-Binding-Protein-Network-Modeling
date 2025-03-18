@@ -287,7 +287,45 @@ class DatasetAndModelParameterAnalyzer:
                 bottom_title_prefix = "# Validation Graphs vs. Min. Read Count" if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph per Splice Junction vs. Window'
                 ax_bottom.set_title(f'{bottom_title_prefix}{bottom_title_suffix}', y=1)
 
-            plt.savefig(f"../output/summary_plots/{type}_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"../output/summary_plots/dataset_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+            plt.show()
+            plt.close()
+
+    
+    def plot_inner_fold_seed_r2_results(self): 
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['training.seed'] != 0]
+        model_sweep = model_sweep.sort_values(by='training.seed')
+
+        plt.figure(figsize=(19, 4), dpi=300)
+
+        sns.swarmplot(
+            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=2,
+            data=model_sweep, palette=['red', 'blue'], linewidth=0.2, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
+        )
+        sns.boxplot(
+            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
+            data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
+            whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+            showfliers=False, hue_order=["K562", "HepG2"], dodge=True
+        )
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        n = len(handles) // 2
+        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line', fontsize=12, title_fontsize=14)
+
+        plt.title('Model Hyperparameter Sweeps: R2 Results by Inner Fold Splitting Seed', fontsize=22, y=1.02)
+        plt.xlabel('Training Seed', fontsize=18)
+        plt.ylabel('Holdout R2 Score', fontsize=18)
+
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        plt.savefig("../output/summary_plots/inner_fold_seed_r2_results.png", dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+
             plt.show()
             plt.close()
 
