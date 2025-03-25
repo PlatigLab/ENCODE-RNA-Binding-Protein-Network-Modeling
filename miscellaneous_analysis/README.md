@@ -19,3 +19,12 @@ This is using `ENCODE`'s `hg19` data that they provide on their portal.
 📂 `4_compare_yogi_and_ayan_datasets/`: 
 
 Compare RBP binding amount and positional preferences between the dataset created by Yogi vs Ayan. 
+
+📂 `5_batch_effect_investigation/`: 
+
+Looking at the effect of sequencing batch on `PSI` values across splice types specifically for `ENCODE` data that was analyzed with `hg38` using Ayan's pipeline. 
+
+📂 `6_ordinal_model_experiment/`:
+
+Mini-experiment to see how well ordinal regression models do as compared to our approach of continuous prediction of `PSI` values.
+

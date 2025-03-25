@@ -1,0 +1,22 @@
+dataset: 
+      cell_line: "K562"
+      distance: 100
+      control_only: False
+      psi_subset: null
+      read_count_quantile: null
+      data_flavor: "binary"
+      count_normalization_method: "tmm"
+      log_counts: null
+
+modeling:
+      model: "ElasticNetContinuous"
+      random_state: 17
+      data_splitting_method: "gene"
+      train_split: 0.7
+      test_split: 0.15
+      validate_split: 0.15
+      alpha: [0, 0.001, 0.01, 0.1, 1, 10]
+      l1_ratio: [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1]
+
+
+

@@ -4,12 +4,12 @@ Repository for analysis of RNA-Binding Protein data from the ENCODE project.
 
 📂`analysis/`: 
 
-This is the main folder for the analysis. 
+Contains the main analyses in the sequential order done that went towards the publication. 
 
 📂`inputs/`: 
 
-Folder that contains inputs that are useful across the project. 
+Contains general input data that is useful across the entire repository. (e.g. ENCODE metadata or RBP-RBP PPI info). 
 
 📂`miscellaneous_analysis/`:
 
-This is the folder for analyses that are not part of the main analysis but were still important. 
+Contains analyses that were not part of the publication but answered highly important and specific questions.  
