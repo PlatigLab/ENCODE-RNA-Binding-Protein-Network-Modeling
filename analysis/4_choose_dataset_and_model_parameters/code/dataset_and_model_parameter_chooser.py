@@ -1,9 +1,10 @@
-import pandas as pd, seaborn as sns, matplotlib.pyplot as plt, polars as pl
+import pandas as pd, seaborn as sns, matplotlib.pyplot as plt, polars as pl, numpy as np
 import wandb, json, argparse, os, sys, glob
 
 from dataclasses import dataclass
 from loguru import logger
 from pathlib import Path
+from mpl_toolkits.mplot3d import Axes3D
 
 @dataclass
 class DatasetAndModelParameterAnalyzer:
@@ -37,7 +38,10 @@ class DatasetAndModelParameterAnalyzer:
         if len(list(output_folder.glob('*'))) == 2: 
             
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
-            logger.info("FROM CACHE: Retrieved WandB summary tables")
+            for key, df in self.sweep_results.items():
+                logger.info(f"{key} summary table contains {df.shape[0]} rows")
+
+            logger.success("FROM CACHE: Retrieved WandB summary tables")
 
         else: 
             
@@ -87,15 +91,26 @@ class DatasetAndModelParameterAnalyzer:
             assert table['run_id'].is_unique, "run_id column contains duplicated values"
             assert (table['state'] == 'finished').all(), "Not all runs are finished"
 
+            for col in table.columns:
+                if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
+                    table.drop(columns=[col], inplace=True)
+                        
             if key =='dataset': 
                 assert table['sweep_name'].nunique() == 1, "sweep_name column contains multiple unique values"
                 assert table['sweep_id'].nunique() == 1, "sweep_id column contains multiple unique values"
 
                 dataset_cols = [col for col in table.columns if col.startswith("dataset.")]
-                for col in dataset_cols:
-                    if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
-                        table[col] = table[col].apply(lambda x: json.dumps(x) if isinstance(x, (list, dict, set)) else x)
                 assert table[dataset_cols].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
+
+            elif key == 'model':
+                assert table['holdout_r2_score'].apply(lambda x: isinstance(x, float)).all(), "Not all values in holdout_r2_score are decimal float values"
+                assert (table['training.seed'] != 0).all() and (table['training.seed'] != 0.0).all(), "Some runs have training.seed equal to 0"
+                
+                group_cols = [col for col in table.columns if col.startswith("dataset.") or col.startswith("model.") or col.startswith("training.")]
+
+                for sweep_id in table['sweep_id'].unique():
+                    subset_table = table[table['sweep_id'] == sweep_id]
+                    assert subset_table[group_cols].duplicated().sum() == 0, f"There are duplicate rows in the group columns for sweep_id {sweep_id}"
 
         logger.success("All assertions passed")
 
@@ -203,18 +218,18 @@ class DatasetAndModelParameterAnalyzer:
 
             data = self.sweep_results[type]
 
-            plt.figure(figsize=(8, 3), dpi=200)
+            plt.figure(figsize=(12, 5), dpi=200)
 
             if type == 'dataset':
                 y_variable = 'val_r2_score'
                 y_label = 'Validation R2 Score'
                 size=5
                 linewidth=1
-            else:
+            elif type == 'model':
                 y_variable = 'holdout_r2_score'
                 y_label = 'Holdout R2 Score'
-                size=1
-                linewidth=0.2
+                size=0.5
+                linewidth=0.1
 
             sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
             sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
@@ -223,7 +238,7 @@ class DatasetAndModelParameterAnalyzer:
             plt.xlabel('Cell Line')
             plt.ylabel(y_label)
 
-            plt.savefig(f"../output/summary_plots/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+            plt.savefig(f"../output/plots/summary/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
             plt.show()
             plt.close()
             
@@ -287,52 +302,18 @@ class DatasetAndModelParameterAnalyzer:
                 bottom_title_prefix = "# Validation Graphs vs. Min. Read Count" if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph per Splice Junction vs. Window'
                 ax_bottom.set_title(f'{bottom_title_prefix}{bottom_title_suffix}', y=1)
 
-            plt.savefig(f"../output/summary_plots/dataset_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"../output/plots/dataset/dataset_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
             plt.show()
             plt.close()
 
-    
-    def plot_inner_fold_seed_r2_results(self): 
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep[model_sweep['training.seed'] != 0]
-        model_sweep = model_sweep.sort_values(by='training.seed')
 
-        plt.figure(figsize=(19, 4), dpi=300)
-
-        sns.swarmplot(
-            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=2,
-            data=model_sweep, palette=['red', 'blue'], linewidth=0.2, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
-        )
-        sns.boxplot(
-            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
-            data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
-            whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
-            showfliers=False, hue_order=["K562", "HepG2"], dodge=True
-        )
-
-        handles, labels = plt.gca().get_legend_handles_labels()
-        n = len(handles) // 2
-        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line', fontsize=12, title_fontsize=14)
-
-        plt.title('Model Hyperparameter Sweeps: R2 Results by Inner Fold Splitting Seed', fontsize=22, y=1.02)
-        plt.xlabel('Training Seed', fontsize=18)
-        plt.ylabel('Holdout R2 Score', fontsize=18)
-
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        plt.savefig("../output/summary_plots/inner_fold_seed_r2_results.png", dpi=300, bbox_inches='tight')
-        plt.show()
-        plt.close()
-
-
-    def plot_1D_sweep_results(self): 
+    def plot_1D_range_model_hyperparameter_sweeps(self): 
 
         model_sweep = self.sweep_results["model"].copy(deep=True)
         model_sweep = model_sweep[model_sweep['sweep_name'].str.startswith("1D_")]
 
         model_sweep['xgboost_hyperparameter'] = model_sweep['sweep_name'].apply(lambda x: "_".join(x.split("_")[1:]))
-        unique_hyperparameters = model_sweep['xgboost_hyperparameter'].unique()
+        unique_hyperparameters = sorted(model_sweep['xgboost_hyperparameter'].unique())
 
         for hyperparameter in unique_hyperparameters:
             subset = model_sweep[model_sweep['xgboost_hyperparameter'] == hyperparameter]
@@ -354,13 +335,223 @@ class DatasetAndModelParameterAnalyzer:
             n = len(handles) // 2
             plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line')
 
-            plt.title(f'1D Hyperparameter Sweep: {hyperparameter}')
+            plt.title(f'1D Hyperparameter Sweep: "{hyperparameter}"')
             plt.xlabel(f'Value for "{hyperparameter}"')
             plt.ylabel('Holdout R2 Score')
 
-            plt.savefig(f"../output/summary_plots/model_{hyperparameter}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"../output/plots/model/1d_sweeps/model_{hyperparameter}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
             plt.show()
             plt.close()
+
+    
+    def plot_inner_fold_seed_r2_results(self): 
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep.sort_values(by='training.seed')
+
+        plt.figure(figsize=(19, 4), dpi=300)
+
+        sns.swarmplot(
+            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
+            data=model_sweep, palette=['red', 'blue'], linewidth=0.2, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
+        )
+        sns.boxplot(
+            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
+            data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
+            whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+            showfliers=False, hue_order=["K562", "HepG2"], dodge=True
+        )
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        n = len(handles) // 2
+        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line', fontsize=12, title_fontsize=14)
+
+        plt.title('Model Hyperparameter Sweeps: R2 Results by Inner Fold Splitting Seed', fontsize=22, y=1.02)
+        plt.xlabel('Training Seed', fontsize=18)
+        plt.ylabel('Holdout R2 Score', fontsize=18)
+
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        plt.savefig("../output/plots/summary/inner_fold_seed_r2_results.png", dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+    
+    def plot_interrelated_model_hyperparameter_results_in_1D(self): 
+
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['sweep_name'].str.contains(":")]
+
+        unique_sweep_names = sorted(model_sweep['sweep_name'].unique())
+        
+        for sweep_name in unique_sweep_names:
+            logger.info(f"Plotting for sweep: {sweep_name}")
+
+            param_names = [f"model.{param}" for param in sweep_name.split(":")[1].split("-")]
+            subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
+
+            for param in param_names:
+                for hue in ["dataset.cell_line", "training.seed"]: 
+
+                    if hue == "dataset.cell_line":
+                        palette = ['red', 'blue']
+                        hue_order = ["K562", "HepG2"]
+                    elif hue == "training.seed":
+                        palette = sns.color_palette("Set2", 9)
+                        hue_order = list(range(100, 901, 100))
+
+                    param_name = param.split(".")[-1]
+                    plt.figure(figsize=(12, 4), dpi=200)
+                    
+                    sns.swarmplot(
+                        x=param, y="holdout_r2_score", hue=hue, size=0.8,
+                        data=subset, palette=palette, linewidth=0.05, edgecolor='black', hue_order=hue_order, dodge=True
+                    )
+                    sns.boxplot(
+                        x=param, y="holdout_r2_score", hue=hue, 
+                        data=subset, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
+                        whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+                        showfliers=False, hue_order=["K562", "HepG2"], dodge=True
+                    )
+
+                    handles, labels = plt.gca().get_legend_handles_labels()
+                    n = len(subset[hue].unique().tolist())
+                    plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5),)
+
+                    plt.title(f"{param_name} in sweep: {', '.join(sweep_name.split(':')[-1].split('-'))}")
+                    plt.xlabel(f'Value for "{param_name}"')
+                    plt.ylabel('Holdout R2 Score')
+
+                    plt.savefig(
+                        f'../output/plots/model/interrelated_hyperparameters/1D_plotting/sweep_{sweep_name.split(":")[0]}-{param_name}-{hue.replace(".", "_")}-r2_score_distribution.png', 
+                        dpi=300, 
+                        bbox_inches='tight'
+                    )
+                    plt.show()
+                    plt.close()
+
+
+    def plot_interrelated_model_hyperparameter_results_in_higher_dimensions(self): 
+
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['sweep_name'].str.contains(":")]
+
+        unique_sweep_names = sorted(model_sweep['sweep_name'].unique())
+        
+        for sweep_name in unique_sweep_names:
+            param_names = [f"model.{param}" for param in sweep_name.split(":")[1].split("-")]
+            subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
+            
+            if len(param_names) == 3:
+                param_combinations = [(param_names[0], param_names[1]), (param_names[0], param_names[2]), (param_names[1], param_names[2])]
+            elif len(param_names) == 2: 
+                param_combinations = [(param_names[0], param_names[1])]
+            
+            for param_x, param_hue in param_combinations:
+                fig, axes = plt.subplots(2, 1, figsize=(18, 7), dpi=200, sharex=True, sharey=True)
+                cell_lines = subset['dataset.cell_line'].unique()
+
+                for i, cell_line in enumerate(cell_lines):
+                    ax = axes[i]
+                    cell_line_subset = subset[subset['dataset.cell_line'] == cell_line]
+
+                    hue_order = sorted(cell_line_subset[param_hue].unique())
+                    sns.swarmplot(
+                        x=param_x, y="holdout_r2_score", hue=param_hue, data=cell_line_subset, size=2, 
+                        palette='Set2', linewidth=0.1, edgecolor='black', ax=ax, dodge=True, hue_order=hue_order
+                    )
+
+                    ax.set_title(cell_line, fontsize=18)
+                    ax.legend_.remove()  # Remove the legend for each subplot
+                    ax.set_xlabel('')
+                    ax.set_ylabel('')
+
+                handles, labels = ax.get_legend_handles_labels()
+                fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title=param_hue.split(".")[-1], title_fontsize=20)
+
+                plt.suptitle(f'Holdout R2 Score by {param_x.split(".")[-1]} and {param_hue.split(".")[-1]}', y=1, fontsize=30)
+                plt.tight_layout(rect=[0, 0, 0.98, 1])  # Adjust layout to make space for the legend
+                fig.supxlabel(f'{param_x.split(".")[-1]}', fontsize=24, y=-0.05)
+                fig.supylabel('Holdout R2 Score', fontsize=24, x=-0.02)
+                
+                plt.savefig(
+                    f"../output/plots/model/interrelated_hyperparameters/higher_dimension_plotting/sweep_{sweep_name.split(':')[0]}-{param_x.split('.')[-1]}-{param_hue.split('.')[-1]}-r2_score_distribution.png",
+                    dpi=300,
+                    bbox_inches='tight'
+                )
+                plt.show()
+                plt.close()
+
+            if len(param_names) == 3:
+                for cell_line in subset['dataset.cell_line'].unique():
+                                                    
+                    param_x = param_names[0].split(".")[-1]
+                    param_y = param_names[1].split(".")[-1]
+                    param_z = param_names[2].split(".")[-1]
+
+                    cell_line_subset = subset[(subset['dataset.cell_line'] == cell_line) & (subset['holdout_r2_score'] > 0.2)]
+
+                    fig, axes = plt.subplots(3, 3, figsize=(20, 13), dpi=200, subplot_kw={'projection': '3d'})
+                    cmap = plt.cm.rainbow
+
+                    for i, seed in enumerate(sorted(cell_line_subset['training.seed'].unique())):
+                        seed_subset = cell_line_subset[cell_line_subset['training.seed'] == seed]
+
+                        ax = axes[i // 3, i % 3]
+                        sc = ax.scatter(
+                            seed_subset[param_names[0]], seed_subset[param_names[1]], seed_subset[param_names[2]], 
+                            c=seed_subset['holdout_r2_score'], cmap=cmap, edgecolor='k'
+                        )
+
+                        ax.set_xlabel(param_x)
+                        ax.set_ylabel(param_y)
+                        ax.set_zlabel(param_z, labelpad=1)
+                        ax.set_title(f'Seed: {seed}', pad=10)
+
+                    cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.7, pad=0.15, location='right')
+                    cbar.ax.set_title('Holdout R2 Score', pad=10)
+
+                    fig.suptitle(f'{cell_line}: Holdout R2 Score by {param_x}, {param_y}, {param_z}\nNOTE: only showing Holdout R2 Scores > 0.2', y=0.98, fontsize=20)
+                    
+                    plt.savefig(
+                        f"../output/plots/model/interrelated_hyperparameters/higher_dimension_plotting/sweep_{sweep_name.split(':')[0]}-{cell_line}-{param_x}-{param_y}-{param_z}-r2_score_distribution.png",
+                        dpi=300, 
+                        bbox_inches='tight'
+                    )
+                    plt.show()
+                    plt.close()
+
+                # fig, axes = plt.subplots(2, 3, figsize=(20, 10), dpi=200, subplot_kw={'projection': '3d'})
+                # cmap = plt.cm.rainbow
+
+                # vmin = subset['holdout_r2_score'].min()
+                # vmax = subset['holdout_r2_score'].max()
+
+                # for row, cell_line in enumerate(subset['dataset.cell_line'].unique()):
+                #     cell_line_subset = subset[subset['dataset.cell_line'] == cell_line]
+                    
+                #     for col, (param_x, param_z) in enumerate(param_combinations):
+                #         ax = axes[row, col]
+                        
+                #         sc = ax.scatter(
+                #             cell_line_subset[param_x], cell_line_subset['training.seed'], cell_line_subset[param_z], 
+                #             c=cell_line_subset['holdout_r2_score'], cmap=cmap, edgecolor='k', vmin=vmin, vmax=vmax
+                #         )
+
+                #         ax.set_xlabel(param_x.split('.')[-1])
+                #         ax.set_ylabel("Seed")
+                #         ax.set_zlabel(param_z.split('.')[-1])
+                #         ax.set_title(f'{cell_line}: {param_x.split(".")[-1]} vs {param_z.split(".")[-1]}')
+
+                # cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.7, pad=0.15, location='right')
+                # cbar.ax.set_title('Holdout R2 Score', pad=10)
+
+                # fig.suptitle(f'Holdout R2 Score by Parameter Combinations', y=0.98, fontsize=20)
+                
+                # plt.show()
+                # plt.close()
+
+
 
 
 if __name__ == "__main__":
