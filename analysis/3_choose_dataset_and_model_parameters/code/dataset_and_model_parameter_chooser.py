@@ -346,7 +346,10 @@ class DatasetAndModelParameterAnalyzer:
     
     def plot_inner_fold_seed_r2_results(self): 
         model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep.sort_values(by='training.seed')
+
+        # IMPORTANT: remove the outer loop holdout r2 sweep where the training.seed is only 100 
+        # as this artificially inflates the number of runs for seed 100
+        model_sweep = model_sweep[model_sweep['sweep_name'] != self.outer_loop_r2_wandb_sweep_name].sort_values(by='training.seed')
 
         plt.figure(figsize=(19, 4), dpi=300)
 
@@ -377,6 +380,28 @@ class DatasetAndModelParameterAnalyzer:
         plt.close()
 
     
+    def show_top_model_configs_after_averaging_by_seed(self): 
+        
+        chosen_parameters = ["model.n_estimators", "model.learning_rate", "model.max_depth", 'dataset.cell_line']
+
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[
+                model_sweep['sweep_name'].str.contains(":")
+            ].sort_values(
+                by='holdout_r2_score', ascending=False
+            )[chosen_parameters + ['training.seed', 'holdout_r2_score']]
+        
+        top_configs = model_sweep.groupby(chosen_parameters).agg(
+                avg_holdout_r2_score=('holdout_r2_score', 'mean')
+            ).reset_index().sort_values(by='avg_holdout_r2_score', ascending=False)
+
+        top_configs_k562 = top_configs[top_configs['dataset.cell_line'] == 'K562']
+        top_configs_hepg2 = top_configs[top_configs['dataset.cell_line'] == 'HepG2']
+
+        logger.info(f"Top Model Configurations by Inner Fold Holdout R2 Score using parameters: {chosen_parameters}")
+        return top_configs_k562, top_configs_hepg2
+    
+
     def plot_interrelated_model_hyperparameter_results_in_1D(self): 
 
         model_sweep = self.sweep_results['model'].copy(deep=True)
