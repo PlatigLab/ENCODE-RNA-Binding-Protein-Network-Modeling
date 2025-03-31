@@ -1,0 +1,62 @@
+[
+    {
+        "model.n_estimators": 1000,
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "dataset.cell_line": "K562"
+    },
+    {
+        "model.n_estimators": 5000,
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "dataset.cell_line": "K562"
+    },
+    {
+        "model.n_estimators": 2000,
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "dataset.cell_line": "K562"
+    },
+    {
+        "model.n_estimators": 500,
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
+        "dataset.cell_line": "K562"
+    },
+    {
+        "model.n_estimators": 750,
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "dataset.cell_line": "K562"
+    },
+    {
+        "model.n_estimators": 2000,
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "dataset.cell_line": "HepG2"
+    },
+    {
+        "model.n_estimators": 750,
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "dataset.cell_line": "HepG2"
+    },
+    {
+        "model.n_estimators": 5000,
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "dataset.cell_line": "HepG2"
+    },
+    {
+        "model.n_estimators": 1000,
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "dataset.cell_line": "HepG2"
+    },
+    {
+        "model.n_estimators": 5000,
+        "model.learning_rate": 0.05,
+        "model.max_depth": 3,
+        "dataset.cell_line": "HepG2"
+    }
+]
