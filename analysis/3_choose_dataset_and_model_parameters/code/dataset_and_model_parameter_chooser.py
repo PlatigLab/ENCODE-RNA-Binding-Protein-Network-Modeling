@@ -20,6 +20,8 @@ class DatasetAndModelParameterAnalyzer:
         'dataset.features.binding_matrix.window': "Window"
     }
 
+    outer_loop_r2_wandb_sweep_name = 'outer_loop_holdout_r2_score'
+
     train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
     validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
     test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
@@ -351,11 +353,11 @@ class DatasetAndModelParameterAnalyzer:
         # as this artificially inflates the number of runs for seed 100
         model_sweep = model_sweep[model_sweep['sweep_name'] != self.outer_loop_r2_wandb_sweep_name].sort_values(by='training.seed')
 
-        plt.figure(figsize=(19, 4), dpi=300)
+        plt.figure(figsize=(10, 4), dpi=200)
 
         sns.swarmplot(
             x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
-            data=model_sweep, palette=['red', 'blue'], linewidth=0.2, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
+            data=model_sweep, palette=['red', 'blue'], linewidth=0.05, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
         )
         sns.boxplot(
             x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
@@ -366,16 +368,16 @@ class DatasetAndModelParameterAnalyzer:
 
         handles, labels = plt.gca().get_legend_handles_labels()
         n = len(handles) // 2
-        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Cell Line', fontsize=12, title_fontsize=14)
+        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), markerscale=7, title='Cell Line', fontsize=12, title_fontsize=12)
 
-        plt.title('Model Hyperparameter Sweeps: R2 Results by Inner Fold Splitting Seed', fontsize=22, y=1.02)
-        plt.xlabel('Training Seed', fontsize=18)
-        plt.ylabel('Holdout R2 Score', fontsize=18)
+        plt.title('Holdout R2 Score by HTD Seed\n(All tuning experiments included)', fontsize=16, y=1.03)
+        plt.xlabel('Training Seed', fontsize=14)
+        plt.ylabel('Holdout R2 Score', fontsize=14)
 
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
 
-        plt.savefig("../output/plots/summary/inner_fold_seed_r2_results.png", dpi=300, bbox_inches='tight')
+        plt.savefig("../output/plots/summary/inner_fold_seed_r2_results.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
@@ -426,7 +428,7 @@ class DatasetAndModelParameterAnalyzer:
                         hue_order = list(range(100, 901, 100))
 
                     param_name = param.split(".")[-1]
-                    plt.figure(figsize=(12, 4), dpi=200)
+                    plt.figure(figsize=(8,3), dpi=200)
                     
                     sns.swarmplot(
                         x=param, y="holdout_r2_score", hue=hue, size=0.8,
@@ -441,15 +443,16 @@ class DatasetAndModelParameterAnalyzer:
 
                     handles, labels = plt.gca().get_legend_handles_labels()
                     n = len(subset[hue].unique().tolist())
-                    plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5),)
+                    plt.legend(handles[:n], labels[:n], loc='center left', markerscale=4, fontsize=10, ncol=1, bbox_to_anchor=(1, 0.5))
 
-                    plt.title(f"{param_name} in sweep: {', '.join(sweep_name.split(':')[-1].split('-'))}")
-                    plt.xlabel(f'Value for "{param_name}"')
-                    plt.ylabel('Holdout R2 Score')
+
+                    plt.title(f"{param_name} in sweep: {', '.join(sweep_name.split(':')[-1].split('-'))}", fontsize=12)
+                    plt.xlabel(param_name, fontsize=10)
+                    plt.ylabel('Holdout R2 Score', fontsize=10)
 
                     plt.savefig(
                         f'../output/plots/model/interrelated_hyperparameters/1D_plotting/sweep_{sweep_name.split(":")[0]}-{param_name}-{hue.replace(".", "_")}-r2_score_distribution.png', 
-                        dpi=300, 
+                        dpi=200, 
                         bbox_inches='tight'
                     )
                     plt.show()
@@ -466,6 +469,15 @@ class DatasetAndModelParameterAnalyzer:
         for sweep_name in unique_sweep_names:
             param_names = [f"model.{param}" for param in sweep_name.split(":")[1].split("-")]
             subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
+
+            if "1:" in sweep_name: 
+                markerscale = 6
+                linewidth=0.1
+                size=1.2
+            else:
+                markerscale = 1
+                linewidth=0.5
+                size=3
             
             if len(param_names) == 3:
                 param_combinations = [(param_names[0], param_names[1]), (param_names[0], param_names[2]), (param_names[1], param_names[2])]
@@ -473,7 +485,7 @@ class DatasetAndModelParameterAnalyzer:
                 param_combinations = [(param_names[0], param_names[1])]
             
             for param_x, param_hue in param_combinations:
-                fig, axes = plt.subplots(2, 1, figsize=(18, 7), dpi=200, sharex=True, sharey=True)
+                fig, axes = plt.subplots(2, 1, figsize=(10, 5), dpi=200, sharex=True, sharey=True)
                 cell_lines = subset['dataset.cell_line'].unique()
 
                 for i, cell_line in enumerate(cell_lines):
@@ -482,26 +494,26 @@ class DatasetAndModelParameterAnalyzer:
 
                     hue_order = sorted(cell_line_subset[param_hue].unique())
                     sns.swarmplot(
-                        x=param_x, y="holdout_r2_score", hue=param_hue, data=cell_line_subset, size=2, 
-                        palette='Set2', linewidth=0.1, edgecolor='black', ax=ax, dodge=True, hue_order=hue_order
+                        x=param_x, y="holdout_r2_score", hue=param_hue, data=cell_line_subset, size=size, 
+                        palette='Set2', linewidth=linewidth, edgecolor='black', ax=ax, dodge=True, hue_order=hue_order
                     )
 
-                    ax.set_title(cell_line, fontsize=18)
+                    ax.set_title(cell_line, fontsize=16)
                     ax.legend_.remove()  # Remove the legend for each subplot
                     ax.set_xlabel('')
                     ax.set_ylabel('')
 
                 handles, labels = ax.get_legend_handles_labels()
-                fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title=param_hue.split(".")[-1], title_fontsize=20)
+                fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), markerscale=markerscale, title=param_hue.split(".")[-1], title_fontsize=12)
 
-                plt.suptitle(f'Holdout R2 Score by {param_x.split(".")[-1]} and {param_hue.split(".")[-1]}', y=1, fontsize=30)
+                plt.suptitle(f'Holdout R2 Score by {param_x.split(".")[-1]} and {param_hue.split(".")[-1]}', y=0.98, fontsize=20)
                 plt.tight_layout(rect=[0, 0, 0.98, 1])  # Adjust layout to make space for the legend
-                fig.supxlabel(f'{param_x.split(".")[-1]}', fontsize=24, y=-0.05)
-                fig.supylabel('Holdout R2 Score', fontsize=24, x=-0.02)
+                fig.supxlabel(f'{param_x.split(".")[-1]}', fontsize=18, y=-0.06)
+                fig.supylabel('Holdout R2 Score', fontsize=18, x=-0.03)
                 
                 plt.savefig(
                     f"../output/plots/model/interrelated_hyperparameters/higher_dimension_plotting/sweep_{sweep_name.split(':')[0]}-{param_x.split('.')[-1]}-{param_hue.split('.')[-1]}-r2_score_distribution.png",
-                    dpi=300,
+                    dpi=200,
                     bbox_inches='tight'
                 )
                 plt.show()
@@ -525,7 +537,7 @@ class DatasetAndModelParameterAnalyzer:
                         ax = axes[i // 3, i % 3]
                         sc = ax.scatter(
                             seed_subset[param_names[0]], seed_subset[param_names[1]], seed_subset[param_names[2]], 
-                            c=seed_subset['holdout_r2_score'], cmap=cmap, edgecolor='k'
+                            c=seed_subset['holdout_r2_score'], cmap=cmap, edgecolor='k', depthshade=False
                         )
 
                         ax.set_xlabel(param_x)
@@ -575,6 +587,83 @@ class DatasetAndModelParameterAnalyzer:
                 
                 # plt.show()
                 # plt.close()
+
+
+    def inner_fold_vs_outer_fold_r2_score_comparison(self):
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['outer_loop_holdout_r2_score'].notna()]
+
+        unique_cell_lines = sorted(model_sweep['dataset.cell_line'].unique().tolist())
+        fig, axes = plt.subplots(1, len(unique_cell_lines), figsize=(9,4), sharex=True, sharey=True, dpi=300)
+
+        for i, cell_line in enumerate(unique_cell_lines):
+            ax = axes[i]
+            subset = model_sweep[model_sweep['dataset.cell_line'] == cell_line]
+
+            sns.scatterplot(
+                x='holdout_r2_score', y='outer_loop_holdout_r2_score', data=subset, 
+                color='salmon', edgecolor='black', ax=ax
+            )
+
+            spearman_corr = subset[['holdout_r2_score', 'outer_loop_holdout_r2_score']].corr(method='spearman').iloc[0, 1]
+            pearson_corr = subset[['holdout_r2_score', 'outer_loop_holdout_r2_score']].corr(method='pearson').iloc[0, 1]
+
+            num_points = len(subset)
+            ax.text(0.05, 0.95, f'Points: {num_points}\nSpearman: {spearman_corr:.2f}\nPearson: {pearson_corr:.2f}', 
+            transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
+            ax.set_title(cell_line)
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+            min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
+            max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
+            ax.plot([min_val, max_val], [min_val, max_val], color='lightblue', linestyle='--')
+        
+        fig.supxlabel('Inner Fold Holdout R2 Score', fontsize=12)
+        fig.supylabel('Outer Fold Holdout R2 Score', fontsize=12)
+        fig.suptitle('Inner vs Outer Fold Holdout R2 Score Comparison', fontsize=16, y=1)
+
+        plt.tight_layout()
+        plt.savefig("../output/plots/model/outer_loop_holdout_r2/inner_vs_outer_fold_r2_comparison.png", dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+    
+    def plot_outer_loop_fold_r2_score_results(self): 
+
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['sweep_name'] == self.outer_loop_r2_wandb_sweep_name]
+
+        param_columns = ['model.n_estimators', 'model.learning_rate', 'model.max_depth']
+        param_combinations = [(param_columns[i], param_columns[j]) for i in range(len(param_columns)) for j in range(i + 1, len(param_columns))]
+
+        unique_cell_lines = sorted(model_sweep['dataset.cell_line'].unique().tolist())
+        fig, axes = plt.subplots(2, 3, figsize=(20, 10), dpi=300, sharex=False, sharey=True)
+
+        for i, cell_line in enumerate(unique_cell_lines):
+            cell_line_subset = model_sweep[model_sweep['dataset.cell_line'] == cell_line]
+            row = i
+
+            for col, (param_x, param_hue) in enumerate(param_combinations):
+
+                ax = axes[row, col]
+                sns.swarmplot(
+                    x=param_x, y='outer_loop_holdout_r2_score', hue=param_hue, data=cell_line_subset, 
+                    palette='Set2', linewidth=1, edgecolor='black', ax=ax, dodge=True
+                )
+
+                ax.set_title(f'{cell_line}: {param_x.split(".")[-1]} vs {param_hue.split(".")[-1]}')
+                ax.set_xlabel(param_x.split(".")[-1])
+                ax.set_ylabel('Outer Loop Holdout R2 Score')
+
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='Parameters')
+
+        plt.tight_layout()
+        # plt.savefig("../output/plots/model/outer_loop_holdout_r2/combined_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
 
 
 
