@@ -18,15 +18,16 @@ _=pl.Config.set_fmt_str_lengths(10000)
 @dataclass
 class YogiBindingPatternAnalyzer:
 
-    DATA_PATH = "/project/PlatigLab/data/RBP_ML/2_yogi_dataset_RBP_ML_data_november_2024/"
+    DATA_PATH = "/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025"
     CACHE_DIR = "../__featherv2-cache__/"
     WANDB_DIR = "../outputs/wandb_results/"
 
     cell_lines = ["HepG2", "K562"]
     distance = 100
     binding_mode = "binary" 
+    event_filter = "all-events"
 
-    psi_bins = [0.2, 0.8]
+    psi_bins = [0.1, 0.9]
 
     train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
     validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
@@ -37,6 +38,8 @@ class YogiBindingPatternAnalyzer:
 
     def __post_init__(self): 
         assert self.binding_mode =='binary'
+        assert self.event_filter == 'all-events'
+        assert self.distance == 100, "Distance must be 100"
 
 
     def read_data(self):
@@ -66,7 +69,7 @@ class YogiBindingPatternAnalyzer:
             for cell_line in self.cell_lines:
                 logger.info(f"Creating {self.binding_mode} binding data for {cell_line}...")
 
-                binding_data = pl.read_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_num-peaks-no-kd.tsv.gz", separator='\t')
+                binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t').filter(pl.col("Total Read Counts") >= 40).collect()
                 binding_cols = [col for col in binding_data.columns if col.endswith("_binding")]
 
                 assert binding_data["index"].n_unique() == binding_data.shape[0], "The 'index' column contains duplicate values"
@@ -119,6 +122,46 @@ class YogiBindingPatternAnalyzer:
         )
 
         logger.success(f"Data cached successfully @ {output_path}")
+
+    
+    def plot_psi_distribution_per_cell_line(self):
+        fig, axes = plt.subplots(len(self.cell_lines), 1, figsize=(7, 5), dpi=300, sharex=True, sharey=True)
+
+        for ax, cell_line in zip(axes, self.cell_lines):
+            psi_data = self.modeling_input_data[cell_line].select("Target_PSI").to_pandas()
+            
+            total_points = psi_data.shape[0]
+            total_points_millions = total_points / 1_000_000
+
+            sns.histplot(
+                data=psi_data,
+                x="Target_PSI",
+                bins=100,
+                color='#87CEEB',  # Slightly less dark blue
+                edgecolor='black',
+                linewidth=0.8,  # Thicker edge width
+                ax=ax,
+                stat="percent"  # Show percentage instead of raw counts
+            )
+
+
+            ax.set_title(f"{cell_line}: PSI Distribution", fontsize=14)
+            ax.set_xlabel("PSI", fontsize=12)
+            ax.set_ylabel("", fontsize=12)
+
+            # Add total points in a box at the top center
+            ax.text(
+                0.5, 0.9, f"# Graphs: {total_points_millions:.2f} million",
+                horizontalalignment='center',
+                verticalalignment='top',
+                transform=ax.transAxes,
+                fontsize=10,
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='black')
+            )
+        
+        fig.supylabel("% of Data in Bin", fontsize=16)
+        plt.tight_layout()
+        plt.show()
 
 
     def get_num_cpus(self):
@@ -234,8 +277,8 @@ class YogiBindingPatternAnalyzer:
                     normalization_filename_suffix = "not-column-normalized"
                     figure_aim_suffix = "percent-graphs-bound"
 
-                plt.suptitle(f"{cell_line} {self.distance}: {figure_aim}", fontsize=36, x=0.45, y=1.1)
-                ax.set_title(f"All Graphs; {normalization_suffix}", fontsize=20, y=1.04)
+                plt.suptitle(f"{cell_line}: {figure_aim}", fontsize=30, x=0.45, y=1)
+                # ax.set_title(f"{normalization_suffix}", fontsize=18, y=1.04)
 
                 plt.savefig(f"../outputs/rbp_binding_heatmaps/all_data_heatmaps/{cell_line}_{figure_aim_suffix}_AKA_{normalization_filename_suffix}.png", bbox_inches='tight', dpi=300)
                 plt.show()
@@ -249,9 +292,9 @@ class YogiBindingPatternAnalyzer:
 
         for cell_line in self.cell_lines:
             psi_bins_dict[cell_line] = {
-                "<0.2": self.modeling_input_data[cell_line].filter(pl.col("Target_PSI") < 0.2),
-                ">=0.2 & <=0.8": self.modeling_input_data[cell_line].filter((pl.col("Target_PSI") >= 0.2) & (pl.col("Target_PSI") <= 0.8)),
-                ">0.8": self.modeling_input_data[cell_line].filter(pl.col("Target_PSI") > 0.8)
+                f"PSI < {self.psi_bins[0]}": self.modeling_input_data[cell_line].filter(pl.col("Target_PSI") < self.psi_bins[0]),
+                f"{self.psi_bins[0]} <= PSI <= {self.psi_bins[1]}": self.modeling_input_data[cell_line].filter((pl.col("Target_PSI") >= self.psi_bins[0]) & (pl.col("Target_PSI") <= self.psi_bins[1])),
+                f"PSI > {self.psi_bins[1]}": self.modeling_input_data[cell_line].filter(pl.col("Target_PSI") > self.psi_bins[1])
             }
 
             for psi_bin, df in psi_bins_dict[cell_line].items():
