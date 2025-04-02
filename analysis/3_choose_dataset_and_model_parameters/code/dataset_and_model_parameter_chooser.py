@@ -20,8 +20,6 @@ class DatasetAndModelParameterAnalyzer:
         'dataset.features.binding_matrix.window': "Window"
     }
 
-    outer_loop_r2_wandb_sweep_name = 'outer_loop_holdout_r2_score'
-
     train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
     validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
     test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
@@ -349,11 +347,7 @@ class DatasetAndModelParameterAnalyzer:
     
     def plot_inner_fold_seed_r2_results(self): 
         model_sweep = self.sweep_results['model'].copy(deep=True)
-
-        # IMPORTANT: remove the outer loop holdout r2 sweep where the training.seed is only 100 
-        # as this artificially inflates the number of runs for seed 100
-        model_sweep = model_sweep[model_sweep['sweep_name'] != self.outer_loop_r2_wandb_sweep_name].sort_values(by='training.seed')
-
+        
         plt.figure(figsize=(10, 4), dpi=200)
 
         sns.swarmplot(
