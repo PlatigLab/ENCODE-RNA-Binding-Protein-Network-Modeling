@@ -1,62 +1,142 @@
 [
     {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
         "model.n_estimators": 1000,
-        "model.learning_rate": 0.05,
-        "model.max_depth": 5,
-        "dataset.cell_line": "K562"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28103333333333336
     },
     {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
         "model.n_estimators": 5000,
-        "model.learning_rate": 0.05,
-        "model.max_depth": 5,
-        "dataset.cell_line": "K562"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28097777777777777
     },
     {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
         "model.n_estimators": 2000,
-        "model.learning_rate": 0.05,
-        "model.max_depth": 5,
-        "dataset.cell_line": "K562"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28097777777777777
     },
     {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
         "model.n_estimators": 500,
-        "model.learning_rate": 0.1,
-        "model.max_depth": 5,
-        "dataset.cell_line": "K562"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28090000000000004
     },
     {
-        "model.n_estimators": 750,
         "model.learning_rate": 0.05,
         "model.max_depth": 5,
-        "dataset.cell_line": "K562"
+        "model.n_estimators": 750,
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28082222222222225
     },
     {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28078888888888887
+    },
+    {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
         "model.n_estimators": 2000,
-        "model.learning_rate": 0.1,
-        "model.max_depth": 3,
-        "dataset.cell_line": "HepG2"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28078888888888887
     },
     {
-        "model.n_estimators": 750,
         "model.learning_rate": 0.1,
-        "model.max_depth": 3,
-        "dataset.cell_line": "HepG2"
-    },
-    {
-        "model.n_estimators": 5000,
-        "model.learning_rate": 0.1,
-        "model.max_depth": 3,
-        "dataset.cell_line": "HepG2"
-    },
-    {
+        "model.max_depth": 5,
         "model.n_estimators": 1000,
-        "model.learning_rate": 0.1,
-        "model.max_depth": 3,
-        "dataset.cell_line": "HepG2"
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28078888888888887
     },
     {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
+        "model.n_estimators": 750,
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28078888888888887
+    },
+    {
+        "model.learning_rate": 0.01,
+        "model.max_depth": 5,
         "model.n_estimators": 5000,
+        "dataset.cell_line": "K562",
+        "avg_holdout_r2_score": 0.28076666666666666
+    },
+    {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.2894777777777778
+    },
+    {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "model.n_estimators": 2000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.2894777777777778
+    },
+    {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "model.n_estimators": 750,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.2894777777777778
+    },
+    {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 3,
+        "model.n_estimators": 1000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.28946666666666665
+    },
+    {
         "model.learning_rate": 0.05,
         "model.max_depth": 3,
-        "dataset.cell_line": "HepG2"
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.28922222222222227
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 3,
+        "model.n_estimators": 2000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.28922222222222227
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "model.n_estimators": 750,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.2889777777777778
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "model.n_estimators": 1000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.2889555555555556
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.28894444444444445
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 5,
+        "model.n_estimators": 2000,
+        "dataset.cell_line": "HepG2",
+        "avg_holdout_r2_score": 0.28894444444444445
     }
 ]

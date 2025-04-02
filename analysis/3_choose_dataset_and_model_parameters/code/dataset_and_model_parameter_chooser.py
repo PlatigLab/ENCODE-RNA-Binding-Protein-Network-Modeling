@@ -26,6 +26,7 @@ class DatasetAndModelParameterAnalyzer:
     validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
     test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
 
+    performance_chosen_parameters = ["model.learning_rate", "model.max_depth", "model.n_estimators", 'dataset.cell_line']
 
     def __post_init__(self):
 
@@ -569,31 +570,32 @@ class DatasetAndModelParameterAnalyzer:
     
     def show_top_model_configs_after_averaging_by_seed(self): 
         
-        chosen_parameters = ["model.n_estimators", "model.learning_rate", "model.max_depth", 'dataset.cell_line']
+        n_top_configs = 10
 
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[
                 model_sweep['sweep_name'].str.contains("1:")
-            ][chosen_parameters + ['training.seed', 'holdout_r2_score']]
+            ][self.performance_chosen_parameters + ['training.seed', 'holdout_r2_score']]
         
         
-        grouped = model_sweep.groupby(chosen_parameters)
+        grouped = model_sweep.groupby(self.performance_chosen_parameters)
         assert all(len(group) == 9 for _, group in grouped), "Not all groups have exactly 9 entries"
         
         top_configs = grouped['holdout_r2_score'].mean().reset_index()
+        top_configs_k562 = top_configs[top_configs['dataset.cell_line'] == 'K562'].sort_values(by=['holdout_r2_score'] + self.performance_chosen_parameters, ascending=False).head(n_top_configs)
+        top_configs_hepg2 = top_configs[top_configs['dataset.cell_line'] == 'HepG2'].sort_values(by=['holdout_r2_score'] + self.performance_chosen_parameters, ascending=False).head(n_top_configs)
 
-        top_configs_k562 = top_configs[top_configs['dataset.cell_line'] == 'K562'].sort_values(by='holdout_r2_score', ascending=False).head(5)
-        top_configs_hepg2 = top_configs[top_configs['dataset.cell_line'] == 'HepG2'].sort_values(by='holdout_r2_score', ascending=False).head(5)
         top_configs_k562 = top_configs_k562.rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
         top_configs_hepg2 = top_configs_hepg2.rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
 
+        combined_configs = pd.concat([top_configs_k562, top_configs_hepg2], ignore_index=True)
+
         output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
-        combined_configs = pd.concat([top_configs_k562, top_configs_hepg2], ignore_index=True).drop('avg_holdout_r2_score', axis=1)
         with open(output_file, "w") as f:
             json.dump(combined_configs.to_dict(orient="records"), f, indent=4)
         logger.success(f"Saved top model configurations to {output_file}")
         
-        logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {chosen_parameters}")
+        logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {self.performance_chosen_parameters}")
         return top_configs_k562, top_configs_hepg2
 
 
@@ -609,10 +611,13 @@ class DatasetAndModelParameterAnalyzer:
         for config in top_model_configs:
             subset = model_sweep.copy(deep=True)
             for key, value in config.items():
-                subset = subset[subset[key] == value]
+                if "r2" not in key: 
+                    subset = subset[subset[key] == value]
 
             assert subset.shape[0] == 1, f"Expected 1 row, but got {subset.shape[0]} for config: {config}"
             run_ids.append(subset['run_id'].iloc[0])
+
+        run_ids = sorted(run_ids)
 
         output_file = "../output/chosen_model_hyperparameters/outer_loop_holdout_run_ids.txt"
         with open(output_file, "w") as f:
@@ -622,85 +627,46 @@ class DatasetAndModelParameterAnalyzer:
         return run_ids
 
 
-    def inner_fold_vs_outer_fold_r2_score_comparison(self):
+    def inner_fold_vs_outer_fold_r2_score_table(self):
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[model_sweep['outer_loop_holdout_r2_score'].notna()]
 
-        return model_sweep
-
-        unique_cell_lines = sorted(model_sweep['dataset.cell_line'].unique().tolist())
-        fig, axes = plt.subplots(1, len(unique_cell_lines), figsize=(9,4), sharex=False, sharey=False, dpi=300)
-
-        for i, cell_line in enumerate(unique_cell_lines):
-            ax = axes[i]
-            subset = model_sweep[model_sweep['dataset.cell_line'] == cell_line]
-
-            sns.scatterplot(
-                x='holdout_r2_score', y='outer_loop_holdout_r2_score', data=subset, 
-                color='salmon', edgecolor='black', ax=ax
+        return model_sweep[
+                self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
+            ].sort_values(
+                by='outer_loop_holdout_r2_score', 
+                ascending=False
             )
-
-            spearman_corr = subset[['holdout_r2_score', 'outer_loop_holdout_r2_score']].corr(method='spearman').iloc[0, 1]
-            pearson_corr = subset[['holdout_r2_score', 'outer_loop_holdout_r2_score']].corr(method='pearson').iloc[0, 1]
-
-            num_points = len(subset)
-            ax.text(0.05, 0.95, f'Points: {num_points}\nSpearman: {spearman_corr:.2f}\nPearson: {pearson_corr:.2f}', 
-            transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
-
-            ax.set_title(cell_line)
-            ax.set_xlabel('')
-            ax.set_ylabel('')
-
-            min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
-            max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
-            ax.plot([min_val, max_val], [min_val, max_val], color='lightblue', linestyle='--')
-        
-        fig.supxlabel('Inner Fold Holdout R2 Score', fontsize=12)
-        fig.supylabel('Outer Fold Holdout R2 Score', fontsize=12)
-        fig.suptitle('Inner vs Outer Fold Holdout R2 Score Comparison', fontsize=16, y=1)
-
-        plt.tight_layout()
-        plt.savefig("../output/plots/model/outer_loop_holdout_r2/inner_vs_outer_fold_r2_comparison.png", dpi=300, bbox_inches='tight')
-        plt.show()
-        plt.close()
-
     
-    def plot_outer_loop_fold_r2_score_results(self): 
-
+    
+    def save_hyperparameters_for_final_modeling(self): 
         model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep[model_sweep['sweep_name'] == self.outer_loop_r2_wandb_sweep_name]
+        model_sweep = model_sweep[model_sweep['outer_loop_holdout_r2_score'].notna()]
 
-        param_columns = ['model.n_estimators', 'model.learning_rate', 'model.max_depth']
-        param_combinations = [(param_columns[i], param_columns[j]) for i in range(len(param_columns)) for j in range(i + 1, len(param_columns))]
+        combined_subset = []
 
-        unique_cell_lines = sorted(model_sweep['dataset.cell_line'].unique().tolist())
-        fig, axes = plt.subplots(2, 3, figsize=(20, 10), dpi=300, sharex=False, sharey=True)
-
-        for i, cell_line in enumerate(unique_cell_lines):
-            cell_line_subset = model_sweep[model_sweep['dataset.cell_line'] == cell_line]
-            row = i
-
-            for col, (param_x, param_hue) in enumerate(param_combinations):
-
-                ax = axes[row, col]
-                sns.swarmplot(
-                    x=param_x, y='outer_loop_holdout_r2_score', hue=param_hue, data=cell_line_subset, 
-                    palette='Set2', linewidth=1, edgecolor='black', ax=ax, dodge=True
+        for cell_line in ['K562', 'HepG2']:
+            subset = model_sweep[
+                    (model_sweep['dataset.cell_line'] == cell_line) 
+                ][
+                    self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
+                ].sort_values(
+                    by=['outer_loop_holdout_r2_score'] + self.performance_chosen_parameters,
+                    ascending=False
                 )
 
-                ax.set_title(f'{cell_line}: {param_x.split(".")[-1]} vs {param_hue.split(".")[-1]}')
-                ax.set_xlabel(param_x.split(".")[-1])
-                ax.set_ylabel('Outer Loop Holdout R2 Score')
+            subset = subset.drop_duplicates(subset=['outer_loop_holdout_r2_score'], keep='first')
+            combined_subset.append(subset)
 
-        handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='Parameters')
+        combined_subset = pd.concat(combined_subset, ignore_index=True)
+        combined_subset_dict = combined_subset.to_dict(orient="records")
 
-        plt.tight_layout()
-        # plt.savefig("../output/plots/model/outer_loop_holdout_r2/combined_r2_score_distribution.png", dpi=300, bbox_inches='tight')
-        plt.show()
-        plt.close()
+        output_file = "../output/chosen_model_hyperparameters/final_model_hyperparameters.json"
+        with open(output_file, "w") as f:
+            json.dump(combined_subset_dict, f, indent=4)
 
-
+        logger.success(f"Saved final model hyperparameters to {output_file}")
+        return combined_subset
 
 
 if __name__ == "__main__":
