@@ -1,11 +1,35 @@
 [
     {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 7,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "K562",
+        "holdout_r2_score": 0.2814,
+        "outer_loop_holdout_r2_score": 0.2759
+    },
+    {
+        "model.learning_rate": 0.05,
+        "model.max_depth": 7,
+        "model.n_estimators": 500,
+        "dataset.cell_line": "K562",
+        "holdout_r2_score": 0.2813,
+        "outer_loop_holdout_r2_score": 0.2757
+    },
+    {
         "model.learning_rate": 0.1,
         "model.max_depth": 5,
         "model.n_estimators": 5000,
         "dataset.cell_line": "K562",
         "holdout_r2_score": 0.2804,
         "outer_loop_holdout_r2_score": 0.2722
+    },
+    {
+        "model.learning_rate": 0.01,
+        "model.max_depth": 7,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "K562",
+        "holdout_r2_score": 0.2812,
+        "outer_loop_holdout_r2_score": 0.2716
     },
     {
         "model.learning_rate": 0.05,
@@ -24,6 +48,14 @@
         "outer_loop_holdout_r2_score": 0.2712
     },
     {
+        "model.learning_rate": 0.01,
+        "model.max_depth": 5,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "HepG2",
+        "holdout_r2_score": 0.2896,
+        "outer_loop_holdout_r2_score": 0.2895
+    },
+    {
         "model.learning_rate": 0.1,
         "model.max_depth": 3,
         "model.n_estimators": 5000,
@@ -40,11 +72,27 @@
         "outer_loop_holdout_r2_score": 0.288
     },
     {
+        "model.learning_rate": 0.1,
+        "model.max_depth": 5,
+        "model.n_estimators": 5000,
+        "dataset.cell_line": "HepG2",
+        "holdout_r2_score": 0.2907,
+        "outer_loop_holdout_r2_score": 0.2874
+    },
+    {
         "model.learning_rate": 0.05,
         "model.max_depth": 3,
         "model.n_estimators": 5000,
         "dataset.cell_line": "HepG2",
         "holdout_r2_score": 0.2909,
         "outer_loop_holdout_r2_score": 0.2859
+    },
+    {
+        "model.learning_rate": 0.15,
+        "model.max_depth": 3,
+        "model.n_estimators": 500,
+        "dataset.cell_line": "HepG2",
+        "holdout_r2_score": 0.2902,
+        "outer_loop_holdout_r2_score": 0.2847
     }
 ]

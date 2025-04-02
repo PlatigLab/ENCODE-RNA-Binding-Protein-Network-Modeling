@@ -25,6 +25,7 @@ class DatasetAndModelParameterAnalyzer:
     test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
 
     performance_chosen_parameters = ["model.learning_rate", "model.max_depth", "model.n_estimators", 'dataset.cell_line']
+    n_top_unique_configs = 10
 
     def __post_init__(self):
 
@@ -562,9 +563,7 @@ class DatasetAndModelParameterAnalyzer:
                 # plt.close()
 
     
-    def show_top_model_configs_after_averaging_by_seed(self): 
-        
-        n_top_configs = 10
+    def show_top_unique_model_configs_after_averaging_by_seed(self): 
 
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[
@@ -575,14 +574,24 @@ class DatasetAndModelParameterAnalyzer:
         grouped = model_sweep.groupby(self.performance_chosen_parameters)
         assert all(len(group) == 9 for _, group in grouped), "Not all groups have exactly 9 entries"
         
-        top_configs = grouped['holdout_r2_score'].mean().reset_index()
-        top_configs_k562 = top_configs[top_configs['dataset.cell_line'] == 'K562'].sort_values(by=['holdout_r2_score'] + self.performance_chosen_parameters, ascending=False).head(n_top_configs)
-        top_configs_hepg2 = top_configs[top_configs['dataset.cell_line'] == 'HepG2'].sort_values(by=['holdout_r2_score'] + self.performance_chosen_parameters, ascending=False).head(n_top_configs)
+        top_configs = grouped['holdout_r2_score'].mean().reset_index().rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
+        
+        combined_configs = []
+        for cell_line in ['K562', 'HepG2']:
 
-        top_configs_k562 = top_configs_k562.rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
-        top_configs_hepg2 = top_configs_hepg2.rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
+            top_configs_cell_line = top_configs[
+                    top_configs['dataset.cell_line'] == cell_line
+                ].sort_values(
+                    by=['avg_holdout_r2_score'] + self.performance_chosen_parameters,
+                    ascending=False
+                ).drop_duplicates(
+                    subset=['avg_holdout_r2_score'],
+                    keep='first'
+                ).head(self.n_top_unique_configs)
 
-        combined_configs = pd.concat([top_configs_k562, top_configs_hepg2], ignore_index=True)
+            combined_configs.append(top_configs_cell_line)
+
+        combined_configs = pd.concat(combined_configs, ignore_index=True)
 
         output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
         with open(output_file, "w") as f:
@@ -590,20 +599,22 @@ class DatasetAndModelParameterAnalyzer:
         logger.success(f"Saved top model configurations to {output_file}")
         
         logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {self.performance_chosen_parameters}")
-        return top_configs_k562, top_configs_hepg2
+        self.top_model_configs = combined_configs
+        return self.top_model_configs
 
 
     def get_run_ids_for_outer_loop_holdout_r2_scores(self): 
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[model_sweep['training.seed'] == 100]
 
-        with open("../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json", "r") as f:
-            top_model_configs = json.load(f)
+        if not hasattr(self, 'top_model_configs'):
+            self.show_top_unique_model_configs_after_averaging_by_seed()
 
         run_ids = []
 
-        for config in top_model_configs:
+        for config in self.top_model_configs.to_dict(orient="records"):
             subset = model_sweep.copy(deep=True)
+
             for key, value in config.items():
                 if "r2" not in key: 
                     subset = subset[subset[key] == value]
@@ -618,36 +629,60 @@ class DatasetAndModelParameterAnalyzer:
             f.write("\n".join(run_ids))
 
         logger.success(f"Saved run IDs to {output_file}")
-        return run_ids
+        self.run_ids = run_ids
+        return self.run_ids
+
+
+    def assert_outer_loop_holdout_r2_scores(self):
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+
+        if not hasattr(self, 'run_ids'):
+            self.get_run_ids_for_outer_loop_holdout_r2_scores()
+
+        model_sweep = model_sweep[model_sweep['run_id'].isin(self.run_ids)]
+
+        assert model_sweep['outer_loop_holdout_r2_score'].notna().all(), "Some rows have missing values in the 'outer_loop_holdout_r2_score' column"
+        assert model_sweep.shape[0] == len(self.run_ids), "Mismatch between the number of rows in model_sweep and the length of valid_run_ids"
+        logger.success("Assertions for outer loop holdout R2 scores passed")
+
+        self.outer_loop_r2_scores_table = model_sweep
 
 
     def inner_fold_vs_outer_fold_r2_score_table(self):
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep[model_sweep['outer_loop_holdout_r2_score'].notna()]
 
-        return model_sweep[
-                self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
-            ].sort_values(
-                by='outer_loop_holdout_r2_score', 
-                ascending=False
-            )
-    
+        logger.info("Joining outer loop R2 scores with avg. R2 scores from inner folds")
+
+        assert len(self.outer_loop_r2_scores_table) == len(self.top_model_configs)
+        merged_table = self.outer_loop_r2_scores_table.merge(
+            self.top_model_configs,
+            on=self.performance_chosen_parameters,
+            how='inner'
+        )
+
+        assert merged_table.shape[0] == len(self.outer_loop_r2_scores_table), "Mismatch in the number of rows after merging"
+
+        logger.success("Successfully joined outer loop R2 scores table with top model configurations")
+
+        self.inner_vs_outer_r2_table = merged_table
+        return self.inner_vs_outer_r2_table[self.performance_chosen_parameters + ['avg_holdout_r2_score', 'outer_loop_holdout_r2_score']]
+
     
     def save_hyperparameters_for_final_modeling(self): 
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep[model_sweep['outer_loop_holdout_r2_score'].notna()]
 
+        if not hasattr(self, 'inner_vs_outer_r2_table'):
+            self.inner_fold_vs_outer_fold_r2_score_table()
+            
         combined_subset = []
 
         for cell_line in ['K562', 'HepG2']:
-            subset = model_sweep[
-                    (model_sweep['dataset.cell_line'] == cell_line) 
-                ][
-                    self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
-                ].sort_values(
-                    by=['outer_loop_holdout_r2_score'] + self.performance_chosen_parameters,
-                    ascending=False
-                )
+            subset = self.outer_loop_r2_scores_table[
+                (self.outer_loop_r2_scores_table['dataset.cell_line'] == cell_line)
+            ][
+                self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
+            ].sort_values(
+                by=['outer_loop_holdout_r2_score'] + self.performance_chosen_parameters,
+                ascending=False
+            )
 
             subset = subset.drop_duplicates(subset=['outer_loop_holdout_r2_score'], keep='first')
             combined_subset.append(subset)
