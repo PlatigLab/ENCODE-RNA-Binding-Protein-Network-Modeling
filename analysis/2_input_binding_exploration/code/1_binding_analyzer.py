@@ -69,7 +69,10 @@ class YogiBindingPatternAnalyzer:
             for cell_line in self.cell_lines:
                 logger.info(f"Creating {self.binding_mode} binding data for {cell_line}...")
 
-                binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t').filter(pl.col("Total Read Counts") >= 40).collect()
+                binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t') \
+                    .filter(pl.col("Total Read Counts") >= 40) \
+                    .filter(pl.col("chr").str.starts_with("chr") & pl.col("chr").str.slice(3).cast(pl.Int64, strict=False).is_not_null()) \
+                    .collect()
                 binding_cols = [col for col in binding_data.columns if col.endswith("_binding")]
 
                 assert binding_data["index"].n_unique() == binding_data.shape[0], "The 'index' column contains duplicate values"
