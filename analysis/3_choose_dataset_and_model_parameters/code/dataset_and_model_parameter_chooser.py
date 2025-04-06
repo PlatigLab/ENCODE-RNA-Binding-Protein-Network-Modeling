@@ -25,7 +25,7 @@ class DatasetAndModelParameterAnalyzer:
     test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
 
     performance_chosen_parameters = ["model.learning_rate", "model.max_depth", "model.n_estimators", 'dataset.cell_line']
-    n_top_unique_configs = 10
+    n_top_configs = 5
 
     def __post_init__(self):
 
@@ -563,7 +563,7 @@ class DatasetAndModelParameterAnalyzer:
                 # plt.close()
 
     
-    def show_top_unique_model_configs_after_averaging_by_seed(self): 
+    def show_top_model_configs_after_averaging_by_seed(self): 
 
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[
@@ -584,10 +584,7 @@ class DatasetAndModelParameterAnalyzer:
                 ].sort_values(
                     by=['avg_holdout_r2_score'] + self.performance_chosen_parameters,
                     ascending=False
-                ).drop_duplicates(
-                    subset=['avg_holdout_r2_score'],
-                    keep='first'
-                ).head(self.n_top_unique_configs)
+                ).head(self.n_top_configs)
 
             combined_configs.append(top_configs_cell_line)
 
@@ -608,7 +605,7 @@ class DatasetAndModelParameterAnalyzer:
         model_sweep = model_sweep[model_sweep['training.seed'] == 100]
 
         if not hasattr(self, 'top_model_configs'):
-            self.show_top_unique_model_configs_after_averaging_by_seed()
+            self.show_top_model_configs_after_averaging_by_seed()
 
         run_ids = []
 
