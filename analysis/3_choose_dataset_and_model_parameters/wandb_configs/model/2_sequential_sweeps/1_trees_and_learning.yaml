@@ -8,6 +8,8 @@ sweep:
 # Base configuration
 config_overlay:
 
+  platiglib_project: rbpse
+
   dataset:
     name: RBPSEDataset
     three_exon_combos: all
@@ -35,10 +37,23 @@ config_overlay:
       validate_frac_of_train: 0.10
 
     wandb:
-      project: yogi-xgbregressor-hyperparameter-sweep-march-2025
+      project: yogi-xgbregressor-hyperparameter-sweep-april-2025
   
   model:
     name: XGBRegressor
+
+    # CONSTANT BASE HYPERPARAMETERS
+    n_jobs: -1
+    eval_metric: ['rmse', 'logloss']
+    n_estimators: 100000
+
+    # FIXING OTHER HYPERPARMETERS
+    min_child_weight: 1
+    gamma: 0 
+    subsample: 1
+    colsample_bytree: 1
+    reg_lambda: 1
+    reg_alpha: 0
 
 
 # Parameters to sweep
@@ -50,10 +65,10 @@ parameters:
   training.seed: 
     values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
 
-  # LEARNING RATE, NUM TREES, MAX DEPTH
+  # EARLY STOPPING, LEARNING RATE, MAX DEPTH
+  model.early_stopping_rounds: 
+    values: [10, 50, 100, 250, 500]
   model.learning_rate:
     values: [0.01, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4]
-  model.n_estimators:
-    values: [100, 200, 250, 500, 750, 1000, 2000, 5000]
   model.max_depth:
     values: [3, 5, 7, 9, 11]
