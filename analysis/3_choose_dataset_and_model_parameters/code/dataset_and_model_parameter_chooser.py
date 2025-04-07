@@ -208,6 +208,84 @@ class DatasetAndModelParameterAnalyzer:
         logger.success(f"Calculated and saved stats for {cell_line}, {window}, {min_read_count}")
 
 
+    def average_across_seed_per_cell_line(self, data= None, group_by=None):
+        assert group_by is not None and data is not None, "group_by and data should be provided"
+
+        grouped = data.groupby(group_by + ['dataset.cell_line'])
+        assert all(len(group) == 9 for _, group in grouped), "Not all groups have exactly 9 entries"
+        
+        average_per_config = grouped['holdout_r2_score'].mean().reset_index().rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
+        
+        combined_configs = []
+        for cell_line in average_per_config['dataset.cell_line'].unique().tolist():
+
+            top_configs_cell_line = average_per_config[
+                    average_per_config['dataset.cell_line'] == cell_line
+                ].sort_values(
+                    by='avg_holdout_r2_score',
+                    ascending=False
+                ).head(self.view_n_configs)
+            
+            combined_configs.append(top_configs_cell_line)
+
+        return pd.concat(combined_configs, ignore_index=True)
+
+
+    def show_top_model_configs_after_averaging_by_seed(self, all_configs=None): 
+
+        assert all_configs is not None, "all_configs should be provided"
+
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[
+                model_sweep['sweep_name'].str.contains(":")
+            ]
+        
+        return_dfs = {}
+
+        if not all_configs: 
+            for sweep_name in model_sweep['sweep_name'].unique().tolist():
+                subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
+
+                swept_parameters = sweep_name.split(":")[1].split("-")
+                model_sweep_parameters = [f"model.{param}" for param in swept_parameters]
+                
+                avg_df = self.average_across_seed_per_cell_line(
+                    data=subset,
+                    group_by=model_sweep_parameters
+                )
+
+                return_dfs[sweep_name] = avg_df
+        
+        elif all_configs:
+
+            model_sweep_parameters = []
+            for sweep_name in model_sweep['sweep_name'].unique().tolist():
+                swept_parameters = sweep_name.split(":")[1].split("-")
+                model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
+
+            subset = model_sweep.drop_duplicates(subset=model_sweep_parameters, keep='first')
+            logger.warning(f"Dropping model hyperparameter duplicates after all sweeps ran. \nOriginal shape: {model_sweep.shape}, new shape: {subset.shape}")
+
+            avg_df = self.average_across_seed_per_cell_line(
+                data=subset,
+                group_by=model_sweep_parameters
+            )
+
+            return_dfs["ALL CONFIGS"] = avg_df
+
+        return return_dfs
+                
+
+                # output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
+                # with open(output_file, "w") as f:
+                #     json.dump(combined_configs.to_dict(orient="records"), f, indent=4)
+                # logger.success(f"Saved top model configurations to {output_file}")
+                
+                # logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {self.performance_chosen_parameters}")
+                # self.top_model_configs = combined_configs
+                # return self.top_model_configs
+
+
     def load_aggreated_data_stats(self):
         
         data_stats_df = pd.read_csv("../output/data_matrix_stats/data_stats.tsv", sep="\t")
