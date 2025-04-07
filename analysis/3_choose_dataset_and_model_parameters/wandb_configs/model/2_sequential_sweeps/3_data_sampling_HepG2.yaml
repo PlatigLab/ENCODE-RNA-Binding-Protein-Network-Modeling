@@ -1,0 +1,74 @@
+# Sweep configuration
+sweep:
+  method: grid
+  metric:
+    name: holdout_r2_score
+    goal: maximize
+
+# Base configuration
+config_overlay:
+
+  platiglib_project: rbpse
+
+  dataset:
+    cell_line: HepG2
+    name: RBPSEDataset
+    three_exon_combos: all
+    window: 100
+    min_read_count: 40
+
+    features: 
+      binding_matrix: 
+        binding_format: 'binary'
+        in_silico_kd: true
+
+    fold_filter:
+      num_folds: 5
+      fold_index: 1
+      group_column: ensembl_gene_id
+      side: train
+      seed: 17
+  
+  training:
+
+    data_split:
+      method: cross_validation
+      num_folds: 5
+      group_column: 'ensembl_gene_id'
+      validate_frac_of_train: 0.10
+
+    wandb:
+      project: yogi-xgbregressor-hyperparameter-sweep-april-2025
+  
+  model:
+    name: XGBRegressor
+
+    # CONSTANT BASE HYPERPARAMETERS
+    n_jobs: -1
+    eval_metric: ['rmse', 'logloss']
+    n_estimators: 100000
+
+    # FROM PREVIOUS SWEEPS
+    early_stopping_rounds: 100
+    learning_rate: 0.05
+    max_depth: 3
+
+    min_child_weight: 30 
+    gamma: 0.5
+
+    # FIXING OTHER HYPERPARMETERS
+    reg_lambda: 1
+    reg_alpha: 0
+
+
+# Parameters to sweep
+parameters:
+
+  training.seed: 
+    values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+
+  # ROW AND COLUMN SAMPLING
+  model.subsample:
+    values: [0.1, 0.25, 0.5, 0.75, 1]
+  model.colsample_bytree:
+    values: [0.1, 0.25, 0.5, 0.75, 1]
