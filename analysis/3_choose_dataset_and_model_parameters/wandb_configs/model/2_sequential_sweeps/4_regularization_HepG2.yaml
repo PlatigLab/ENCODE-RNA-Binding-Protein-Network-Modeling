@@ -56,7 +56,7 @@ config_overlay:
     min_child_weight: 1
     gamma: 0.5
 
-    colsample_bytree: 1
+    colsample_bytree: 0.75
     subsample: 1
 
 
