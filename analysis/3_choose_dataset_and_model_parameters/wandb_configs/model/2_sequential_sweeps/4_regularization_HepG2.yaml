@@ -53,7 +53,7 @@ config_overlay:
     learning_rate: 0.05
     max_depth: 3
 
-    min_child_weight: 1
+    min_child_weight: 30
     gamma: 0.5
 
     colsample_bytree: 0.75
