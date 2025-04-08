@@ -11,7 +11,7 @@ class DatasetAndModelParameterAnalyzer:
 
     sweep_projects = {
         'dataset': 'yogi-dataset-sweep-feb-2025', 
-        'model': 'yogi-xgbregressor-hyperparameter-sweep-march-2025'
+        'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025'
     }
 
     dataset_sweep_covariates= {
@@ -20,12 +20,7 @@ class DatasetAndModelParameterAnalyzer:
         'dataset.features.binding_matrix.window': "Window"
     }
 
-    train_set = ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11', 'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
-    validate_set = ['chr4', 'chr6', 'chr10', 'chr14', 'chr18', 'chr22']
-    test_set = ["chr2", "chr8", "chr12", "chr16", "chr20"]
-
-    performance_chosen_parameters = ["model.learning_rate", "model.max_depth", "model.n_estimators", 'dataset.cell_line']
-    n_top_configs = 5
+    view_n_configs = 10
 
     def __post_init__(self):
 
@@ -40,6 +35,12 @@ class DatasetAndModelParameterAnalyzer:
         if len(list(output_folder.glob('*'))) == 2: 
             
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
+
+            logger.warning("REMINDER: removing early_stopping_rounds outside of 100")
+            model_df = self.sweep_results['model']
+            model_df = model_df[model_df['model.early_stopping_rounds'] == 100]
+            self.sweep_results['model'] = model_df
+
             for key, df in self.sweep_results.items():
                 logger.info(f"{key} summary table contains {df.shape[0]} rows")
 
@@ -75,6 +76,11 @@ class DatasetAndModelParameterAnalyzer:
 
                     run_data.append(run_info)
 
+                if type == 'model':
+                    for row in run_data:
+                        if row["sweep_name"].count(":") == 2:
+                            row["sweep_name"] = row["sweep_name"].rsplit(":", 1)[0]
+                            
                 run_df = pd.DataFrame(run_data)
                 run_df.to_csv(output_folder / f"{type}_sweep_summary.tsv", index=False, sep="\t")
                 self.sweep_results[type] = run_df
@@ -236,6 +242,7 @@ class DatasetAndModelParameterAnalyzer:
         assert all_configs is not None, "all_configs should be provided"
 
         model_sweep = self.sweep_results['model'].copy(deep=True)
+        logger.info(f"Model sweep shape: {model_sweep.shape}")
         model_sweep = model_sweep[
                 model_sweep['sweep_name'].str.contains(":")
             ]
@@ -255,6 +262,8 @@ class DatasetAndModelParameterAnalyzer:
                 )
 
                 return_dfs[sweep_name] = avg_df
+
+            return return_dfs
         
         elif all_configs:
 
@@ -262,8 +271,14 @@ class DatasetAndModelParameterAnalyzer:
             for sweep_name in model_sweep['sweep_name'].unique().tolist():
                 swept_parameters = sweep_name.split(":")[1].split("-")
                 model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
-
-            subset = model_sweep.drop_duplicates(subset=model_sweep_parameters, keep='first')
+            
+            subset = model_sweep.sort_values(
+                    'holdout_r2_score', 
+                    ascending=False
+                ).drop_duplicates(
+                    subset=model_sweep_parameters + ['dataset.cell_line', 'training.seed'],
+                    keep="first"
+                )
             logger.warning(f"Dropping model hyperparameter duplicates after all sweeps ran. \nOriginal shape: {model_sweep.shape}, new shape: {subset.shape}")
 
             avg_df = self.average_across_seed_per_cell_line(
@@ -271,9 +286,8 @@ class DatasetAndModelParameterAnalyzer:
                 group_by=model_sweep_parameters
             )
 
-            return_dfs["ALL CONFIGS"] = avg_df
-
-        return return_dfs
+            self.top_model_configs = avg_df
+            return self.top_model_configs
                 
 
                 # output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
