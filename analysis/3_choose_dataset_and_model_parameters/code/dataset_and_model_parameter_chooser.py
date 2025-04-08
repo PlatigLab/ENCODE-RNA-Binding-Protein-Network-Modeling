@@ -267,6 +267,12 @@ class DatasetAndModelParameterAnalyzer:
         
         elif all_configs:
 
+            # logger.warning("REMINDER: keeping configurations where colsample_bytree and subsample are both 1")
+            # model_sweep = model_sweep[
+            #         (model_sweep['model.colsample_bytree'] == 1) &
+            #         (model_sweep['model.subsample'] == 1)
+            #     ]
+
             model_sweep_parameters = []
             for sweep_name in model_sweep['sweep_name'].unique().tolist():
                 swept_parameters = sweep_name.split(":")[1].split("-")
@@ -653,43 +659,6 @@ class DatasetAndModelParameterAnalyzer:
                 
                 # plt.show()
                 # plt.close()
-
-    
-    def show_top_model_configs_after_averaging_by_seed(self): 
-
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        model_sweep = model_sweep[
-                model_sweep['sweep_name'].str.contains("1:")
-            ][self.performance_chosen_parameters + ['training.seed', 'holdout_r2_score']]
-        
-        
-        grouped = model_sweep.groupby(self.performance_chosen_parameters)
-        assert all(len(group) == 9 for _, group in grouped), "Not all groups have exactly 9 entries"
-        
-        top_configs = grouped['holdout_r2_score'].mean().reset_index().rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
-        
-        combined_configs = []
-        for cell_line in ['K562', 'HepG2']:
-
-            top_configs_cell_line = top_configs[
-                    top_configs['dataset.cell_line'] == cell_line
-                ].sort_values(
-                    by=['avg_holdout_r2_score'] + self.performance_chosen_parameters,
-                    ascending=False
-                ).head(self.n_top_configs)
-
-            combined_configs.append(top_configs_cell_line)
-
-        combined_configs = pd.concat(combined_configs, ignore_index=True)
-
-        output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
-        with open(output_file, "w") as f:
-            json.dump(combined_configs.to_dict(orient="records"), f, indent=4)
-        logger.success(f"Saved top model configurations to {output_file}")
-        
-        logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {self.performance_chosen_parameters}")
-        self.top_model_configs = combined_configs
-        return self.top_model_configs
 
 
     def get_run_ids_for_outer_loop_holdout_r2_scores(self): 
