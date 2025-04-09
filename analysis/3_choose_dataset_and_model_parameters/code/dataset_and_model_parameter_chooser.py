@@ -297,7 +297,7 @@ class DatasetAndModelParameterAnalyzer:
             return self.top_model_configs
                 
 
-                # output_file = "../output/chosen_model_hyperparameters/top_model_configs_per_cell_line.json"
+                # output_file = "../output/chosen_models_for_outer_loop/top_model_configs_per_cell_line.json"
                 # with open(output_file, "w") as f:
                 #     json.dump(combined_configs.to_dict(orient="records"), f, indent=4)
                 # logger.success(f"Saved top model configurations to {output_file}")
@@ -690,7 +690,7 @@ class DatasetAndModelParameterAnalyzer:
 
         run_ids = sorted(run_ids)
 
-        output_file = "../output/chosen_model_hyperparameters/outer_loop_holdout_run_ids.txt"
+        output_file = "../output/chosen_models_for_outer_loop/outer_loop_holdout_run_ids.txt"
         with open(output_file, "w") as f:
             f.write("\n".join(run_ids))
 
@@ -715,41 +715,65 @@ class DatasetAndModelParameterAnalyzer:
         self.outer_loop_r2_scores_table = model_sweep
 
 
-    def inner_fold_vs_outer_fold_r2_score_table(self):
+    def inner_fold_vs_outer_fold_r2_score(self):
 
-        logger.warning("REMINDER: comparing inner and outer fold scores only where the seed is 100")
-        return self.outer_loop_r2_scores_table
-    
+        # Extract all model parameters from sweep_names
+        model_sweep = self.sweep_results['model'].copy(deep=True)
+        model_sweep = model_sweep[model_sweep['sweep_name'].str.contains(":")]
 
-    def save_hyperparameters_for_final_modeling(self): 
+        model_sweep_parameters = []
+        for sweep_name in model_sweep['sweep_name'].unique().tolist():
+            swept_parameters = sweep_name.split(":")[1].split("-")
+            model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
+        model_sweep_parameters = list(dict.fromkeys(model_sweep_parameters))  # Remove duplicates while preserving order
 
-        if not hasattr(self, 'outer_loop_r2_scores_table'):
-            self.inner_fold_vs_outer_fold_r2_score_table()
-            
-        combined_subset = []
+        # Merge outer_loop_r2_scores_table with top_model_configs
+        merged_table = pd.merge(
+            self.outer_loop_r2_scores_table,
+            self.top_model_configs,
+            on=model_sweep_parameters + ['dataset.cell_line'],
+            how='inner',
+            suffixes=('_outer', '_inner')
+        ).sort_values(
+            by=['dataset.cell_line', 'outer_loop_holdout_r2_score', 'avg_holdout_r2_score'],
+        )
 
-        for cell_line in ['K562', 'HepG2']:
-            subset = self.outer_loop_r2_scores_table[
-                (self.outer_loop_r2_scores_table['dataset.cell_line'] == cell_line)
-            ][
-                self.performance_chosen_parameters + ['holdout_r2_score', 'outer_loop_holdout_r2_score']
-            ].sort_values(
-                by=['outer_loop_holdout_r2_score'] + self.performance_chosen_parameters,
-                ascending=False
-            )
+        assert merged_table.shape[0] == len(self.outer_loop_r2_scores_table), "Mismatch in the number of rows after merging with top_model_configs"    
+        self.inner_vs_outer_r2_scores_table = merged_table[model_sweep_parameters + ["run_id", "dataset.cell_line", "avg_holdout_r2_score", "outer_loop_holdout_r2_score"]]
+        
+        # Create a scatterplot of avg_holdout_r2_score vs. outer_loop_holdout_r2_score
+        plt.figure(figsize=(6,3), dpi=200)
+        sns.scatterplot(
+            x="avg_holdout_r2_score", 
+            y="outer_loop_holdout_r2_score", 
+            hue="dataset.cell_line", 
+            data=self.inner_vs_outer_r2_scores_table, 
+            palette="Set2", 
+            edgecolor="black", 
+            linewidth=1,
+            s=40
+        )
 
-            subset = subset.drop_duplicates(subset=['outer_loop_holdout_r2_score'], keep='first')
-            combined_subset.append(subset)
+        # Add the y=x line
+        min_val = min(
+            self.inner_vs_outer_r2_scores_table["avg_holdout_r2_score"].min(),
+            self.inner_vs_outer_r2_scores_table["outer_loop_holdout_r2_score"].min()
+        )
+        max_val = max(
+            self.inner_vs_outer_r2_scores_table["avg_holdout_r2_score"].max(),
+            self.inner_vs_outer_r2_scores_table["outer_loop_holdout_r2_score"].max()
+        )
+        plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        combined_subset = pd.concat(combined_subset, ignore_index=True)
-        combined_subset_dict = combined_subset.to_dict(orient="records")
+        plt.title("Inner Fold vs. Outer Loop Holdout R2 Scores", fontsize=14)
+        plt.xlabel("Average Holdout R2 Score (Inner Fold)", fontsize=12)
+        plt.ylabel("Outer Loop Holdout R2 Score", fontsize=12)
+        plt.legend(title="Cell Line", fontsize=9, title_fontsize=10, loc="best")
 
-        output_file = "../output/chosen_model_hyperparameters/final_model_hyperparameters.json"
-        with open(output_file, "w") as f:
-            json.dump(combined_subset_dict, f, indent=4)
-
-        logger.success(f"Saved final model hyperparameters to {output_file}")
-        return combined_subset
+        # Save the plot
+        plt.show()
+        plt.close()
+        return self.inner_vs_outer_r2_scores_table
 
 
 if __name__ == "__main__":
