@@ -21,6 +21,7 @@ class DatasetAndModelParameterAnalyzer:
     }
 
     view_n_configs = 10
+    choose_n_configs = 5
 
     def __post_init__(self):
 
@@ -666,18 +667,25 @@ class DatasetAndModelParameterAnalyzer:
         model_sweep = model_sweep[model_sweep['training.seed'] == 100]
 
         if not hasattr(self, 'top_model_configs'):
-            self.show_top_model_configs_after_averaging_by_seed()
+            self.show_top_model_configs_after_averaging_by_seed(all_configs=True)
+
+        outer_loop_candidates = pd.concat([
+            self.top_model_configs[self.top_model_configs['dataset.cell_line'] == cell_line].head(self.choose_n_configs)
+            for cell_line in self.top_model_configs['dataset.cell_line'].unique()
+        ], ignore_index=True)
 
         run_ids = []
-
-        for config in self.top_model_configs.to_dict(orient="records"):
+        for config in outer_loop_candidates.to_dict(orient="records"):
             subset = model_sweep.copy(deep=True)
 
             for key, value in config.items():
-                if "r2" not in key: 
+                if key.startswith("model."): 
                     subset = subset[subset[key] == value]
+            
+            if subset.shape[0] > 1:
+                logger.warning(f"{subset.shape[0]} runs found for config: {config}. \nChoosing the first one after sorting by all columns.")
 
-            assert subset.shape[0] == 1, f"Expected 1 row, but got {subset.shape[0]} for config: {config}"
+            subset = subset.sort_values(by=subset.columns.tolist())
             run_ids.append(subset['run_id'].iloc[0])
 
         run_ids = sorted(run_ids)
@@ -701,6 +709,7 @@ class DatasetAndModelParameterAnalyzer:
 
         assert model_sweep['outer_loop_holdout_r2_score'].notna().all(), "Some rows have missing values in the 'outer_loop_holdout_r2_score' column"
         assert model_sweep.shape[0] == len(self.run_ids), "Mismatch between the number of rows in model_sweep and the length of valid_run_ids"
+        assert len(model_sweep) == (2 * self.choose_n_configs)
         logger.success("Assertions for outer loop holdout R2 scores passed")
 
         self.outer_loop_r2_scores_table = model_sweep
@@ -708,26 +717,13 @@ class DatasetAndModelParameterAnalyzer:
 
     def inner_fold_vs_outer_fold_r2_score_table(self):
 
-        logger.info("Joining outer loop R2 scores with avg. R2 scores from inner folds")
-
-        assert len(self.outer_loop_r2_scores_table) == len(self.top_model_configs)
-        merged_table = self.outer_loop_r2_scores_table.merge(
-            self.top_model_configs,
-            on=self.performance_chosen_parameters,
-            how='inner'
-        )
-
-        assert merged_table.shape[0] == len(self.outer_loop_r2_scores_table), "Mismatch in the number of rows after merging"
-
-        logger.success("Successfully joined outer loop R2 scores table with top model configurations")
-
-        self.inner_vs_outer_r2_table = merged_table
-        return self.inner_vs_outer_r2_table[self.performance_chosen_parameters + ['avg_holdout_r2_score', 'outer_loop_holdout_r2_score']]
-
+        logger.warning("REMINDER: comparing inner and outer fold scores only where the seed is 100")
+        return self.outer_loop_r2_scores_table
     
+
     def save_hyperparameters_for_final_modeling(self): 
 
-        if not hasattr(self, 'inner_vs_outer_r2_table'):
+        if not hasattr(self, 'outer_loop_r2_scores_table'):
             self.inner_fold_vs_outer_fold_r2_score_table()
             
         combined_subset = []
