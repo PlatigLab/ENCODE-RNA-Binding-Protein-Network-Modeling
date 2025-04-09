@@ -28,3 +28,7 @@ Looking at the effect of sequencing batch on `PSI` values across splice types sp
 
 Mini-experiment to see how well ordinal regression models do as compared to our approach of continuous prediction of `PSI` values.
 
+📂 `7_verify_sample_ordering_from_ayan/`:
+
+Check that correlation between samples that should be in same condition is higher than those that are in different conditions. 
+Related to bug/issue I found in Janmejay's code as described here: https://github.com/NNeuralDynamics/as-rmats-turbo-encode/issues/2. 
