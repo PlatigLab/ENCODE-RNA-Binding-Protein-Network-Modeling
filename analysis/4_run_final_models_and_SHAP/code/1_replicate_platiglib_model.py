@@ -28,6 +28,8 @@ class YogiPlatigLibModelReplicator:
     def initialize_config(self):
         with open(self.config_file, 'r') as f:
             self.config = json.load(f)
+
+        self.unique_hash = self.config_file.split("/")[-1].split(".")[0]
         
         logger.info(f"Loaded config file: {self.config_file}")
         logger.info(f"Config: {self.config}")
@@ -218,11 +220,11 @@ class YogiPlatigLibModelReplicator:
             os.makedirs(f"{dir}/{self.model_type}/", exist_ok=True)
 
         # Save the model
-        model_filename = f"{MODEL_DIR}/{self.model_type}/{self.cell_line}.pkl.gz"
+        model_filename = f"{MODEL_DIR}/{self.model_type}/{self.unique_hash}.pkl.gz"
         with gzip.open(model_filename, 'wb') as f:
             pickle.dump(self.model, f)
 
-        predictions_filename = f"{PREDICTIONS_DIR}/{self.model_type}/{self.cell_line}_predictions.feather"   
+        predictions_filename = f"{PREDICTIONS_DIR}/{self.model_type}/{self.unique_hash}.feather"   
         self.output_df.write_ipc(predictions_filename, compression="lz4")
 
         logger.success(f"Model and predictions saved to {MODEL_DIR}/{self.model_type}/ and {PREDICTIONS_DIR}/{self.model_type}/ respectively.")
