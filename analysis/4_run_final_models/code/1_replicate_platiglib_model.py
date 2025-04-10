@@ -1,122 +1,225 @@
-import json, argparse, sys, gc, copy, pickle, os, gzip
-import polars as pl, xgboost as xgb
+import json, argparse, sys, gc, copy, pickle, os, gzip, glob
+
+import polars as pl
+
 from loguru import logger
 from sklearn.model_selection import train_test_split
+from dataclasses import dataclass
+from xgboost import XGBRegressor
+from sklearn.linear_model import ElasticNet
+from sklearn.metrics import r2_score
+
+CONFIGS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction"
+MODEL_DIR = "../outputs/pickled_models"
+PREDICTIONS_DIR = "../outputs/predictions"
+
+@dataclass
+class YogiPlatigLibModelReplicator:
+    config_file: str
+
+    DATA_DIR = "../../2_input_binding_exploration/__featherv2-cache__/"
+    _REQUIRED_COLUMNS = ['index', 'Target_PSI']
 
 
-_REQUIRED_COLUMNS = ['index', 'ENSEMBL Gene ID', 'Target_PSI']
-_DEFAULT_XGBREGRESSOR_KWARGS = {
-    'objective': 'reg:logistic',
-    'min_child_weight': 1,
-    'gamma': 0, 
-    'subsample': 1, 
-    'colsample_bytree': 1,
-    'reg_alpha': 0,
-    'reg_lambda': 1, 
-    'n_jobs': -1,
-    'early_stopping_rounds': 100, 
-    'eval_metric': ['rmse', 'logloss'],
-}
-
-def run_xgbregressor(data_and_model_args):
-
-    # Load the dataset as a lazyframe
-    data = pl.scan_ipc(
-        f"../../2_input_binding_exploration/__featherv2-cache__/{data_and_model_args['dataset.cell_line']}_100.feather",
-    )
-    schema  = data.collect_schema().names()
-
-    # Get the column schema and filter columns
-    columns_to_keep = [
-            col for col in schema if col.endswith("_binding") 
-        ] + _REQUIRED_COLUMNS
-    logger.info(f"Columns to keep: {columns_to_keep}")
-
-    # Select only the desired columns
-    data = data.select(columns_to_keep).collect()
-    # Extract unique ENSEMBL Gene IDs
-    unique_genes = data['ENSEMBL Gene ID'].unique().to_list()
-
-    # Split the genes into 90% train and 10% validate
-    train_genes, validate_genes = train_test_split(
-            unique_genes, 
-            train_size=0.9,
-            test_size=0.1, 
-            random_state=data_and_model_args['random_seed'], 
-            shuffle=True,
-        )
-    assert not set(train_genes).intersection(set(validate_genes)), "Overlap detected between train_genes and validate_genes"
-    logger.info(f"Number of train genes: {len(train_genes)}")
-    logger.info(f"Number of validate genes: {len(validate_genes)}")
-
-    # Filter the data based on the split
-    train_data = data.filter(pl.col('ENSEMBL Gene ID').is_in(train_genes)).to_pandas()
-    validate_data = data.filter(pl.col('ENSEMBL Gene ID').is_in(validate_genes)).to_pandas()
-    # Assert that there are no overlapping values in the 'index' column
-    assert not set(train_data['index']).intersection(set(validate_data['index'])), "Overlap detected between train_data and validate_data in 'index' column"
-
-    # Log the number of rows in train and validate data
-    logger.info(f"Number of graphs in train data: {len(train_data)}")
-    logger.info(f"Number of graphs in validate data: {len(validate_data)}")
-
-    del data 
-    gc.collect()
-
-    train_indices = train_data['index'].to_list()
-    validate_indices = validate_data['index'].to_list()
-    # Assert that the indices are unique
-    assert len(train_indices) == len(set(train_indices)), "Duplicate indices found in train data"
-    assert len(validate_indices) == len(set(validate_indices)), "Duplicate indices found in validate data"
-    train_indices = set(train_indices)
-    validate_indices = set(validate_indices)
-
-    # Separate features and target using pandas
-    X_train = train_data.drop(columns=_REQUIRED_COLUMNS)
-    y_train = train_data['Target_PSI']
-    X_validate = validate_data.drop(columns=_REQUIRED_COLUMNS)
-    y_validate = validate_data['Target_PSI']
-
-    # Assert that X_train and X_validate only have column names that end in "_binding"
-    assert all(col.endswith("_binding") for col in X_train.columns), "X_train contains columns that do not end with '_binding'"
-    assert all(col.endswith("_binding") for col in X_validate.columns), "X_validate contains columns that do not end with '_binding'"
-    # Assert that the number of features in X_train and X_validate are the same
-    assert X_train.shape[1] == X_validate.shape[1], "X_train and X_validate have different number of features"
-    # Assert that the order of columns in X_train and X_validate are the same
-    assert list(X_train.columns) == list(X_validate.columns), "Column order in X_train and X_validate do not match"
+    def __post_init__(self):
+        self.initialize_config()
     
-    del train_data, validate_data
-    gc.collect()
 
-    # Deep copy the default kwargs for XGBRegressor
-    xgb_kwargs = copy.deepcopy(_DEFAULT_XGBREGRESSOR_KWARGS)
+    def initialize_config(self):
+        with open(self.config_file, 'r') as f:
+            self.config = json.load(f)
+        
+        logger.info(f"Loaded config file: {self.config_file}")
+        logger.info(f"Config: {self.config}")
 
-    # Update xgb_kwargs with parameters from data_and_model_args
-    for key, value in data_and_model_args.items():
-        if key.startswith('model.'):
-            param_name = key.split('.')[-1]
-            xgb_kwargs[param_name] = value
-        elif key == 'random_seed':
-            xgb_kwargs['random_state'] = value
+        self.cell_line = self.config.pop('cell_line')
+        self.model_type = self.config.pop('name')
+        self.config['random_state'] = self.config.pop('seed')
+
+        with gzip.open(f"{CONFIGS_DIR}/rows_to_reproduce/{self.cell_line}.pkl.gz", 'rb') as f:
+            self.indices_dict = pickle.load(f)
+
+
+    def replicate_model(self): 
+        self.get_unique_ids_for_training_and_evaluation() 
+        self.get_training_validation_test_data()
+        self.run_model()   
+        self.get_performance()
+        self.get_all_predictions()
+        self.save_model_and_predictions()
     
-    logger.info(f"XGBRegressor parameters: {xgb_kwargs}")
 
-    # Initialize and train the XGBRegressor model
-    model = xgb.XGBRegressor(**xgb_kwargs)
-    model.fit(
-            X_train, y_train,
-            eval_set=[(X_validate, y_validate)],
-            verbose=True
-        )
+    def get_unique_ids_for_training_and_evaluation(self): 
 
-    # Save train_indices and validate_indices as attributes to the model
-    model.train_indices = train_indices
-    model.validate_indices = validate_indices
+        unique_ids_dict = {}
+        for key, indices in self.indices_dict.items():
 
-    # Save the trained model to a gzip-compressed file
-    with gzip.open(f"../outputs/pickled_models/{data_and_model_args['unique_id']}.pkl.gz", "wb") as f:
-        pickle.dump(model, f)
+            if key.endswith("_ind"):
+                metadata_df = self.indices_dict["metadata_df"]
+                subset_df = metadata_df[metadata_df['index'].isin(indices)]
 
-    logger.success(f"Model saved to ../outputs/pickled_models/{data_and_model_args['unique_id']}.pkl")    
+                assert len(subset_df) == len(indices), f"Length mismatch for {key}: {len(subset_df)} vs {len(indices)}"
+                unique_ids_dict[key] = set(subset_df["unique_id"])
+        
+        self.unique_ids_dict = unique_ids_dict
+        del self.indices_dict
+        gc.collect()
+
+    
+    def get_training_validation_test_data(self):
+
+        logger.info(f"Getting data splits with unique IDs for {self.unique_ids_dict.keys()}")
+
+        for key, unique_ids in self.unique_ids_dict.items():
+            df = pl.scan_ipc(
+                    f"{self.DATA_DIR}/{self.cell_line}_100.feather", 
+                )
+            
+            # Get the column schema of the lazyframe
+            column_schema = df.collect_schema()
+            
+            # Select columns that end in "_binding" and the required columns
+            selected_columns = [
+                col for col in column_schema.keys() 
+                if col.endswith("_binding") or col in self._REQUIRED_COLUMNS
+            ]
+            
+            # Apply the selection, filter the dataframe, and sort by the index column
+            df = df.select(selected_columns).filter(
+                    pl.col("index").is_in(unique_ids)
+                ).sort("index").collect()
+            
+            assert len(df) == len(unique_ids), f"Length mismatch for {key}: {len(df)} vs {len(unique_ids)}"
+
+            # Separate input data and evaluation column
+            evaluation_data = df.select(["Target_PSI"]).to_pandas()
+            df = df.select([col for col in df.columns if col.endswith("_binding")]).to_pandas()
+
+            # Store the splits in attributes for later use
+            setattr(self, f'{key.split("_")[0]}_input', df)
+            setattr(self, f'{key.split("_")[0]}_target', evaluation_data)
+
+            logger.info(f"Data for {key} has {len(df)} rows and {len(df.columns)} columns.")
+
+        logger.success(f"Data splits for {self.unique_ids_dict.keys()} are ready.")
+
+
+    def run_model(self):
+
+        # Dynamically get the model class from the string name
+        model_class = globals().get(self.model_type)
+        assert model_class is not None, f"Model class {self.model_type} not found."
+
+        # Initialize the model with the parameters from the config
+        model = model_class(**self.config)
+        logger.info(f"{model_class} instantiated with parameters: {model.get_params()}")
+
+        # Assert that all columns in train_input end with "_binding"
+        assert all(col.endswith("_binding") for col in self.train_input.columns), "Not all columns in train_input end with '_binding'"
+        
+        if hasattr(self, "validate_input"):
+            assert self.model_type == "XGBRegressor", f"Model type must be XGBRegressor when validate_data is present, but got {self.model_type}"
+            # Assert that train_input and validate_input have the same column order
+            assert list(self.train_input.columns) == list(self.validate_input.columns), "train_input and validate_input must have the same column order"
+
+            logger.info(f"Training shape {self.train_input.shape}, Validation shape {self.validate_input.shape}")
+
+            # Get the training and evaluation data
+            model = model.fit(
+                self.train_input, 
+                self.train_target, 
+                eval_set=[(self.validate_input, self.validate_target)],
+            ) 
+        else: 
+            logger.info(f"Training shape {self.train_input.shape}")
+            model = model.fit(
+                self.train_input, 
+                self.train_target
+            )
+
+        model.column_order_when_fitting = self.train_input.columns
+        self.model = model
+
+        logger.success(f"{model_class} model fitted.")
+
+    
+    def get_performance(self):
+
+        # Use the model to predict on the test data
+        test_predictions = self.model.predict(self.test_input)
+        # Calculate the R2 score
+        r2 = r2_score(self.test_target, test_predictions)
+        # Log the performance
+        logger.info(f"Model R2 score on test data: {r2}")
+
+    
+    def get_all_predictions(self): 
+
+        # Delete all attributes of self that end in _input or _target
+        attributes_to_delete = [
+            attr for attr in dir(self) if attr.endswith("_input") or attr.endswith("_target")
+        ]
+    
+        for attr in attributes_to_delete:
+            delattr(self, attr)
+        gc.collect()
+
+        # Read the feather file again to get all data
+        df = pl.scan_ipc(f"{self.DATA_DIR}/{self.cell_line}_100.feather").sort("index").collect()4
+        original_df_size = len(df)
+
+        all_target_data = df.select(["Target_PSI"]).to_pandas()
+        all_input_data = df.select(
+            [col for col in df.columns if col.endswith("_binding")]
+        ).to_pandas()
+
+        assert len(all_input_data) == len(all_target_data), f"Length mismatch: {len(all_input_data)} vs {len(all_target_data)}"
+        # Ensure the column order matches the order used during model fitting
+        assert list(all_input_data.columns) == list(self.model.column_order_when_fitting), \
+            f"Column order mismatch: {list(all_input_data.columns)} vs {list(self.model.column_order_when_fitting)}"
+
+        # Use the model to predict on the entire dataset
+        predictions = self.model.predict(all_input_data)
+        # Add predictions to the original dataframe
+        df = df.with_columns(pl.Series("Predictions", predictions))
+
+        logger.info(f"R2 score for all data predictions: {r2_score(all_target_data, predictions)}")
+
+        # Add a new column "Partition" to specify Train, Test, or Validate
+        partition_column = []
+        for idx in df["index"]:
+            partition = None
+            for key, unique_ids in self.unique_ids_dict.items():
+                if idx in unique_ids:
+                    partition = key.split("_")[0].capitalize()
+                    break
+
+            assert partition is not None, f"Index {idx} not found in any partition."
+            partition_column.append(partition)
+
+        df = df.with_columns(pl.Series("Partition", partition_column))
+        # Assert that there are no missing values in the Partition column
+        assert df["Partition"].is_not_null().all(), "Partition column contains missing values."
+
+        assert len(df) == original_df_size, f"Length mismatch after adding predictions: {len(df)} vs {original_df_size}"
+        self.output_df = df
+        logger.success(f"All predictions made.")
+
+
+    def save_model_and_predictions(self):
+        
+        for dir in [MODEL_DIR, PREDICTIONS_DIR]:
+            os.makedirs(f"{dir}/{self.model_type}/", exist_ok=True)
+
+        # Save the model
+        model_filename = f"{MODEL_DIR}/{self.model_type}/{self.cell_line}.pkl.gz"
+        with gzip.open(model_filename, 'wb') as f:
+            pickle.dump(self.model, f)
+
+        predictions_filename = f"{PREDICTIONS_DIR}/{self.model_type}/{self.cell_line}_predictions.feather"   
+        self.output_df.write_ipc(predictions_filename, compression="lz4")
+
+        logger.success(f"Model and predictions saved to {MODEL_DIR}/{self.model_type}/ and {PREDICTIONS_DIR}/{self.model_type}/ respectively.")
 
 
 if __name__ == "__main__":
@@ -128,16 +231,32 @@ if __name__ == "__main__":
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Run XGBRegressor model with optional arguments.")
     parser.add_argument('--config_file', type=str, help="Provide JSON config file with data and model arguments.")
+    parser.add_argument('--run_all', action='store_true', help="Run all JSON config files (1 job for each config).")
 
     # Parse arguments
-    args = parser.parse_args()    
-    # Read the JSON config file and load it into a dictionary
-    with open(args.config_file, 'r') as f:
-        data_and_model_args = json.load(f)
+    args = parser.parse_args() 
 
-    logger.info(f"Data/model arguments received: {data_and_model_args}")
-    run_xgbregressor(data_and_model_args)
+    if args.run_all:
 
-    os.remove(args.config_file)
-    logger.success(f"Temporary config file {args.config_file} removed.")
-    
+        CPUS = 32
+        MEM= 256
+        PARTITION="standard"
+        ACCOUNT="platiglab"
+        SLURM_DIR="../outputs/SLURM_logs/"
+
+        # Get all JSON config files in the directory
+        json_files = sorted(glob.glob(f"{CONFIGS_DIR}/model_parameters/*.json"))
+
+        # Iterate over each JSON file and run the model
+        for json_file in json_files:
+            
+            job_prefix = json_file.split("/")[-1].split(".")[0]
+
+            os.system(
+                f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
+            )
+
+            sys.exit(0)
+
+    elif args.config_file:
+        YogiPlatigLibModelReplicator(args.config_file).replicate_model()
