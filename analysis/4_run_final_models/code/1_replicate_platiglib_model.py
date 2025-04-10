@@ -47,6 +47,8 @@ class YogiPlatigLibModelReplicator:
         self.get_performance()
         self.get_all_predictions()
         self.save_model_and_predictions()
+
+        logger.success(f"MODEL REPLICATION COMPLETED\nCell line: {self.cell_line}\nModel type: {self.model_type}\nConfig: {self.config}")
     
 
     def get_unique_ids_for_training_and_evaluation(self): 
@@ -116,6 +118,8 @@ class YogiPlatigLibModelReplicator:
 
         # Assert that all columns in train_input end with "_binding"
         assert all(col.endswith("_binding") for col in self.train_input.columns), "Not all columns in train_input end with '_binding'"
+        # Assert that train_input and test_input have the same column order
+        assert list(self.train_input.columns) == list(self.test_input.columns), "train_input and test_input must have the same column order"
         
         if hasattr(self, "validate_input"):
             assert self.model_type == "XGBRegressor", f"Model type must be XGBRegressor when validate_data is present, but got {self.model_type}"
@@ -159,13 +163,13 @@ class YogiPlatigLibModelReplicator:
         attributes_to_delete = [
             attr for attr in dir(self) if attr.endswith("_input") or attr.endswith("_target")
         ]
-    
         for attr in attributes_to_delete:
             delattr(self, attr)
+
         gc.collect()
 
         # Read the feather file again to get all data
-        df = pl.scan_ipc(f"{self.DATA_DIR}/{self.cell_line}_100.feather").sort("index").collect()4
+        df = pl.scan_ipc(f"{self.DATA_DIR}/{self.cell_line}_100.feather").sort("index").collect()
         original_df_size = len(df)
 
         all_target_data = df.select(["Target_PSI"]).to_pandas()
@@ -182,6 +186,8 @@ class YogiPlatigLibModelReplicator:
         predictions = self.model.predict(all_input_data)
         # Add predictions to the original dataframe
         df = df.with_columns(pl.Series("Predictions", predictions))
+        # Assert that there are no null values in the Predictions column
+        assert df["Predictions"].is_not_null().all(), "Predictions column contains null values."
 
         logger.info(f"R2 score for all data predictions: {r2_score(all_target_data, predictions)}")
 
@@ -255,8 +261,6 @@ if __name__ == "__main__":
             os.system(
                 f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
             )
-
-            sys.exit(0)
 
     elif args.config_file:
         YogiPlatigLibModelReplicator(args.config_file).replicate_model()
