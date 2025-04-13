@@ -4,9 +4,9 @@ os.chdir(SCRIPT_DIR)
 
 import platiglib.wandb_utils
 
-PROJECT_NAME = "yogi-xgbregressor-hyperparameter-sweep-april-2025"
-SWEEP_ID = "ft20ki6n"
-NUM_ADDITIONAL_AGENTS = 1
+PROJECT_NAME = "yogi-RBP-ML-linear-models-april-2025"
+SWEEP_ID = "ha252ijh"
+NUM_ADDITIONAL_AGENTS = 50
 MEMORY = 256
 CPUS = 16
 

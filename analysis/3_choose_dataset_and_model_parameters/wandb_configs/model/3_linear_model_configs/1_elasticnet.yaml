@@ -1,0 +1,59 @@
+# Sweep configuration
+sweep:
+  method: grid
+  metric:
+    name: holdout_r2_score
+    goal: maximize
+
+# Base configuration
+config_overlay:
+
+  platiglib_project: rbpse
+
+  dataset:
+    name: RBPSEDataset
+    three_exon_combos: all
+    window: 100
+    min_read_count: 40
+
+    features: 
+      binding_matrix: 
+        binding_format: 'binary'
+        in_silico_kd: true
+
+    fold_filter:
+      num_folds: 5
+      fold_index: 1
+      group_column: ensembl_gene_id
+      side: train
+      seed: 17
+  
+  training:
+    data_split:
+      method: cross_validation
+      num_folds: 5
+      group_column: 'ensembl_gene_id'
+    
+    profile: 
+      metrics: [r2_score, rmse, sigmoid_r2]
+
+    wandb:
+      project: yogi-RBP-ML-linear-models-april-2025 
+  
+  model:
+    name: ElasticNet
+
+
+# Parameters to sweep
+parameters:
+
+  dataset.cell_line: 
+    values: ["K562", "HepG2"]
+  training.seed: 
+    values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+
+  # REGULARIZATION
+  model.alpha:
+    logspace: [-4, 2, 14]
+  model.l1_ratio:
+    values: [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]
