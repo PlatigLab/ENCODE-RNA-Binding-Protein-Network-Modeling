@@ -28,12 +28,17 @@ def main(hash, normal_or_interaction):
     assert list(binding_input.columns) == list(model.column_order_when_fitting), "Column order mismatch between input data and model."
     binding_input = binding_input[model.column_order_when_fitting]
     assert list(binding_input.columns) == list(model.column_order_when_fitting), "Column order mismatch between input data and model."
-
+    
     explainer = shap.TreeExplainer(
             model, 
             feature_perturbation= 'tree_path_dependent', 
             feature_names=binding_input.columns.tolist()
         )
+    
+    if normal_or_interaction == "normal":
+        prefix = f"{SHAP_DIR}/regular/normal"
+    elif normal_or_interaction == "interaction":
+        prefix = f"{SHAP_DIR}/interactions/shap_package/interaction"
 
     # Run TreeSHAP
     if normal_or_interaction == "normal":
@@ -57,15 +62,18 @@ def main(hash, normal_or_interaction):
 
     elif normal_or_interaction == "interaction":
         return NotImplementedError("Interaction SHAP is not implemented yet.")
+    
+    os.makedirs(f"{prefix}/explainer_objects/", exist_ok=True)
+    os.makedirs(f"{prefix}/shap_values/", exist_ok=True)
 
-    if normal_or_interaction == "normal":
-        prefix = f"{SHAP_DIR}/regular/normal"
-    elif normal_or_interaction == "interaction":
-        prefix = f"{SHAP_DIR}/interactions/shap_package/interaction"
+    with open(f"{prefix}/explainer_objects/{hash}.pkl", "wb") as f:
+        pickle.dump(explainer, f)
+    logger.success(f"Explainer object saved to {prefix}/explainer_objects/{hash}.pkl")
 
-    # Save the result to a feather file
-    result.to_feather(f"{prefix}_{hash}.feather", compression="lz4")
-    logger.success(f"SHAP CALCULATION COMPLETED: {prefix}_{hash}.feather")
+    result.to_feather(f"{prefix}/shap_values/{hash}.feather")
+    logger.success(f"SHAP values saved to {prefix}/shap_values/{hash}.feather", compression='lz4')
+
+
 
 
 if __name__ == "__main__":
@@ -111,7 +119,7 @@ if __name__ == "__main__":
 
         for model_hash in model_hashes:
             
-            shap_type_hash_file = glob.glob(f"{SHAP_TYPE_DIR}/*{model_hash}*.feather")
+            shap_type_hash_file = glob.glob(f"{SHAP_TYPE_DIR}/**/*{model_hash}*.feather", recursive=True)
             assert len(shap_type_hash_file) < 2
 
             if len(shap_type_hash_file) == 0:
