@@ -64,6 +64,11 @@ class YogiPlatigLibModelReplicator:
 
                 assert len(subset_df) == len(indices), f"Length mismatch for {key}: {len(subset_df)} vs {len(indices)}"
                 unique_ids_dict[key] = set(subset_df["unique_id"])
+
+        if self.model_type !="XGBRegressor":
+            unique_ids_dict["train_meta_ind"] = unique_ids_dict["train_meta_ind"].union(unique_ids_dict["validate_meta_ind"])
+            del unique_ids_dict["validate_meta_ind"]
+
         
         self.unique_ids_dict = unique_ids_dict
         del self.indices_dict
@@ -260,9 +265,13 @@ if __name__ == "__main__":
             
             job_prefix = json_file.split("/")[-1].split(".")[0]
 
-            os.system(
-                f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
-            )
+            if len(glob.glob(f"{PREDICTIONS_DIR}/**/{job_prefix}*.feather", recursive=True)) == 0: 
+                os.system(
+                    f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
+                )
+            else: 
+                print(f"Skipping hash {job_prefix} as it has already been run.")
+
 
     elif args.config_file:
         YogiPlatigLibModelReplicator(args.config_file).replicate_model()
