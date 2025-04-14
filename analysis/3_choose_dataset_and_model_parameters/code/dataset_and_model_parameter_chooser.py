@@ -11,7 +11,8 @@ class DatasetAndModelParameterAnalyzer:
 
     sweep_projects = {
         'dataset': 'yogi-dataset-sweep-feb-2025', 
-        'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025'
+        'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025',
+        'linear_models': 'yogi-RBP-ML-linear-models-april-2025'
     }
 
     dataset_sweep_covariates= {
@@ -33,7 +34,7 @@ class DatasetAndModelParameterAnalyzer:
         self.sweep_results = {}
     
         output_folder = Path("../output/wandb_summary_tables/")
-        if len(list(output_folder.glob('*'))) == 2: 
+        if len(list(output_folder.glob('*'))) == 3: 
             
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
 
@@ -52,39 +53,42 @@ class DatasetAndModelParameterAnalyzer:
             logger.info("Retrieving summary tables from WandB")
 
             for type in self.sweep_projects: 
-                runs = wandb.Api().runs(self.sweep_projects[type])
+                output_file = output_folder / f"{type}_sweep_summary.tsv"
+                if not output_file.exists():
+                    logger.info(f"Retrieving {type} sweep summary table from WandB")
+                    runs = wandb.Api().runs(self.sweep_projects[type])
 
-                run_data = []
-                for run in runs:
+                    run_data = []
+                    for run in runs:
 
-                    run_info = {
-                        "run_id": run.id,
-                        "run_name": run.name,
-                        "state": run.state,
-                        "sweep_name": run.sweep.name if run.sweep else None,
-                        "sweep_id": run.sweep.id if run.sweep else None
-                    }
+                        run_info = {
+                            "run_id": run.id,
+                            "run_name": run.name,
+                            "state": run.state,
+                            "sweep_name": run.sweep.name if run.sweep else None,
+                            "sweep_id": run.sweep.id if run.sweep else None
+                        }
 
-                    # Extract config values
-                    config = json.loads(run.json_config)
-                    for key, item in config.items():
-                        if key != "_wandb":  # Skip wandb metadata
-                            run_info[key] = item["value"]
+                        # Extract config values
+                        config = json.loads(run.json_config)
+                        for key, item in config.items():
+                            if key != "_wandb":  # Skip wandb metadata
+                                run_info[key] = item["value"]
 
-                    # Add metrics
-                    metrics = {k: v for k, v in run.summary._json_dict.items() if isinstance(v, float)}
-                    run_info.update(metrics)
+                        # Add metrics
+                        metrics = {k: v for k, v in run.summary._json_dict.items() if isinstance(v, float)}
+                        run_info.update(metrics)
 
-                    run_data.append(run_info)
+                        run_data.append(run_info)
 
-                if type == 'model':
-                    for row in run_data:
-                        if row["sweep_name"].count(":") == 2:
-                            row["sweep_name"] = row["sweep_name"].rsplit(":", 1)[0]
-                            
-                run_df = pd.DataFrame(run_data)
-                run_df.to_csv(output_folder / f"{type}_sweep_summary.tsv", index=False, sep="\t")
-                self.sweep_results[type] = run_df
+                    if type == 'model':
+                        for row in run_data:
+                            if row["sweep_name"].count(":") == 2:
+                                row["sweep_name"] = row["sweep_name"].rsplit(":", 1)[0]
+                                
+                    run_df = pd.DataFrame(run_data)
+                    run_df.to_csv(output_folder / f"{type}_sweep_summary.tsv", index=False, sep="\t")
+                    self.sweep_results[type] = run_df
             
             logger.success("Retrieved & cached WandB summary tables")
 
@@ -238,15 +242,17 @@ class DatasetAndModelParameterAnalyzer:
         return pd.concat(combined_configs, ignore_index=True)
 
 
-    def show_top_model_configs_after_averaging_by_seed(self, all_configs=None): 
+    def show_top_model_configs_after_averaging_by_seed(self, all_configs=None, linear=False): 
 
         assert all_configs is not None, "all_configs should be provided"
 
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        logger.info(f"Model sweep shape: {model_sweep.shape}")
-        model_sweep = model_sweep[
-                model_sweep['sweep_name'].str.contains(":")
-            ]
+        if linear: 
+            model_sweep = self.sweep_results['linear'].copy(deep=True)
+        elif not linear: 
+            model_sweep = self.sweep_results['model'].copy(deep=True)
+            model_sweep = model_sweep[
+                    model_sweep['sweep_name'].str.contains(":")
+                ]
         
         return_dfs = {}
 
@@ -268,17 +274,19 @@ class DatasetAndModelParameterAnalyzer:
         
         elif all_configs:
 
-            # logger.warning("REMINDER: keeping configurations where colsample_bytree and subsample are both 1")
-            # model_sweep = model_sweep[
-            #         (model_sweep['model.colsample_bytree'] == 1) &
-            #         (model_sweep['model.subsample'] == 1)
-            #     ]
-
             model_sweep_parameters = []
-            for sweep_name in model_sweep['sweep_name'].unique().tolist():
-                swept_parameters = sweep_name.split(":")[1].split("-")
-                model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
-            
+
+            if not linear: 
+                for sweep_name in model_sweep['sweep_name'].unique().tolist():
+                    swept_parameters = sweep_name.split(":")[1].split("-")
+                    model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
+
+            elif not linear: 
+                model_sweep_parameters = [
+                        'model.l1_ratio', 
+                        'model.alpha'
+                    ]
+                
             subset = model_sweep.sort_values(
                     'holdout_r2_score', 
                     ascending=False
@@ -326,7 +334,7 @@ class DatasetAndModelParameterAnalyzer:
                 y_label = 'Validation R2 Score'
                 size=5
                 linewidth=1
-            elif type == 'model':
+            elif type == 'model' or type == 'linear':
                 y_variable = 'holdout_r2_score'
                 y_label = 'Holdout R2 Score'
                 size=0.5
@@ -446,35 +454,40 @@ class DatasetAndModelParameterAnalyzer:
 
     
     def plot_inner_fold_seed_r2_results(self): 
-        model_sweep = self.sweep_results['model'].copy(deep=True)
-        
-        plt.figure(figsize=(10, 4), dpi=200)
+        for key in ['model', 'linear']:
+            if key in self.sweep_results:
+                model_sweep = self.sweep_results[key].copy(deep=True)
 
-        sns.swarmplot(
-            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
-            data=model_sweep, palette=['red', 'blue'], linewidth=0.05, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
-        )
-        sns.boxplot(
-            x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
-            data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
-            whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
-            showfliers=False, hue_order=["K562", "HepG2"], dodge=True
-        )
+                model_sweep = model_sweep[model_sweep['training.seed'] != 17]
+                logger.warning("REMINDER: Excluding configurations where 'training.seed' is 17")
+                
+                plt.figure(figsize=(10, 4), dpi=200)
 
-        handles, labels = plt.gca().get_legend_handles_labels()
-        n = len(handles) // 2
-        plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), markerscale=7, title='Cell Line', fontsize=12, title_fontsize=12)
+                sns.swarmplot(
+                    x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
+                    data=model_sweep, palette=['red', 'blue'], linewidth=0.05, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
+                )
+                sns.boxplot(
+                    x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
+                    data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
+                    whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+                    showfliers=False, hue_order=["K562", "HepG2"], dodge=True
+                )
 
-        plt.title('Holdout R2 Score by HTD Seed\n(All tuning experiments included)', fontsize=16, y=1.03)
-        plt.xlabel('Training Seed', fontsize=14)
-        plt.ylabel('Holdout R2 Score', fontsize=14)
+                handles, labels = plt.gca().get_legend_handles_labels()
+                n = len(handles) // 2
+                plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), markerscale=7, title='Cell Line', fontsize=12, title_fontsize=12)
 
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
+                plt.title(f'Holdout R2 Score by HTD Seed ({key.capitalize()} Sweep)\n(All tuning experiments included)', fontsize=16, y=1.03)
+                plt.xlabel('Training Seed', fontsize=14)
+                plt.ylabel('Holdout R2 Score', fontsize=14)
 
-        plt.savefig("../output/plots/summary/inner_fold_seed_r2_results.png", dpi=200, bbox_inches='tight')
-        plt.show()
-        plt.close()
+                plt.xticks(fontsize=12)
+                plt.yticks(fontsize=12)
+
+                plt.savefig(f"../output/plots/summary/{key}_inner_fold_seed_r2_results.png", dpi=200, bbox_inches='tight')
+                plt.show()
+                plt.close()
 
 
     def plot_interrelated_model_hyperparameter_results_in_1D(self): 
@@ -630,37 +643,7 @@ class DatasetAndModelParameterAnalyzer:
                     )
                     plt.show()
                     plt.close()
-
-                # fig, axes = plt.subplots(2, 3, figsize=(20, 10), dpi=200, subplot_kw={'projection': '3d'})
-                # cmap = plt.cm.rainbow
-
-                # vmin = subset['holdout_r2_score'].min()
-                # vmax = subset['holdout_r2_score'].max()
-
-                # for row, cell_line in enumerate(subset['dataset.cell_line'].unique()):
-                #     cell_line_subset = subset[subset['dataset.cell_line'] == cell_line]
                     
-                #     for col, (param_x, param_z) in enumerate(param_combinations):
-                #         ax = axes[row, col]
-                        
-                #         sc = ax.scatter(
-                #             cell_line_subset[param_x], cell_line_subset['training.seed'], cell_line_subset[param_z], 
-                #             c=cell_line_subset['holdout_r2_score'], cmap=cmap, edgecolor='k', vmin=vmin, vmax=vmax
-                #         )
-
-                #         ax.set_xlabel(param_x.split('.')[-1])
-                #         ax.set_ylabel("Seed")
-                #         ax.set_zlabel(param_z.split('.')[-1])
-                #         ax.set_title(f'{cell_line}: {param_x.split(".")[-1]} vs {param_z.split(".")[-1]}')
-
-                # cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.7, pad=0.15, location='right')
-                # cbar.ax.set_title('Holdout R2 Score', pad=10)
-
-                # fig.suptitle(f'Holdout R2 Score by Parameter Combinations', y=0.98, fontsize=20)
-                
-                # plt.show()
-                # plt.close()
-
 
     def get_run_ids_for_outer_loop_holdout_r2_scores(self): 
         model_sweep = self.sweep_results['model'].copy(deep=True)
@@ -774,6 +757,102 @@ class DatasetAndModelParameterAnalyzer:
         plt.show()
         plt.close()
         return self.inner_vs_outer_r2_scores_table
+    
+
+    def plot_OLS_results(self): 
+        linear_sweep = self.sweep_results['linear'].copy(deep=True)
+        linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'OLS']
+
+        # Sort by dataset.cell_line to guarantee x-axis order
+        linear_sweep = linear_sweep.sort_values(by='dataset.cell_line')
+        unique_cell_lines = linear_sweep['dataset.cell_line'].unique()
+
+        # Extract the exact holdout_r2_score for each cell line
+        bar_data = linear_sweep[['dataset.cell_line', 'holdout_r2_score']].drop_duplicates()
+        assert bar_data.shape[0] == len(unique_cell_lines), "Mismatch in the number of unique cell lines and exact R2 scores"
+
+        # Create a bar plot for holdout_r2_score by dataset.cell_line
+        plt.figure(figsize=(4, 3), dpi=200)
+        ax = sns.barplot(
+            x='dataset.cell_line', 
+            y='holdout_r2_score', 
+            data=bar_data, 
+            palette='Set2', 
+            edgecolor='black', 
+            ci=None, 
+            width=0.5
+        )
+
+        # Extend the y-axis upwards if needed
+        max_r2_score = bar_data['holdout_r2_score'].max()
+        plt.ylim(0, max_r2_score + 0.05)
+
+        for container in ax.containers: 
+            ax.bar_label(container, padding=5)
+        # # Add text annotations for each bar
+        # for index, row in bar_data.iterrows():
+        #     plt.text(
+        #         x=index, 
+        #         y=row['holdout_r2_score'] + 0.01,  # Position slightly above the bar
+        #         s=0.5, 
+        #         ha='center', 
+        #         va='bottom', 
+        #         fontsize=8
+        #     )
+
+
+
+        plt.title('OLS Holdout R2 Score by Cell Line', fontsize=12)
+        plt.xlabel('Cell Line', fontsize=10)
+        plt.ylabel('Holdout R2 Score', fontsize=10)
+        plt.xticks(fontsize=9)
+        plt.yticks(fontsize=9)
+
+        # Save and show the plot
+        plt.tight_layout()
+        # plt.savefig("../output/plots/linear/ols_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+
+    def plot_elasticnet_results(self): 
+        linear_sweep = self.sweep_results['linear'].copy(deep=True)
+        linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'ElasticNet']
+
+        unique_cell_lines = linear_sweep['dataset.cell_line'].unique()
+        hue_order = sorted(linear_sweep['model.l1_ratio'].unique())
+
+        fig, axes = plt.subplots(1, len(unique_cell_lines), figsize=(20, 6), dpi=200, sharey=True, sharex=True)
+
+        for i, cell_line in enumerate(unique_cell_lines):
+            ax = axes[i]
+            subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
+
+            sns.swarmplot(
+                x='model.alpha', y='holdout_r2_score', hue='model.l1_ratio',
+                data=subset, palette='Set2', edgecolor='black', size= 1, linewidth=0.01, ax=ax, hue_order=hue_order, dodge=True
+                )
+
+            ax.set_title(f'Cell Line: {cell_line}', fontsize=12)
+            ax.legend_.remove()  # Remove legend for individual subplots
+            ax.tick_params(axis='x', rotation=90)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.4f}'))
+
+        # Set figure-level x and y axis labels
+        fig.supxlabel('Model Alpha', fontsize=12)
+        fig.supylabel('Holdout R2 Score', fontsize=12)
+
+        # Add a single shared legend outside the plot
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=10, title_fontsize=11, markerscale=5)
+
+        plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
+        # plt.savefig("../output/plots/linear/elasticnet_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+        
+
 
 
 if __name__ == "__main__":
