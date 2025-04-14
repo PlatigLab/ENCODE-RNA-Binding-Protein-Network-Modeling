@@ -1,0 +1,47 @@
+# Sweep configuration
+sweep:
+  method: grid
+  metric:
+    name: holdout_r2_score
+    goal: maximize
+
+# Base configuration
+config_overlay:
+
+  platiglib_project: rbpse
+
+  dataset:
+    name: RBPSEDataset
+    three_exon_combos: all
+    window: 100
+    min_read_count: 40
+
+    features: 
+      binding_matrix: 
+        binding_format: 'binary'
+        in_silico_kd: true
+  
+  training:
+    data_split:
+      method: cross_validation
+      num_folds: 5
+      group_column: 'ensembl_gene_id'
+      fold_index: 1
+      
+    seed: 17
+      
+    profile: 
+      metrics: [r2_score, rmse, sigmoid_r2]
+
+    wandb:
+      project: yogi-RBP-ML-linear-models-april-2025 
+  
+  model:
+    name: LinearRegression
+    n_jobs: -1
+
+
+# Parameters to sweep
+parameters:
+  dataset.cell_line: 
+    values: ["K562", "HepG2"]
