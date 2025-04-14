@@ -248,6 +248,7 @@ class DatasetAndModelParameterAnalyzer:
 
         if linear: 
             model_sweep = self.sweep_results['linear'].copy(deep=True)
+            model_sweep = model_sweep[model_sweep['sweep_name'] == "ElasticNet"]
         elif not linear: 
             model_sweep = self.sweep_results['model'].copy(deep=True)
             model_sweep = model_sweep[
@@ -281,7 +282,7 @@ class DatasetAndModelParameterAnalyzer:
                     swept_parameters = sweep_name.split(":")[1].split("-")
                     model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
 
-            elif not linear: 
+            elif linear: 
                 model_sweep_parameters = [
                         'model.l1_ratio', 
                         'model.alpha'
@@ -294,6 +295,7 @@ class DatasetAndModelParameterAnalyzer:
                     subset=model_sweep_parameters + ['dataset.cell_line', 'training.seed'],
                     keep="first"
                 )
+
             logger.warning(f"Dropping model hyperparameter duplicates after all sweeps ran. \nOriginal shape: {model_sweep.shape}, new shape: {subset.shape}")
 
             avg_df = self.average_across_seed_per_cell_line(
@@ -789,18 +791,6 @@ class DatasetAndModelParameterAnalyzer:
 
         for container in ax.containers: 
             ax.bar_label(container, padding=5)
-        # # Add text annotations for each bar
-        # for index, row in bar_data.iterrows():
-        #     plt.text(
-        #         x=index, 
-        #         y=row['holdout_r2_score'] + 0.01,  # Position slightly above the bar
-        #         s=0.5, 
-        #         ha='center', 
-        #         va='bottom', 
-        #         fontsize=8
-        #     )
-
-
 
         plt.title('OLS Holdout R2 Score by Cell Line', fontsize=12)
         plt.xlabel('Cell Line', fontsize=10)
@@ -819,39 +809,153 @@ class DatasetAndModelParameterAnalyzer:
         linear_sweep = self.sweep_results['linear'].copy(deep=True)
         linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'ElasticNet']
 
-        unique_cell_lines = linear_sweep['dataset.cell_line'].unique()
+        unique_cell_lines = sorted(linear_sweep['dataset.cell_line'].unique())
         hue_order = sorted(linear_sweep['model.l1_ratio'].unique())
 
-        fig, axes = plt.subplots(1, len(unique_cell_lines), figsize=(20, 6), dpi=200, sharey=True, sharex=True)
+        for y_variable in ['holdout_r2_score', 'holdout_sigmoid_r2']:
+            fig, axes = plt.subplots(len(unique_cell_lines), 1, figsize=(13, 9), dpi=200, sharey=True, sharex=True)
 
-        for i, cell_line in enumerate(unique_cell_lines):
-            ax = axes[i]
-            subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
+            for i, cell_line in enumerate(unique_cell_lines):
+                ax = axes[i]
+                subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
 
-            sns.swarmplot(
-                x='model.alpha', y='holdout_r2_score', hue='model.l1_ratio',
-                data=subset, palette='Set2', edgecolor='black', size= 1, linewidth=0.01, ax=ax, hue_order=hue_order, dodge=True
+                sns.swarmplot(
+                    x='model.alpha', y=y_variable, hue='model.l1_ratio',
+                    data=subset, palette='Set2', edgecolor='black', size=2, linewidth=0.01, ax=ax, hue_order=hue_order, dodge=True
                 )
 
-            ax.set_title(f'Cell Line: {cell_line}', fontsize=12)
-            ax.legend_.remove()  # Remove legend for individual subplots
-            ax.tick_params(axis='x', rotation=90)
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.4f}'))
+                ax.set_title(f'Cell Line: {cell_line}', fontsize=12)
+                ax.legend_.remove()  # Remove legend for individual subplots
+                ax.tick_params(axis='x', rotation=90)
 
-        # Set figure-level x and y axis labels
-        fig.supxlabel('Model Alpha', fontsize=12)
-        fig.supylabel('Holdout R2 Score', fontsize=12)
+            # Set figure-level x and y axis labels
+            fig.supxlabel('Model Alpha', fontsize=12)
+            fig.supylabel('Holdout R2 Score' if y_variable == 'holdout_r2_score' else 'Holdout Sigmoid R2', fontsize=12)
 
-        # Add a single shared legend outside the plot
-        handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=10, title_fontsize=11, markerscale=5)
+            fig.suptitle(f'ElasticNet Hyperparameter Sweep: {y_variable}', fontsize=20)
+            # Add a single shared legend outside the plot
+            handles, labels = ax.get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=10, title_fontsize=11, markerscale=5)
 
-        plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
-        # plt.savefig("../output/plots/linear/elasticnet_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+            plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
+            # plt.savefig(f"../output/plots/linear/elasticnet_{y_variable}_distribution.png", dpi=200, bbox_inches='tight')
+            plt.show()
+            plt.close()
+
+        # Create a scatterplot of holdout_r2_score vs. holdout_sigmoid_r2
+        plt.figure(figsize=(5,4), dpi=200)
+        sns.scatterplot(
+            x="holdout_r2_score", 
+            y="holdout_sigmoid_r2", 
+            hue="dataset.cell_line", 
+            data=linear_sweep, 
+            hue_order= unique_cell_lines,
+            palette="Set2", 
+            edgecolor="black", 
+            linewidth=0.5,
+            s=5
+        )
+
+        # Add the y=x line
+        min_val = min(
+            linear_sweep["holdout_r2_score"].min(),
+            linear_sweep["holdout_sigmoid_r2"].min()
+        )
+        max_val = max(
+            linear_sweep["holdout_r2_score"].max(),
+            linear_sweep["holdout_sigmoid_r2"].max()
+        )
+        plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
+
+        plt.title("Holdout R2 Score vs. \nHoldout Sigmoid R2", fontsize=12)
+        plt.xlabel("Holdout R2 Score", fontsize=10)
+        plt.ylabel("Holdout Sigmoid R2", fontsize=10)
+        plt.legend(title="Cell Line", fontsize=8, title_fontsize=9, loc="best")
+
+        # Save and show the plot
+        plt.tight_layout()
+        # plt.savefig("../output/plots/linear/holdout_r2_vs_sigmoid_r2.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
-        
+    
+    def get_elasticnet_run_ids(self): 
+        configs = self.show_top_model_configs_after_averaging_by_seed(
+            all_configs=True, 
+            linear=True
+        ).sort_values(
+            by='avg_holdout_r2_score',
+            ascending=False
+        )
+
+        run_ids = []
+        for cell_line in configs['dataset.cell_line'].unique():
+            top_row = configs[configs['dataset.cell_line'] == cell_line].iloc[0]
+            alpha = top_row['model.alpha']
+            l1_ratio = top_row['model.l1_ratio']
+
+            linear_sweep = self.sweep_results['linear'].copy(deep=True)
+            linear_sweep = linear_sweep[linear_sweep['training.seed'] == 100]
+            matching_row = linear_sweep[
+                (linear_sweep['model.alpha'] == alpha) &
+                (linear_sweep['model.l1_ratio'] == l1_ratio) &
+                (linear_sweep['dataset.cell_line'] == cell_line)
+            ]
+
+            assert matching_row.shape[0] == 1, f"Expected exactly 1 matching row, found {matching_row.shape[0]} for cell line {cell_line}"
+
+            run_ids.append(matching_row['run_id'].iloc[0])
+
+        output_file = "../output/chosen_models_for_outer_loop/elasticnet_run_ids.txt"
+        with open(output_file, "w") as f:
+            f.write("\n".join(run_ids))
+
+        logger.success(f"Saved ElasticNet run IDs to {output_file}")
+        self.elasticnet_run_ids = run_ids
+        return self.elasticnet_run_ids
+
+    
+    def plot_elasticnet_outer_vs_avg_inner_r2(self): 
+        linear_sweep = self.sweep_results['linear'].copy(deep=True)
+        linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'ElasticNet']
+
+        # Subset to where outer_loop_holdout_r2_score is not null
+        linear_sweep = linear_sweep[linear_sweep['outer_loop_holdout_r2_score'].notna()]
+        assert linear_sweep.shape[0] == 2, "Expected exactly 2 rows where outer_loop_holdout_r2_score is not null"
+
+        # Create a scatterplot
+        plt.figure(figsize=(6, 4), dpi=200)
+        sns.scatterplot(
+            x="holdout_r2_score",
+            y="outer_loop_holdout_r2_score",
+            hue="dataset.cell_line",
+            data=linear_sweep,
+            palette="Set2",
+            edgecolor="black",
+            linewidth=1,
+            s=50
+        )
+
+        # Add the y=x line
+        min_val = min(
+            linear_sweep["holdout_r2_score"].min(),
+            linear_sweep["outer_loop_holdout_r2_score"].min()
+        )
+        max_val = max(
+            linear_sweep["holdout_r2_score"].max(),
+            linear_sweep["outer_loop_holdout_r2_score"].max()
+        )
+        plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
+
+        plt.title("ElasticNet: Holdout R2 vs. Outer Loop Holdout R2", fontsize=14)
+        plt.xlabel("Holdout R2 Score", fontsize=12)
+        plt.ylabel("Outer Loop Holdout R2 Score", fontsize=12)
+        plt.legend(title="Cell Line", fontsize=10, title_fontsize=11, loc="best")
+
+        # Save and show the plot
+        plt.tight_layout()
+        plt.show()
+        plt.close()
 
 
 
