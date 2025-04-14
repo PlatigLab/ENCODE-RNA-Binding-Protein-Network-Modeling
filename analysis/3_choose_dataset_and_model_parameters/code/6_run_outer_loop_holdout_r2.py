@@ -1,8 +1,8 @@
 import os
 
 SCRIPT_DIR = "/scratch/jve4pt/platiglib/scripts"
-OUTPUT_FILE = "../output/chosen_model_hyperparameters/outer_loop_holdout_run_ids.txt"
-PROJECT = "yogi-xgbregressor-hyperparameter-sweep-april-2025"
+OUTPUT_FILE = "../output/chosen_models_for_outer_loop/elasticnet_run_ids.txt"
+PROJECT = "yogi-RBP-ML-linear-models-april-2025"
 
 run_ids = []
 with open(OUTPUT_FILE, "r") as f:
