@@ -10,13 +10,18 @@ from loguru import logger
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
 
+    CACHE_INFO = {
+        "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv"
+    }
+
     def __post_init__(self):
 
         self.make_model_metadata_from_hash()
     
 
+
     def make_model_metadata_from_hash(self):
-        HASH_FILE = "../outputs/hash_metadata/hash_metadata.tsv"
+        HASH_FILE = self.CACHE_INFO["hash_metadata"]
 
         if os.path.exists(HASH_FILE):
             hash_metadata = pd.read_csv(HASH_FILE, sep="\t")
