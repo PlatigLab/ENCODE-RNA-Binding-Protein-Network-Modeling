@@ -1,0 +1,13 @@
+hash	name	gamma	n_jobs	max_depth	objective	reg_alpha	subsample	reg_lambda	eval_metric	n_estimators	learning_rate	colsample_bytree	min_child_weight	early_stopping_rounds	cell_line	seed	alpha	l1_ratio
+e048c0490ea6f3cfa263c0d3e66e9795583c45a8a5ef2d2715dc08920c13290d	ElasticNet														HepG2	17	0.0001	1.0
+d3b95df0842783c0abe226462e97e83be58aa11ed676401dfd640438c3ce1e94	ElasticNet														K562	17	0.0008376776400682924	0.1
+c859f2093367b69aff13a5770150b486a226578fc6f13f1aaacda1b4b145d0c6	XGBRegressor	0.5	-1.0	3.0	reg:logistic	0.0	0.1	1.0	['rmse', 'logloss']	100000.0	0.05	1.0	30.0	100.0	HepG2	17		
+3cfd52c46852f8a3afe7b35fc548682916e347a79f66b05f13dec661b727a46b	XGBRegressor	0.5	-1.0	3.0	reg:logistic	0.5	1.0	0.1	['rmse', 'logloss']	100000.0	0.05	0.75	30.0	100.0	HepG2	17		
+e94727bc02235363dfbeed3e0818618e62955e5449e3a143e3c560f5e58d0e3c	XGBRegressor	0.5	-1.0	3.0	reg:logistic	0.0	1.0	1.0	['rmse', 'logloss']	100000.0	0.05	0.75	30.0	100.0	HepG2	17		
+f784792c7eeb91135eb22d916c79bfbef091e56d2a0a8f4ac8afa92d1e9e1538	XGBRegressor	0.5	-1.0	3.0	reg:logistic	0.5	1.0	10.0	['rmse', 'logloss']	100000.0	0.05	0.75	30.0	100.0	HepG2	17		
+fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd	XGBRegressor	0.5	-1.0	3.0	reg:logistic	0.0	1.0	5.0	['rmse', 'logloss']	100000.0	0.05	0.75	30.0	100.0	HepG2	17		
+8f310837d07486fd286d4ad7975dcdd0c2bdfc795d2d59b1bb38f3ecc50044ca	XGBRegressor	0.5	-1.0	5.0	reg:logistic	0.5	1.0	10.0	['rmse', 'logloss']	100000.0	0.05	0.5	1.0	100.0	K562	17		
+1a5a622d0e4fb1bc7aeedf84cc41f73cd02c52b204046c305a4746fe7101c069	XGBRegressor	0.5	-1.0	5.0	reg:logistic	0.0	1.0	0.1	['rmse', 'logloss']	100000.0	0.05	0.5	1.0	100.0	K562	17		
+f93fa76e4f7b67d2494c9ef5eadbafe3f38bb4f2cad488040116e580f0cc0de2	XGBRegressor	0.5	-1.0	5.0	reg:logistic	0.8	1.0	10.0	['rmse', 'logloss']	100000.0	0.05	0.5	1.0	100.0	K562	17		
+3db6261088630963f3314e4c86c2390970e14123d59b38ed980d507266bba8a6	XGBRegressor	0.5	-1.0	5.0	reg:logistic	0.0	1.0	10.0	['rmse', 'logloss']	100000.0	0.05	0.5	1.0	100.0	K562	17		
+8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db	XGBRegressor	0.5	-1.0	5.0	reg:logistic	0.2	1.0	0.5	['rmse', 'logloss']	100000.0	0.05	0.5	1.0	100.0	K562	17		
