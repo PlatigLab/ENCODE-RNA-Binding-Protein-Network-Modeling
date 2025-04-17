@@ -930,13 +930,29 @@ class DatasetAndModelParameterAnalyzer:
         linear_sweep = linear_sweep[linear_sweep['outer_loop_holdout_r2_score'].notna()]
         assert linear_sweep.shape[0] == 2, "Expected exactly 2 rows where outer_loop_holdout_r2_score is not null"
 
+        configs = self.show_top_model_configs_after_averaging_by_seed(
+            all_configs=True, 
+            linear=True
+        ).sort_values(
+            by='avg_holdout_r2_score',
+            ascending=False
+        )
+
+        merged_data = pd.merge(
+            configs,
+            linear_sweep,
+            on=['dataset.cell_line', 'model.l1_ratio', 'model.alpha'],
+            how='inner'
+        )
+        assert merged_data.shape[0] == 2, "Expected exactly 2 rows after merging with linear_sweep"
+
         # Create a scatterplot
-        plt.figure(figsize=(6, 4), dpi=200)
+        plt.figure(figsize=(4,3), dpi=200)
         sns.scatterplot(
-            x="holdout_r2_score",
+            x="avg_holdout_r2_score",
             y="outer_loop_holdout_r2_score",
             hue="dataset.cell_line",
-            data=linear_sweep,
+            data=merged_data,
             palette="Set2",
             edgecolor="black",
             linewidth=1,
@@ -945,22 +961,24 @@ class DatasetAndModelParameterAnalyzer:
 
         # Add the y=x line
         min_val = min(
-            linear_sweep["holdout_r2_score"].min(),
-            linear_sweep["outer_loop_holdout_r2_score"].min()
+            merged_data["avg_holdout_r2_score"].min(),
+            merged_data["outer_loop_holdout_r2_score"].min()
         )
-        max_val = max(
-            linear_sweep["holdout_r2_score"].max(),
-            linear_sweep["outer_loop_holdout_r2_score"].max()
+        max_val = max(  
+            merged_data["avg_holdout_r2_score"].max(),
+            merged_data["outer_loop_holdout_r2_score"].max()
         )
+
         plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        plt.title("ElasticNet: Holdout R2 vs. Outer Loop Holdout $R^2$", fontsize=14)
-        plt.xlabel("Holdout $R^2$ Score", fontsize=12)
-        plt.ylabel("Outer Loop Holdout $R^2$ Score", fontsize=12)
-        plt.legend(title="Cell Line", fontsize=10, title_fontsize=11, loc="best")
+        plt.title("ElasticNet: Avg. Holdout $R^2$ vs. Final Holdout $R^2$", fontsize=8, y=1.04)
+        plt.xlabel("Avg. Holdout $R^2$ Score", fontsize=11)
+        plt.ylabel("Final Holdout $R^2$ Score", fontsize=11)
+        plt.legend(fontsize=9, loc="best")
 
         # Save and show the plot
         plt.tight_layout()
+        plt.savefig('../output/plots/summary/elasticnet_outer_vs_avg_inner_r2.png', dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
