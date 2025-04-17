@@ -727,7 +727,7 @@ class DatasetAndModelParameterAnalyzer:
         self.inner_vs_outer_r2_scores_table = merged_table[model_sweep_parameters + ["run_id", "dataset.cell_line", "avg_holdout_r2_score", "outer_loop_holdout_r2_score"]]
         
         # Create a scatterplot of avg_holdout_r2_score vs. outer_loop_holdout_r2_score
-        plt.figure(figsize=(6,3), dpi=200)
+        plt.figure(figsize=(4,3), dpi=200)
         sns.scatterplot(
             x="avg_holdout_r2_score", 
             y="outer_loop_holdout_r2_score", 
@@ -750,13 +750,14 @@ class DatasetAndModelParameterAnalyzer:
         )
         plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        plt.title("Inner Fold vs. Outer Loop Holdout $R^2$ Scores", fontsize=14)
-        plt.xlabel("Average Holdout $R^2$ Score (Inner Fold)", fontsize=12)
-        plt.ylabel("Outer Loop Holdout $R^2$ Score", fontsize=12)
-        plt.legend(title="Cell Line", fontsize=9, title_fontsize=10, loc="best")
+        plt.title("Avg. Holdout vs Final Holdout $R^2$ Scores", fontsize=12, y=1.04)
+        plt.xlabel("Avg. Holdout $R^2$ Score", fontsize=12)
+        plt.ylabel("Final Holdout $R^2$ Score", fontsize=12)
+        plt.legend(title="Cell Line", fontsize=8, title_fontsize=9, loc="best")
 
         # Save the plot
         plt.show()
+        plt.savefig("../output/plots/summary/xgboost_inner_vs_outer_r2_scores.png", dpi=200, bbox_inches='tight')
         plt.close()
         return self.inner_vs_outer_r2_scores_table
     
@@ -792,15 +793,15 @@ class DatasetAndModelParameterAnalyzer:
         for container in ax.containers: 
             ax.bar_label(container, padding=5)
 
-        plt.title('OLS Holdout $R^2$ Score by Cell Line', fontsize=12)
+        plt.title('OLS Holdout $R^2$ Score by Cell Line', fontsize=12, y=1.04)
         plt.xlabel('Cell Line', fontsize=10)
-        plt.ylabel('Holdout $R^2$ Score', fontsize=10)
+        plt.ylabel('Final Holdout $R^2$ Score', fontsize=10)
         plt.xticks(fontsize=9)
         plt.yticks(fontsize=9)
 
         # Save and show the plot
         plt.tight_layout()
-        # plt.savefig("../output/plots/linear/ols_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+        plt.savefig("../output/plots/summary/OLS_holdout_r2_score.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
