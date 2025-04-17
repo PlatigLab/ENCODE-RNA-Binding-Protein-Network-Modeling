@@ -849,7 +849,7 @@ class DatasetAndModelParameterAnalyzer:
         plt.close()
 
         for y_variable in ['holdout_r2_score', 'holdout_sigmoid_r2']:
-            fig, axes = plt.subplots(len(unique_cell_lines), 1, figsize=(13, 9), dpi=200, sharey=True, sharex=True)
+            fig, axes = plt.subplots(len(unique_cell_lines), 1, figsize=(10,8), dpi=200, sharey=True, sharex=True)
 
             for i, cell_line in enumerate(unique_cell_lines):
                 ax = axes[i]
@@ -857,24 +857,30 @@ class DatasetAndModelParameterAnalyzer:
 
                 sns.swarmplot(
                     x='model.alpha', y=y_variable, hue='model.l1_ratio',
-                    data=subset, palette='Set2', edgecolor='black', size=2, linewidth=0.01, ax=ax, hue_order=hue_order, dodge=True
+                    data=subset, palette='Set2', edgecolor='black', size=1.5, linewidth=0.02, ax=ax, hue_order=hue_order, dodge=True
                 )
 
-                ax.set_title(f'Cell Line: {cell_line}', fontsize=12)
+                ax.set_title(f'{cell_line}', fontsize=14)
                 ax.legend_.remove()  # Remove legend for individual subplots
-                ax.tick_params(axis='x', rotation=90)
+                ax.set_xlabel('')
+                ax.set_ylabel('')
+
+                # Manually set x tick labels
+                ax.set_xticks(range(len(subset['model.alpha'].unique())))
+                ax.set_xticklabels([float(f"{value:.5f}") for value in subset['model.alpha'].unique()], rotation=45, ha='right', fontsize=10)
+
 
             # Set figure-level x and y axis labels
-            fig.supxlabel('Model Alpha', fontsize=12)
-            fig.supylabel('Holdout $R^2$ Score' if y_variable == 'holdout_r2_score' else 'Holdout Sigmoid $R^2$', fontsize=12)
+            fig.supxlabel('Alpha', fontsize=16)
+            fig.supylabel('Holdout $R^2$ Score' if y_variable == 'holdout_r2_score' else 'Holdout Sigmoid $R^2$', fontsize=18)
 
             fig.suptitle(f'ElasticNet Hyperparameter Sweep: {y_variable}', fontsize=20)
             # Add a single shared legend outside the plot
             handles, labels = ax.get_legend_handles_labels()
-            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=10, title_fontsize=11, markerscale=5)
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=11, title_fontsize=12, markerscale=6)
 
             plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
-            # plt.savefig(f"../output/plots/linear/elasticnet_{y_variable}_distribution.png", dpi=200, bbox_inches='tight')
+            plt.savefig(f"../output/plots/summary/elasticnet_{y_variable}_distribution.png", dpi=200, bbox_inches='tight')
             plt.show()
             plt.close()
 
