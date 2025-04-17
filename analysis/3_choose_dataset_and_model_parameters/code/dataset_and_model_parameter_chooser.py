@@ -756,8 +756,8 @@ class DatasetAndModelParameterAnalyzer:
         plt.legend(title="Cell Line", fontsize=8, title_fontsize=9, loc="best")
 
         # Save the plot
-        plt.show()
         plt.savefig("../output/plots/summary/xgboost_inner_vs_outer_r2_scores.png", dpi=200, bbox_inches='tight')
+        plt.show()
         plt.close()
         return self.inner_vs_outer_r2_scores_table
     
