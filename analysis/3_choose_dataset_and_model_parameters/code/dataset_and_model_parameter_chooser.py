@@ -753,7 +753,7 @@ class DatasetAndModelParameterAnalyzer:
         plt.title("Avg. Holdout vs Final Holdout $R^2$ Scores", fontsize=12, y=1.04)
         plt.xlabel("Avg. Holdout $R^2$ Score", fontsize=12)
         plt.ylabel("Final Holdout $R^2$ Score", fontsize=12)
-        plt.legend(title="Cell Line", fontsize=8, title_fontsize=9, loc="best")
+        plt.legend(fontsize=9, loc="best")
 
         # Save the plot
         plt.savefig("../output/plots/summary/xgboost_inner_vs_outer_r2_scores.png", dpi=200, bbox_inches='tight')
