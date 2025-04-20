@@ -265,7 +265,10 @@ class ShapNetworkInvestigator:
         # Check if the output file exists
         if os.path.exists(output_file):
             with gzip.open(output_file, 'rb') as f:
-                self.SHAP_cv = pickle.load(f)
+                SHAP_cv = pickle.load(f)
+            
+            # Convert each DataFrame in SHAP_cv from pandas to polars
+            self.SHAP_cv = {cell_line: pl.from_pandas(df) for cell_line, df in SHAP_cv.items()}
             logger.success(f"FROM CACHE: loaded SHAP CV file")   
 
         else:
@@ -293,3 +296,15 @@ class ShapNetworkInvestigator:
 
             logger.success(f"Saved SHAP CV file to {output_file}")
 
+    def plot_SHAP_CV(self):
+        
+        if not hasattr(self, 'SHAP_cv'):
+            self.calculate_SHAP_CV()
+        
+        for cell_line, df in self.SHAP_cv.items():
+            logger.info(f"Cell Line: {cell_line}")
+            for column in df.columns:
+                unique_values = df[column].unique().to_list()
+                logger.info(f"Column: {column}, Unique Values: {len(unique_values)}")
+                if len(unique_values) < 10: 
+                    logger.info(f"Column: {column}, Unique Values: {unique_values}")
