@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle
+import glob, os, json, gc, pickle, gzip
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 
@@ -14,13 +14,10 @@ class ShapNetworkInvestigator:
 
     CACHE_INFO = {
             "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
-            "SHAP_std": {
-                "K562": "../outputs/SHAP_std/K562_SHAP_std.feather",
-                "HepG2": "../outputs/SHAP_std/HepG2_SHAP_std.feather",
-            }, 
+            "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz", 
             "global_SHAP": {
-                "5_dfs": "../outputs/global_SHAP/5_dfs.pkl", 
-                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average.pkl",
+                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
+                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
             }
         }
 
@@ -62,10 +59,10 @@ class ShapNetworkInvestigator:
         self.hash_metadata = hash_metadata
 
     
-    def calculate_pointwise_SHAP_metric_per_cell_line(self, cell_line_shap= None, metric = None, output_file = None):
+    def calculate_pointwise_SHAP_metric_per_cell_line(self, cell_line_shap=None, metric=None):
         
-        assert None not in (cell_line_shap, metric, output_file), "Arguments 'data', 'metric', and 'output_file' cannot be None"
-        logger.info(f"Calculating pointwise SHAP metric -- {metric} -- and saving to {output_file}")
+        assert None not in (cell_line_shap, metric), "Arguments 'cell_line_shap' and 'metric' cannot be None"
+        logger.info(f"Calculating pointwise SHAP metric -- {metric}")
 
         # Ensure we have 5 dataframes
         assert len(cell_line_shap) == 5
@@ -88,18 +85,22 @@ class ShapNetworkInvestigator:
             result = np.mean(tensors, axis=0)
         elif metric == 'median':
             result = np.median(tensors, axis=0)
+        elif metric =='coefficient_of_variation':
+            mean = np.mean(tensors, axis=0)
+            std = np.std(tensors, axis=0)
+            result = std / mean
         else:
             raise ValueError(f"Unsupported metric: {metric}")
         
         # Convert the result back to a Polars DataFrame
         result_df = pl.DataFrame(result, schema=cell_line_shap[0].columns)
-        # Assert that the result and result_df have the same number of columns and rows as the first DataFrame in cell_line_shap
-        assert result.shape == cell_line_shap[0].shape, "Resulting metric array has inconsistent dimensions"
-        assert result_df.shape == cell_line_shap[0].shape, "Resulting DataFrame has inconsistent dimensions"
+        # Assert that the result and result_df have the same number of columns and rows as the second DataFrame in cell_line_shap
+        # using second dataframe just as another double check that the first and second dataframe have the same shape
+        assert result.shape == cell_line_shap[1].shape, "Resulting metric array has inconsistent dimensions"
+        assert result_df.shape == cell_line_shap[1].shape, "Resulting DataFrame has inconsistent dimensions"
 
-        # Save the result to the specified output file
-        result_df.write_ipc(output_file)
-        logger.success(f"Saved pointwise SHAP {metric} for cell line to {output_file}")
+        logger.success(f"Calculated pointwise SHAP {metric} for cell line")
+        return result_df
 
     
     def retrieve_5_SHAP_tables_per_cell_line(self, cell_line):
@@ -160,8 +161,6 @@ class ShapNetworkInvestigator:
     def calculate_global_SHAP(self, mode=None): 
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
 
-        # Check if the global SHAP files already exist
-        global_SHAP = {}
         output_file = self.CACHE_INFO["global_SHAP"][mode]
         # Check if the output file exists
         if os.path.exists(output_file):
@@ -260,30 +259,37 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
-    def calculate_SHAP_std(self):
-        # Check if the SHAP_std files already exists    
-        SHAP_std = {}
-        for cell_line in self.cell_lines:
-            if os.path.exists(self.CACHE_INFO["SHAP_std"][cell_line]): 
-                SHAP_std[cell_line] = pl.read_ipc(self.CACHE_INFO["SHAP_std"][cell_line])
-                logger.success(f"FROM CACHE: loaded SHAP std file for {cell_line}")
+    def calculate_SHAP_CV(self):
 
-            else: 
-                # Retrieve 5 SHAP tables for the cell line
-                cell_line_shap = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+        output_file = self.CACHE_INFO["SHAP_CV"]
+        # Check if the output file exists
+        if os.path.exists(output_file):
+            with gzip.open(output_file, 'rb') as f:
+                self.SHAP_cv = pickle.load(f)
+            logger.success(f"FROM CACHE: loaded SHAP CV file")   
 
-                # Calculate pointwise SHAP std
-                output_file = self.CACHE_INFO["SHAP_std"][cell_line]
-                self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap, 'std', output_file)
+        else:
+            logger.info(f"SHAP CV file does not exist. Calculating...")
+
+            # Initialize an empty dictionary to store SHAP CV results
+            SHAP_CV = {}
+            # Calculate the coefficient of variation for each cell line
+            for cell_line in self.cell_lines:
+                logger.info(f"Calculating SHAP CV for cell line {cell_line}")
+
+                # Retrieve the 5 SHAP DataFrames for the cell line
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                # Calculate the coefficient of variation using the pointwise metric function
+                cv_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='coefficient_of_variation'
+                )
                 
-                SHAP_std[cell_line] = pl.read_ipc(output_file)
-                logger.success(f"Saved SHAP std file for {cell_line}")
+                SHAP_CV[cell_line] = cv_df.to_pandas()
 
-        self.SHAP_std = SHAP_std
+            # Save the SHAP CV as a single gzip-compressed pickle file
+            with gzip.open(output_file, 'wb') as f:
+                pickle.dump(SHAP_CV, f)
 
-    
-    def plot_local_SHAP_std(self): 
-        if not hasattr(self, "SHAP_std"): 
-            self.calculate_SHAP_std()
+            logger.success(f"Saved SHAP CV file to {output_file}")
 
-        

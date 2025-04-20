@@ -24,3 +24,6 @@ wandb/
 
 # ignore ols regression matrices
 analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/
+
+# ignore SHAP coefficient of variation calculations
+analysis/5_SHAP_network_analysis/outputs/SHAP_cv/local_SHAP_cv.pkl.gz
