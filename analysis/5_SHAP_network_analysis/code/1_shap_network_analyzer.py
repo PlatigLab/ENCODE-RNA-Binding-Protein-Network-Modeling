@@ -205,12 +205,10 @@ class ShapNetworkInvestigator:
         if mode == '5_dfs':
 
             for cell_line, heatmaps in global_SHAP.items():
-                fig, axes = plt.subplots(3, 2, figsize=(30, 15), dpi=200)
-                fig.suptitle(f"Global SHAP Heatmaps for {cell_line}", fontsize=16)
-
+                fig, axes = plt.subplots(3, 2, figsize=(45, 15), dpi=300, sharex=True, sharey=True)
+                fig.suptitle(f"{cell_line}: Top 5 Models Global SHAP", fontsize=40)
                 # Flatten axes for easier iteration
                 axes = axes.flatten()
-
                 # Determine global min and max values for consistent color scaling
                 vmin = min(heatmap.min().min() for heatmap in heatmaps)
                 vmax = max(heatmap.max().max() for heatmap in heatmaps)
@@ -220,11 +218,11 @@ class ShapNetworkInvestigator:
                         heatmap,
                         ax=axes[i],
                         cmap="Blues",
-                        cbar=True,
+                        cbar=False,  # Disable individual colorbars
                         vmin=vmin,
                         vmax=vmax
                     )
-                    axes[i].set_title(f"Heatmap {i + 1}")
+                    axes[i].set_title(f"Model {i + 1}")
                     axes[i].set_xlabel("RBP")
                     axes[i].set_ylabel("Position")
 
@@ -232,7 +230,14 @@ class ShapNetworkInvestigator:
                 for j in range(len(heatmaps), len(axes)):
                     axes[j].axis("off")
 
-                plt.tight_layout(rect=[0, 0, 1, 0.95])
+                # Add a single colorbar for the entire figure
+                cbar_ax = fig.add_axes([0.85, 0.15, 0.01, 0.7])  # Position for the colorbar
+                sm = plt.cm.ScalarMappable(cmap="Blues", norm=plt.Normalize(vmin=vmin, vmax=vmax))
+                sm.set_array([])
+                cbar = fig.colorbar(sm, cax=cbar_ax)
+                cbar.ax.tick_params(labelsize=25)  # Set the font size for the colorbar labels
+
+                plt.tight_layout(rect=[0, 0, 0.85, 0.95])  # Adjust layout to make space for the colorbar
                 plt.show()
                 plt.close()
 
