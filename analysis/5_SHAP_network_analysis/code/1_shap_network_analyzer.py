@@ -81,7 +81,10 @@ class ShapNetworkInvestigator:
         assert len(cell_line_shap) == 5
 
         # Sort each DataFrame in cell_line_shap by the "index" column
-        cell_line_shap = [df.sort("index").drop('index') for df in cell_line_shap]
+        cell_line_shap = [df.sort("index") for df in cell_line_shap]
+        # Ensure that the order of the indices matches exactly across all 5 DataFrames
+        assert all((df["index"].to_numpy() == cell_line_shap[0]["index"].to_numpy()).all() for df in cell_line_shap), "Index order mismatch across SHAP DataFrames"
+        cell_line_shap = [df.drop("index") for df in cell_line_shap]
 
         # ensure all dataframes have the same shape
         assert all(df.shape == cell_line_shap[0].shape for df in cell_line_shap), "SHAP DataFrames have inconsistent dimensions"
@@ -112,7 +115,7 @@ class ShapNetworkInvestigator:
         assert result.shape == cell_line_shap[1].shape, "Resulting metric array has inconsistent dimensions"
         assert result_df.shape == cell_line_shap[1].shape, "Resulting DataFrame has inconsistent dimensions"
 
-        logger.success(f"Calculated pointwise SHAP {metric} for cell line")
+        logger.success(f"Calculated pointwise SHAP {metric}")
         return result_df
 
     
