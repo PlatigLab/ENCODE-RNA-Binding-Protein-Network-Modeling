@@ -14,6 +14,10 @@ class ShapNetworkInvestigator:
 
     CACHE_INFO = {
             "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
+            # "SHAP_mp4": {
+            #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
+            #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
+            # },
             "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz", 
             "global_SHAP": {
                 "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
@@ -156,6 +160,71 @@ class ShapNetworkInvestigator:
         heatmap_df = heatmap_df.sort_index(axis=0).sort_index(axis=1)
 
         return heatmap_df
+
+
+    # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
+
+
+    #     if all(os.path.exists(output_file) for cell_line in self.CACHE_INFO["SHAP_mp4"] for output_file in self.CACHE_INFO["SHAP_mp4"][cell_line]):
+    #         output_files = [self.CACHE_INFO["SHAP_mp4"][cell_line] for cell_line in self.cell_lines]
+    #         logger.success("FROM CACHE: local SHAP distribution mp4s already exist.")
+
+    #         # Load the mp4s from the cache
+    #         for output_file in output_files:    
+    #             with open(output_file, 'rb') as f:
+    #                 mp4 = f.read()
+    #             # Display the mp4
+    #             plt.imshow(mp4)
+    #             plt.axis('off')
+    #             plt.show()
+
+        
+    #     else: 
+    #         for cell_line in self.cell_lines:
+
+    #             logger.info(f"Local SHAP distribution mp4 for {cell_line} does not exist. Calculating...")
+
+    #             #TODO fix this at the end
+    #             # Retrieve the 5 SHAP DataFrames for the cell line
+    #             # shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+    #             # self.shap_dfs = shap_dfs
+
+    #             shap_dfs = self.shap_dfs
+
+    #             # Create a mp4 of the local SHAP distribution
+    #             for feature in sorted(shap_dfs[0].columns):
+    #                 fig, axes = plt.subplots(3, 2, figsize=(15, 10), dpi=300, sharex=True, sharey=True)
+
+    #                 # Plot histograms for each SHAP table
+    #                 for i, df in enumerate(shap_dfs):
+    #                     ax = axes[i // 2, i % 2]
+    #                     sns.histplot(df[feature].to_numpy(), bins=50, stat='percent', color='deepskyblue', edgecolor='black', alpha=0.7, ax=ax)
+    #                     ax.axvline(x=0, color='red', linestyle='--', linewidth=2)
+    #                     ax.set_title(f"Model {i + 1}")
+    #                     ax.set_xlabel('')
+    #                     ax.set_ylabel('')
+
+    #                 # # Add a table in the 6th subplot
+    #                 # ax = axes[2, 1]
+    #                 # ax.axis('off')
+    #                 # zero_percentages = [
+    #                 #     (df[feature] == 0).sum() / len(df[feature]) * 100 for df in shap_dfs
+    #                 # ]
+    #                 # table_data = [[f"Table {i + 1}", f"{zero_percentage:.2f}%"] for i, zero_percentage in enumerate(zero_percentages)]
+    #                 # ax.table(cellText=table_data, colLabels=["Table", "Zero %"], loc='center', cellLoc='center')
+
+    #                 fig.suptitle(f"{cell_line} - {feature}", fontsize=30, y=0.98)
+    #                 fig.supxlabel("Local SHAP Value", fontsize=20)
+    #                 fig.supylabel("% of Values in Bin", fontsize=20)
+
+
+    #                 plt.tight_layout(rect=[0, 0, 1, 0.95])
+    #                 # plt.savefig(output_file.replace(".mp4", f"_{feature}.png"))
+    #                 plt.show()
+    #                 plt.close()
+                
+    #             logger.success(f"Saved local SHAP distribution mp4 for {cell_line} to {output_file}")
+
 
 
     def calculate_global_SHAP(self, mode=None): 
@@ -308,3 +377,15 @@ class ShapNetworkInvestigator:
                 logger.info(f"Column: {column}, Unique Values: {len(unique_values)}")
                 if len(unique_values) < 10: 
                     logger.info(f"Column: {column}, Unique Values: {unique_values}")
+
+
+    def tmp(self): 
+        
+        # self.shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line("K562")
+        max_values = [df.select(pl.all().exclude("index").max()).to_numpy().max() for df in self.shap_dfs]
+        min_values = [df.select(pl.all().exclude("index").min()).to_numpy().min() for df in self.shap_dfs]
+        logger.info(f"Max Values: {max_values}")
+        logger.info(f"Min Values: {min_values}")
+        overall_max = max(max_values)
+        overall_min = min(min_values)
+        logger.info(f"Overall Max Value: {overall_max}, Overall Min Value: {overall_min}")
