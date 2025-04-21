@@ -9,6 +9,7 @@ from loguru import logger
 @dataclass
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
+    SHAP_MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
     SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
     SHAP_TYPE = "regular-observational"
 
@@ -53,6 +54,14 @@ class ShapNetworkInvestigator:
                 # Add the 'hash' key
                 file_data['hash'] = file_path.split('/')[-1].split('.')[0]
                 data.append(file_data)
+
+            # Add SHAP expected value for each XGBoost-related hash
+            for file_data in data:
+                if file_data['name'] == "XGBRegressor":
+                    model_pickle_file = f"{self.SHAP_MODEL_PICKLE_DIR}/{file_data['hash']}.pkl"
+                    with open(model_pickle_file, 'rb') as f:
+                        model = pickle.load(f)
+                    file_data['shap_expected_value'] = model.expected_value
 
             hash_metadata = pd.DataFrame(data)
             hash_metadata = hash_metadata.set_index('hash').reset_index().sort_values(by=['name', 'cell_line'])
