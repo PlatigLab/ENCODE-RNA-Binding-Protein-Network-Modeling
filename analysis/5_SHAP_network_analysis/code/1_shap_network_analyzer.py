@@ -24,6 +24,7 @@ class ShapNetworkInvestigator:
                 "K562": "../outputs/video_plots/SHAP_cv_K562.mp4",
                 "HepG2": "../outputs/video_plots/SHAP_cv_HepG2.mp4",
             },
+            "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
             "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz", 
             "global_SHAP": {
                 "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
@@ -439,6 +440,42 @@ class ShapNetworkInvestigator:
             output_file = self.CACHE_INFO["SHAP_cv_mp4"][cell_line]
             self.create_plot_movie_from_features(filtered_data, output_file)
         
+
+    def calculate_SHAP_std(self):
+        output_file = self.CACHE_INFO["SHAP_std"]
+        # Check if the output file exists
+        if os.path.exists(output_file):
+            with gzip.open(output_file, 'rb') as f:
+                SHAP_std = pickle.load(f)
+            
+            # Convert each DataFrame in SHAP_std from pandas to polars
+            self.SHAP_std = {cell_line: pl.from_pandas(df) for cell_line, df in SHAP_std.items()}
+            logger.success(f"FROM CACHE: loaded SHAP std file")   
+
+        else:
+            logger.info(f"SHAP std file does not exist. Calculating...")
+
+            # Initialize an empty dictionary to store SHAP std results
+            SHAP_std = {}
+            # Calculate the coefficient of variation for each cell line
+            for cell_line in self.cell_lines:
+                logger.info(f"Calculating SHAP std for cell line {cell_line}")
+
+                # Retrieve the 5 SHAP DataFrames for the cell line
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                # Calculate the coefficient of variation using the pointwise metric function
+                std_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='std'
+                )
+                
+                SHAP_std[cell_line] = std_df.to_pandas()
+
+            # Save the SHAP std as a single gzip-compressed pickle file
+            with gzip.open(output_file, 'wb') as f:
+                pickle.dump(SHAP_std, f)
+
+            logger.success(f"Saved SHAP std file to {output_file}")
 
 
     def tmp(self): 
