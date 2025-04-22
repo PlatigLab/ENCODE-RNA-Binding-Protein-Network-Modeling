@@ -20,12 +20,16 @@ class ShapNetworkInvestigator:
             #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
             #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
             # },
+            "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
             'SHAP_cv_mp4': {
-                "K562": "../outputs/video_plots/SHAP_cv_K562.mp4",
-                "HepG2": "../outputs/video_plots/SHAP_cv_HepG2.mp4",
+                "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
+                "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
             },
             "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
-            "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz", 
+            'SHAP_std_mp4': {
+                "K562": "../outputs/video_plots/SHAP_std/SHAP_std_K562.mp4",
+                "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
+            },
             "global_SHAP": {
                 "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
                 "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
@@ -187,10 +191,13 @@ class ShapNetworkInvestigator:
             assert hasattr(self, 'SHAP_cv'), "SHAP_cv attribute does not exist"
             del self.SHAP_cv
             logger.success("Deleted SHAP_cv attribute")
-        
+
+        elif data_type == 'SHAP_std':
+            assert hasattr(self, 'SHAP_std'), "SHAP_std attribute does not exist"
+            del self.SHAP_std
+            logger.success("Deleted SHAP_std attribute")
 
         gc.collect()
-
 
 
     # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
@@ -490,6 +497,26 @@ class ShapNetworkInvestigator:
                 pickle.dump(SHAP_std, f)
 
             logger.success(f"Saved SHAP std file to {output_file}")
+
+
+    def plot_SHAP_std(self):
+        if not hasattr(self, 'SHAP_std'):
+            self.calculate_SHAP_std()
+
+        for cell_line, std_df in self.SHAP_std.items():
+            logger.info(f"Plotting SHAP std for cell line {cell_line}")
+            
+            # Subset to features (columns) that are not all null values
+            valid_features = [col for col in std_df.columns if not std_df[col].is_null().all()]
+            
+            filtered_data = std_df.select(valid_features)
+            assert sum(filtered_data.null_count().row(0)) == 0, "Filtered data contains null values"
+
+            # Generate the movie for the filtered data
+            output_file = self.CACHE_INFO["SHAP_std_mp4"][cell_line]
+            self.create_plot_movie_from_features(filtered_data, output_file)
+
+        self.delete_data(data_type='SHAP_std')
 
 
     def tmp(self): 
