@@ -7,6 +7,7 @@ from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
+
 @dataclass
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
@@ -401,6 +402,70 @@ class ShapNetworkInvestigator:
 
             plt.tight_layout(rect=[0, 0, 1, 0.95])
             plt.show()
+
+    
+    def plot_global_SHAP_mean_vs_variance(self, mode=None):
+        assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
+        global_SHAP = self.calculate_global_SHAP(mode)
+
+        if mode == '5_dfs':
+
+            return_results = {}
+            fig, axes = plt.subplots(1, 2, figsize=(10, 4), dpi=300, sharex=True, sharey=True)
+
+            for ax, (cell_line, heatmaps) in zip(axes, global_SHAP.items()):
+                # Assert that all heatmaps have the same shape and ordering
+                assert all(heatmap.shape == heatmaps[0].shape for heatmap in heatmaps), "Heatmaps have inconsistent dimensions"
+                assert all(heatmap.columns.tolist() == heatmaps[0].columns.tolist() for heatmap in heatmaps), "Column ordering mismatch in heatmaps"
+                assert all(heatmap.index.tolist() == heatmaps[0].index.tolist() for heatmap in heatmaps), "Row ordering mismatch in heatmaps"
+
+                # Stack all 5 heatmaps into a 3D numpy array
+                stacked_heatmaps = np.stack([heatmap.to_numpy() for heatmap in heatmaps], axis=0)
+
+                # Calculate the mean and variance for each RBP-Position combination
+                mean_values = np.mean(stacked_heatmaps, axis=0)
+                variance_values = np.var(stacked_heatmaps, axis=0)
+
+                # Convert mean_values back to a DataFrame with row and column indices
+                mean_values = pd.DataFrame(mean_values, index=heatmaps[0].index, columns=heatmaps[0].columns)
+                variance_values = pd.DataFrame(variance_values, index=heatmaps[0].index, columns=heatmaps[0].columns)
+
+                # Create a new table with RBP-Position combinations, mean, and variance
+                rbp_positions = []
+                mean_flat = []
+                variance_flat = []
+
+                for position in mean_values.index:
+                    for rbp in mean_values.columns:
+                        rbp_positions.append(f"{rbp}_{position}")
+                        mean_flat.append(mean_values.at[position, rbp])
+                        variance_flat.append(variance_values.at[position, rbp])
+
+                result_table = pd.DataFrame({
+                    "RBP_Position": rbp_positions,
+                    "Mean": mean_flat,
+                    "Variance": variance_flat
+                })
+                return_results[cell_line] = result_table.sort_values(by="Variance", ascending=False)
+
+                # Plot mean vs variance on a scatterplot
+                scatter = sns.scatterplot(data=result_table, x="Mean", y="Variance", alpha=0.7, edgecolor="black", color="deepskyblue", ax=ax)
+                ax.set_title(f"{cell_line}", fontsize=14)
+                ax.set_xlabel('')
+                ax.set_ylabel('')
+
+                # Format the y-axis tick labels to include more explicit zeros
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1e}"))
+
+            plt.suptitle("Mean vs Variance of Global SHAP Values\nper Feature Across 5 Models", fontsize=16)
+            fig.supxlabel("Mean of Global SHAP", fontsize=14)
+            fig.supylabel("Variance of Global SHAP", fontsize=14)
+
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+            return return_results
 
 
     def calculate_SHAP_CV(self):
