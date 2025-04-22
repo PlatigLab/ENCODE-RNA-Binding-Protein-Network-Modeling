@@ -1,10 +1,11 @@
-import glob, os, json, gc, pickle, gzip
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 
 from dataclasses import dataclass
+from IPython.display import display, Video
 from loguru import logger
-
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 @dataclass
 class ShapNetworkInvestigator:
@@ -19,6 +20,10 @@ class ShapNetworkInvestigator:
             #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
             #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
             # },
+            'SHAP_cv_mp4': {
+                "K562": "../outputs/video_plots/SHAP_cv_K562.mp4",
+                "HepG2": "../outputs/video_plots/SHAP_cv_HepG2.mp4",
+            },
             "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz", 
             "global_SHAP": {
                 "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
@@ -238,6 +243,44 @@ class ShapNetworkInvestigator:
     #             logger.success(f"Saved local SHAP distribution mp4 for {cell_line} to {output_file}")
 
 
+    def create_plot_movie_from_features(self, data, output_file): 
+
+        if os.path.exists(output_file):
+            logger.success(f"FROM CACHE: {output_file} already exists. Rendering...")
+            # Display the video
+            return display(Video(filename=output_file))
+
+        else: 
+            logger.info(f"{output_file} does not exist. Creating video...")
+
+            # Create a temporary directory to store histogram images
+            temp_dir = tempfile.mkdtemp()
+            # Generate histogram plots for each column
+            for i, column in enumerate(tqdm.tqdm(data.columns, desc="Generating histograms")):
+                plt.figure(figsize=(8, 4))
+                sns.histplot(data[column].to_numpy(), bins=50, stat="percent", color="deepskyblue", edgecolor="black", alpha=0.7)
+                
+                plt.axvline(x=0, color="red", linestyle="--", linewidth=2)
+                plt.title(f"{column}", fontsize=16)
+                plt.xlabel("Value", fontsize=14)
+                plt.ylabel("Percentage", fontsize=14)
+                plt.tight_layout()
+                
+                # Save the plot as an image
+                image_path = os.path.join(temp_dir, f"{column}.png")
+                plt.savefig(image_path, dpi=150)
+                plt.close()
+
+            # Create a video from the saved images
+            image_files = sorted(glob.glob(os.path.join(temp_dir, "*.png")))
+            clip = ImageSequenceClip(image_files, fps=2)
+            clip.write_videofile(output_file, codec="libx264", fps=2)
+
+            logger.success(f"Saved video to {output_file}")
+
+            # Clean up the temporary directory
+            shutil.rmtree(temp_dir)
+
 
     def calculate_global_SHAP(self, mode=None): 
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
@@ -377,18 +420,25 @@ class ShapNetworkInvestigator:
 
             logger.success(f"Saved SHAP CV file to {output_file}")
 
+    
     def plot_SHAP_CV(self):
         
         if not hasattr(self, 'SHAP_cv'):
             self.calculate_SHAP_CV()
+
+        for cell_line, cv_df in self.SHAP_cv.items():
+            logger.info(f"Plotting SHAP CV for cell line {cell_line}")
+            
+            # Subset to features (columns) that are not all null values
+            valid_features = [col for col in cv_df.columns if not cv_df[col].is_null().all()]
+            
+            filtered_data = cv_df.select(valid_features)
+            assert sum(filtered_data.null_count().row(0)) == 0, "Filtered data contains null values"
+
+            # Generate the movie for the filtered data
+            output_file = self.CACHE_INFO["SHAP_cv_mp4"][cell_line]
+            self.create_plot_movie_from_features(filtered_data, output_file)
         
-        for cell_line, df in self.SHAP_cv.items():
-            logger.info(f"Cell Line: {cell_line}")
-            for column in df.columns:
-                unique_values = df[column].unique().to_list()
-                logger.info(f"Column: {column}, Unique Values: {len(unique_values)}")
-                if len(unique_values) < 10: 
-                    logger.info(f"Column: {column}, Unique Values: {unique_values}")
 
 
     def tmp(self): 
