@@ -180,8 +180,20 @@ class ShapNetworkInvestigator:
         return heatmap_df
 
 
-    # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
+    def delete_data(self, data_type=None):
+        assert data_type is not None, "data_type cannot be None"
 
+        if data_type == 'SHAP_cv': 
+            assert hasattr(self, 'SHAP_cv'), "SHAP_cv attribute does not exist"
+            del self.SHAP_cv
+            logger.success("Deleted SHAP_cv attribute")
+        
+
+        gc.collect()
+
+
+
+    # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
 
     #     if all(os.path.exists(output_file) for cell_line in self.CACHE_INFO["SHAP_mp4"] for output_file in self.CACHE_INFO["SHAP_mp4"][cell_line]):
     #         output_files = [self.CACHE_INFO["SHAP_mp4"][cell_line] for cell_line in self.cell_lines]
@@ -439,7 +451,9 @@ class ShapNetworkInvestigator:
             # Generate the movie for the filtered data
             output_file = self.CACHE_INFO["SHAP_cv_mp4"][cell_line]
             self.create_plot_movie_from_features(filtered_data, output_file)
-        
+
+        self.delete_data(data_type='SHAP_cv')
+
 
     def calculate_SHAP_std(self):
         output_file = self.CACHE_INFO["SHAP_std"]
