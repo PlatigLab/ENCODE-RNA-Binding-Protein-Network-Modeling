@@ -14,6 +14,8 @@ from scipy.stats import pearsonr, spearmanr
 @dataclass
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
+    MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/pickled_models/"
+
     SHAP_MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
     SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
     SHAP_TYPE = "regular-observational"
@@ -37,6 +39,10 @@ class ShapNetworkInvestigator:
             "global_SHAP": {
                 "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
                 "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
+            },
+            "local_SHAP_mean_vs_variance": {
+                "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
+                "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
             }
         }
 
