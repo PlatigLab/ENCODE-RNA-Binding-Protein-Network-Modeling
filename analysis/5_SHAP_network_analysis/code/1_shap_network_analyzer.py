@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+from matplotlib.colors import LogNorm
 
 
 @dataclass
@@ -583,6 +584,75 @@ class ShapNetworkInvestigator:
 
         self.delete_data(data_type='SHAP_std')
 
+    
+    def plot_local_SHAP_mean_vs_variance(self): 
+        # Check if the local SHAP mean vs variance plots exist for all cell lines
+        if all(os.path.exists(self.CACHE_INFO["local_SHAP_mean_vs_variance"][cell_line]) for cell_line in self.cell_lines):
+            logger.success("FROM CACHE: Local SHAP mean vs variance plots already exist.")
+            for cell_line in self.cell_lines:
+                output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance"][cell_line]
+
+                logger.success(f"FROM CACHE: Local SHAP mean vs variance plot for {cell_line} already exists.")
+                display(plt.imread(output_file))
+        else:
+            logger.info("Both local SHAP mean vs variance plots do not exist. Proceeding to generate the necessary ones...")
+
+            for cell_line in self.cell_lines:
+                
+                # adding this as each cell line plot takes forever to generate
+                if os.path.exists(self.CACHE_INFO["local_SHAP_mean_vs_variance"][cell_line]): 
+                    logger.success(f"FROM CACHE: Local SHAP mean vs variance plot for {cell_line} already exists. Generating other cell line...")
+                    continue
+                
+                logger.info(f"Generating mean vs variance hexbin plot for cell line {cell_line}")
+
+                # Retrieve the 5 SHAP DataFrames for the cell line
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+
+                # Calculate mean and variance using the pointwise SHAP metric function
+                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='mean'
+                )
+                variance_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='variance'
+                )
+
+                # Flatten the mean and variance DataFrames for plotting
+                mean_values = mean_df.to_numpy().flatten()
+                variance_values = variance_df.to_numpy().flatten()
+
+                # Assert that there are no null or missing values in either mean or variance
+                assert not np.isnan(mean_values).any(), "Mean values contain NaN or missing values"
+                assert not np.isnan(variance_values).any(), "Variance values contain NaN or missing values"
+
+                plt.figure(figsize=(6,3), dpi=300)
+                hb = plt.hexbin(
+                    mean_values, 
+                    variance_values, 
+                    gridsize=50, 
+                    cmap='viridis', 
+                    norm=LogNorm(), 
+                    edgecolors='black', 
+                    linewidths=0.05
+                )
+                
+                plt.axvline(x=0, color='red', linestyle='--', linewidth=0.5)
+
+                plt.colorbar(hb, label='Log Counts').ax.tick_params(labelsize=8)
+                plt.title(f"{cell_line}: Local SHAP Mean vs Variance\nNOTE: mean and variance calculated for each point in 5-stack tensor", fontsize=8)
+                plt.xlabel("Mean SHAP Value", fontsize=8)
+                plt.ylabel("Variance SHAP Value", fontsize=8)
+
+                # Save the plot to the corresponding output file
+                output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance"][cell_line]
+                plt.tight_layout()
+                plt.savefig(output_file, dpi=300, bbox_inches='tight')
+                plt.show()
+                plt.close()
+
+                logger.success(f"Saved mean vs variance hexbin plot for {cell_line} to {output_file}")
 
     def tmp(self): 
         
