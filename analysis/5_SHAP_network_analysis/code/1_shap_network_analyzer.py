@@ -1,12 +1,14 @@
 import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
+import scipy.cluster.hierarchy as sch
 
 from dataclasses import dataclass
 from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from matplotlib.colors import LogNorm
+from scipy.stats import pearsonr, spearmanr
 
 
 @dataclass
@@ -117,6 +119,8 @@ class ShapNetworkInvestigator:
             mean = np.mean(tensors, axis=0)
             std = np.std(tensors, axis=0)
             result = std / mean
+        elif metric == 'variance':
+            result = np.var(tensors, axis=0)
         else:
             raise ValueError(f"Unsupported metric: {metric}")
         
@@ -167,14 +171,18 @@ class ShapNetworkInvestigator:
     
 
     def convert_RBP_position_to_2d_heatmap(self, table):
+
         assert len(table) == 1, "Table should have only one row"
+        if not isinstance(table, pd.DataFrame):
+            assert isinstance(table, pl.DataFrame), "Table must be either a pandas or polars DataFrame"
+            table = table.to_pandas()
 
         # Extract RBP and position information from column names
         rbp_positions = [self.get_RBP_position(col) for col in table.columns]
 
         # Create a DataFrame with RBP and position as separate columns
         rbp_positions_df = pd.DataFrame(
-            [(rbp, position, table[0, col]) for (rbp, position), col in zip(rbp_positions, table.columns)],
+            [(rbp, position, table[col].iloc[0]) for (rbp, position), col in zip(rbp_positions, table.columns)],
             columns=["RBP", "Position", "Value"]
         )
 
@@ -654,6 +662,199 @@ class ShapNetworkInvestigator:
 
                 logger.success(f"Saved mean vs variance hexbin plot for {cell_line} to {output_file}")
 
+    
+    def load_elasticnet_coefficients(self): 
+
+        # Filter hash metadata for rows where 'name' contains 'ElasticNet'
+        elasticnet_metadata = self.hash_metadata[self.hash_metadata['name'] == "ElasticNet"].sort_values(by=['cell_line', 'hash'])
+        # Check if the number of rows is 2
+        assert len(elasticnet_metadata) == 2, "Expected 2 ElasticNet models for each cell line"
+
+        # Initialize a dictionary to store ElasticNet information
+        elasticnet_info = {}
+        for _, row in elasticnet_metadata.iterrows():
+            cell_line = row['cell_line']
+            hash_value = row['hash']
+            subfolder = row['name']
+
+            # Construct the path to the pickle file
+            pickle_file = os.path.join(self.MODEL_PICKLE_DIR, subfolder, f"{hash_value}.pkl.gz")
+
+            # Load the ElasticNet model
+            with gzip.open(pickle_file, 'rb') as f:
+                model = pickle.load(f)
+
+            # Log the number of iterations
+            logger.info(f"Cell Line: {cell_line}, Hash: {hash_value}, n_iter_: {model.n_iter_}")
+            # Assert that the order and content of feature_names_in_ matches column_order_when_fitting
+            assert list(model.feature_names_in_) == list(model.column_order_when_fitting), f"Feature names mismatch for cell line {cell_line}, hash {hash_value}"
+
+            # Store the coefficients as a DataFrame and intercept in the dictionary
+            elasticnet_info[cell_line] = {
+                "coefficients": pd.DataFrame([model.coef_], columns=model.feature_names_in_),
+                "intercept": model.intercept_
+            }
+        
+        self.elasticnet_info = elasticnet_info
+        logger.success("Loaded ElasticNet coefficients and intercepts")
+        return self.elasticnet_info
+
+    
+    def plot_elasticnet_coefficients(self):
+
+        # Convert ElasticNet coefficients to 2D heatmaps
+        heatmap_HepG2 = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info["HepG2"]["coefficients"])
+        heatmap_K562 = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info["K562"]["coefficients"])
+
+        # Find intersecting and unique columns
+        intersecting_columns = heatmap_HepG2.columns.intersection(heatmap_K562.columns)
+        unique_HepG2_columns = heatmap_HepG2.columns.difference(heatmap_K562.columns)
+        unique_K562_columns = heatmap_K562.columns.difference(heatmap_HepG2.columns)
+
+        # Subset to intersecting columns and cluster HepG2
+        subset_HepG2 = heatmap_HepG2[intersecting_columns]
+        linkage = sch.linkage(subset_HepG2.T, method="ward")
+        dendrogram = sch.dendrogram(linkage, no_plot=True)
+        intersecting_order = [subset_HepG2.columns[i] for i in dendrogram["leaves"]]
+
+        # Cluster unique columns for each cell line
+        linkage_HepG2_unique = sch.linkage(heatmap_HepG2[unique_HepG2_columns].T, method="ward")
+        unique_HepG2_order = [heatmap_HepG2[unique_HepG2_columns].columns[i] for i in sch.dendrogram(linkage_HepG2_unique, no_plot=True)["leaves"]]
+
+        linkage_K562_unique = sch.linkage(heatmap_K562[unique_K562_columns].T, method="ward")
+        unique_K562_order = [heatmap_K562[unique_K562_columns].columns[i] for i in sch.dendrogram(linkage_K562_unique, no_plot=True)["leaves"]]
+
+        # Final column orderings
+        final_HepG2_order = intersecting_order + unique_HepG2_order
+        final_K562_order = intersecting_order + unique_K562_order
+
+        # Index of split point for plotting
+        split_index_HepG2 = len(intersecting_order)
+        split_index_K562 = len(intersecting_order)
+
+        # Get global min and max values for consistent color scaling
+        global_min = min(heatmap_HepG2.min().min(), heatmap_K562.min().min())
+        global_max = max(heatmap_HepG2.max().max(), heatmap_K562.max().max())
+
+
+        for plot_type in ["All", "Only Matching"]:
+
+            if plot_type == "All":
+                sharex = False 
+            elif plot_type == "Only Matching":
+                sharex = True
+            # Plot heatmaps
+            fig, axes = plt.subplots(2, 1, figsize=(30, 10), dpi=300, sharey=True, sharex=sharex, gridspec_kw={'height_ratios': [1, 1]})
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Position for the single colorbar
+
+            for ax, cell_line, heatmap, final_order, split_index in zip(
+                            axes,
+                            ["HepG2", "K562"],
+                            [heatmap_HepG2, heatmap_K562],
+                            [final_HepG2_order, final_K562_order],
+                            [split_index_HepG2, split_index_K562],
+            ):  
+                                
+                plotting = heatmap[final_order]
+
+                if plot_type == "Only Matching":
+                    plotting = plotting[intersecting_order]
+                
+                sns.heatmap(
+                    plotting,
+                    ax=ax,
+                    cmap="seismic",
+                    cbar=(ax == axes[0]),  # Add colorbar only for the first heatmap
+                    cbar_ax=(cbar_ax if ax == axes[0] else None),
+                    vmin=global_min,
+                    vmax=global_max,
+                    center=0.0,  # Set 0.0 as the center of the colorbar
+                    xticklabels=True,
+                    yticklabels=True,
+                    linewidths=0.5,  # Thin black borders around cells
+                    linecolor="black",
+                )
+
+                if plot_type == "All": 
+                    ax.axvline(x=split_index, color="darkgreen", linewidth=7)
+                
+                ax.set_title(f"{cell_line}", fontsize=24, pad=10)
+                ax.set_xlabel("")
+                # Make y-axis tick labels larger
+                ax.tick_params(axis='y', labelsize=24)
+                ax.set_ylabel("")
+
+            # Add colorbar title
+            cbar_ax.set_title("Coef.", fontsize=25)
+            cbar_ax.tick_params(labelsize=20)  # Increase tick label font size
+            cbar_ax.set_box_aspect(20) 
+
+            fig.supxlabel("RBP", fontsize=40, x=0.45)
+            fig.supylabel("Position", fontsize=40, x=-0.001)
+
+            plt.suptitle(f"ElasticNet Coefficients for {plot_type} Features", fontsize=50, y=1.06)
+            plt.text(0.5, 1.3, "RBPs w/ eCLIP in both cell lines had 'Ward' clustering done in HepG2 and both cell lines data matches that ordering.\nRBPs that were unique to a cell line had their own 'Ward' clustering run to determine ordering.", ha='center', va='center', fontsize=20, transform=axes[0].transAxes)
+
+            plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
+            plt.show()
+            plt.close()
+
+        # Scatterplot for matching features
+        matching_features = []
+        k562_coefficients = []
+        hepg2_coefficients = []
+
+        # Iterate through each RBP and position to ensure precise matching
+        for position in heatmap_K562.index:
+            for rbp in heatmap_K562.columns:
+                if rbp in heatmap_HepG2.columns:
+                    matching_features.append(f"{rbp}_{position}")
+                    k562_coefficients.append(heatmap_K562.at[position, rbp])
+                    hepg2_coefficients.append(heatmap_HepG2.at[position, rbp])
+
+        # Convert to numpy arrays for correlation calculations
+        k562_coefficients = np.array(k562_coefficients)
+        hepg2_coefficients = np.array(hepg2_coefficients)
+
+        pearson_corr, _ = pearsonr(k562_coefficients, hepg2_coefficients)
+        spearman_corr, _ = spearmanr(k562_coefficients, hepg2_coefficients)
+
+        # Create scatterplot
+        plt.figure(figsize=(4.5,4), dpi=200)
+        sns.scatterplot(
+            x=k562_coefficients,
+            y=hepg2_coefficients,
+            alpha=0.5,
+            edgecolor="black",
+            color="deepskyblue",
+            s=10  # Reduce the size of the dots
+        )
+        # Add y=x line
+        plt.plot(
+            [min(k562_coefficients), max(k562_coefficients)],
+            [min(k562_coefficients), max(k562_coefficients)],
+            color="red",
+            linestyle="--",
+            linewidth=1,
+        )
+
+        # Annotate coefficients with absolute values greater than 1.5
+        for i, (k562, hepg2, feature) in enumerate(zip(k562_coefficients, hepg2_coefficients, matching_features)):
+            if abs(k562) > .15 or abs(hepg2) > .15:
+                plt.text(k562 - 0.02, hepg2+0.01, feature, fontsize=6, color="black", alpha=1)
+
+        # Update title and text with smaller font and include total points
+        total_points = len(k562_coefficients)
+        plt.title(f"K562 vs HepG2 ElasticNet Coefficients\nNOTE: only includes matching features even though\nindividual models were run with different features", fontsize=10, y=1.04)
+        plt.text(0.2, 0.9, f"Total Points: {total_points}\nPearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}", ha='center', va='center', fontsize=8, transform=plt.gca().transAxes)
+
+        # Update axis labels with smaller font
+        plt.xlabel("K562 Coefficients", fontsize=10)
+        plt.ylabel("HepG2 Coefficients", fontsize=10)
+        plt.tight_layout()
+        plt.show()
+
+    
     def tmp(self): 
         
         # self.shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line("K562")
