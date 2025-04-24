@@ -335,11 +335,11 @@ class ShapNetworkInvestigator:
             logger.info(f"Global SHAP file for mode {mode} does not exist. Calculating...")
 
             global_heatmaps = {}
-            if mode == '5_dfs':
-                dfs_global_SHAP = {
-                    cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line) for cell_line in self.cell_lines
-                }
+            dfs_global_SHAP = {
+                cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line) for cell_line in self.cell_lines
+            }
 
+            if mode == '5_dfs':
                 for cell_line, dfs in dfs_global_SHAP.items():
                     # Drop the 'index' column and calculate the absolute value average of each column
                     averaged_df = [df.sort('index').drop('index').select(pl.all().abs().mean()) for df in dfs]
@@ -349,7 +349,16 @@ class ShapNetworkInvestigator:
                     global_heatmaps[cell_line] = heatmaps
 
             elif mode == '5_dfs_average':
-                raise NotImplementedError("This mode is not implemented yet")
+                for cell_line in self.cell_lines: 
+                    average_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                        cell_line_shap=dfs_global_SHAP[cell_line], 
+                        metric='mean'
+                    )
+
+                    average_df = average_df.select(pl.all().abs().mean())
+                    heatmap = self.convert_RBP_position_to_2d_heatmap(average_df)
+                    # Store the heatmap in the global dictionary
+                    global_heatmaps[cell_line] = heatmap
             
             assert len(global_heatmaps.keys()) == len(self.cell_lines), "Not all cell lines have been processed"
             # Save the global heatmaps as a single pickle file
