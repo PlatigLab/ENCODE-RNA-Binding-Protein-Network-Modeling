@@ -103,7 +103,9 @@ class ShapNetworkInvestigator:
         # Sort each DataFrame in cell_line_shap by the "index" column
         cell_line_shap = [df.sort("index") for df in cell_line_shap]
         # Ensure that the order of the indices matches exactly across all 5 DataFrames
-        assert all((df["index"].to_numpy() == cell_line_shap[0]["index"].to_numpy()).all() for df in cell_line_shap), "Index order mismatch across SHAP DataFrames"
+        assert all(
+            [(df["index"].to_list() == cell_line_shap[0]["index"].to_list()) for df in cell_line_shap]
+        ), "Index order mismatch across SHAP DataFrames"
         cell_line_shap = [df.drop("index") for df in cell_line_shap]
 
         # ensure all dataframes have the same shape
