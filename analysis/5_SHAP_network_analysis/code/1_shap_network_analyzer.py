@@ -403,21 +403,37 @@ class ShapNetworkInvestigator:
                 plt.close()
 
         elif mode == '5_dfs_average':
-            fig, axes = plt.subplots(2, 1, figsize=(10, 16), dpi=200)
-            fig.suptitle("Global SHAP Heatmaps (5_dfs_average)", fontsize=16)
+            fig, axes = plt.subplots(2, 1, figsize=(35, 13), dpi=200, sharey=True)
 
             for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
-                sns.heatmap(
-                    heatmap,
-                    ax=ax,
-                    cmap="viridis",
-                    cbar=True
-                )
-                ax.set_title(f"Cell Line: {cell_line}")
-                ax.set_xlabel("RBP")
-                ax.set_ylabel("Position")
+                # Perform hierarchical clustering on the columns
+                linkage = sch.linkage(heatmap.T, method="ward")
+                dendrogram = sch.dendrogram(linkage, no_plot=True)
+                ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
 
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
+                # Reorder the heatmap columns based on the clustering
+                ordered_heatmap = heatmap[ordered_columns]
+
+                sns.heatmap(
+                    ordered_heatmap,
+                    ax=ax,
+                    cmap="Blues",
+                    cbar=True,
+                    linewidths=0.01,  # Add black border around each cell
+                    linecolor="gray",
+                    cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02}  # Adjust colorbar position and size
+                )
+                cbar = ax.collections[0].colorbar
+                cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
+                ax.set_title(f"{cell_line}", fontsize=30)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelsize=25)  # Make y-axis tick labels larger
+            
+            fig.suptitle("Global SHAP w/ Ward Hierarchical Clustering Order\n(NOTE: after averaging all local SHAP values across 5 models per cell line)", fontsize=40, y=1.01, x=0.45)
+            fig.supxlabel("RBP", fontsize=30)
+            fig.supylabel("Position", fontsize=30, x=-0.01)
+            plt.tight_layout()
             plt.show()
 
     
