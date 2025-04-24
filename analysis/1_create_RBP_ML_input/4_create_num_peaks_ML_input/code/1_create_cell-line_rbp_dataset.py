@@ -213,7 +213,7 @@ for row in rmats_df:
                                     feature_string = "_".join([tmp_kd_target, str(i), "binding"])
                                     if ML_input_data[unique_id][feature_string] > 0: 
                                         kd_binding_present+=1
-                                        row["has_RBP_KD"] = True    
+                                        ML_input_data["has_RBP_KD"] = True    
 
                             elif "CTRL" in sample: 
                                 ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"    
