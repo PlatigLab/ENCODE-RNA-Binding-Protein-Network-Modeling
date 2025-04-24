@@ -416,38 +416,109 @@ class ShapNetworkInvestigator:
                 plt.close()
 
         elif mode == '5_dfs_average':
-            fig, axes = plt.subplots(2, 1, figsize=(35, 13), dpi=200, sharey=True)
 
-            for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
-                # Perform hierarchical clustering on the columns
-                linkage = sch.linkage(heatmap.T, method="ward")
-                dendrogram = sch.dendrogram(linkage, no_plot=True)
-                ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
+            # Calculate the combined range of all heatmaps to define consistent bins
+            all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
+            bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
 
-                # Reorder the heatmap columns based on the clustering
-                ordered_heatmap = heatmap[ordered_columns]
+            # Create a figure with 2 columns: left for histograms, right for boxplots
+            fig, axes = plt.subplots(len(global_SHAP), 2, figsize=(11, 7), dpi=200, sharex=True, sharey=False)
 
-                sns.heatmap(
-                    ordered_heatmap,
-                    ax=ax,
-                    cmap="Blues",
-                    cbar=True,
-                    linewidths=0.01,  # Add black border around each cell
-                    linecolor="gray",
-                    cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02}  # Adjust colorbar position and size
+            for row_idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
+                # Flatten the heatmap values into a single array
+                global_shap_values = heatmap.to_numpy().flatten()
+                num_points = len(global_shap_values)
+
+                # Left subplot: histogram
+                sns.histplot(
+                    global_shap_values,
+                    bins=bins,
+                    stat="percent",
+                    color="deepskyblue",
+                    edgecolor="black",
+                    alpha=0.7,
+                    ax=axes[row_idx, 0]
                 )
-                cbar = ax.collections[0].colorbar
-                cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
-                ax.set_title(f"{cell_line}", fontsize=30)
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.tick_params(axis='y', labelsize=25)  # Make y-axis tick labels larger
-            
-            fig.suptitle("Global SHAP w/ Ward Hierarchical Clustering Order\n(NOTE: after averaging all local SHAP values across 5 models per cell line)", fontsize=40, y=1.01, x=0.45)
-            fig.supxlabel("RBP", fontsize=30)
-            fig.supylabel("Position", fontsize=30, x=-0.01)
+                axes[row_idx, 0].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+                axes[row_idx, 0].set_xlabel("")
+                axes[row_idx, 0].set_ylabel("")
+                axes[row_idx, 0].tick_params(axis="both", labelsize=12)
+
+                # Right subplot: boxplot with dots
+                sns.boxplot(
+                    data=global_shap_values,
+                    orient="h",
+                    color="deepskyblue",
+                    ax=axes[row_idx, 1],
+                    width=0.5,
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "red", "linewidth": 1.5}
+                )
+                sns.stripplot(
+                    data=global_shap_values,
+                    orient="h",
+                    color="black",
+                    size=5,
+                    alpha=0.1,
+                    ax=axes[row_idx, 1]
+                )
+                axes[row_idx, 1].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+                axes[row_idx, 1].set_xlabel("")
+                axes[row_idx, 1].set_ylabel("")
+                axes[row_idx, 1].tick_params(axis="both", labelsize=12)
+
+            plt.suptitle("Global SHAP Values per Cell Line from Averaging 5 Models' Local SHAP", fontsize=20, y=0.98)
+            fig.supxlabel("Global SHAP Value", fontsize=16)
+            fig.supylabel("Percentage", fontsize=16)
             plt.tight_layout()
             plt.show()
+
+            for iteration, vmin_threshold in enumerate([None, 0.05]):
+                fig, axes = plt.subplots(2, 1, figsize=(35, 13), dpi=200, sharey=True)
+
+                for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
+                    # Perform hierarchical clustering on the columns
+                    linkage = sch.linkage(heatmap.T, method="ward")
+                    dendrogram = sch.dendrogram(linkage, no_plot=True)
+                    ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
+
+                    # Reorder the heatmap columns based on the clustering
+                    ordered_heatmap = heatmap[ordered_columns]
+
+                    sns.heatmap(
+                        ordered_heatmap,
+                        ax=ax,
+                        cmap="Blues",
+                        cbar=True,
+                        linewidths=0.01,  # Add black border around each cell
+                        linecolor="gray",
+                        cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},  # Adjust colorbar position and size
+                        vmin=vmin_threshold  # Apply minimum threshold for the second iteration
+                    )
+                    cbar = ax.collections[0].colorbar
+                    cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
+                    ax.set_title(f"{cell_line}", fontsize=30)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    ax.tick_params(axis='y', labelsize=25)  # Make y-axis tick labels larger
+
+                # Add a caption for the second iteration
+                caption = ""
+                if vmin_threshold is not None:
+                    caption = f"\nCAVEAT: colorbar set to minimum of {vmin_threshold}"
+
+                fig.suptitle(
+                    f"Global SHAP w/ Ward Hierarchical Clustering Order\n"
+                    f"(NOTE: after averaging all local SHAP values across 5 models per cell line){caption}",
+                    fontsize=40, y=1.01, x=0.45
+                )
+                fig.supxlabel("RBP", fontsize=30)
+                fig.supylabel("Position", fontsize=30, x=-0.01)
+                plt.tight_layout()
+                plt.show()
+
+        
 
     
     def plot_global_SHAP_mean_vs_variance(self, mode=None):
@@ -1076,12 +1147,82 @@ class ShapNetworkInvestigator:
             
 
     def tmp(self): 
-        
-        # self.shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line("K562")
-        max_values = [df.select(pl.all().exclude("index").max()).to_numpy().max() for df in self.shap_dfs]
-        min_values = [df.select(pl.all().exclude("index").min()).to_numpy().min() for df in self.shap_dfs]
-        logger.info(f"Max Values: {max_values}")
-        logger.info(f"Min Values: {min_values}")
-        overall_max = max(max_values)
-        overall_min = min(min_values)
-        logger.info(f"Overall Max Value: {overall_max}, Overall Min Value: {overall_min}")
+
+        rbp_counts = {}
+
+        for file in sorted(glob.glob("../../../../../../data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/**/SE.*", recursive=True)):
+            if "HepG2" in file and "Transfection" not in file: 
+                rbp = file.split("/")[-2].split("-")[0]
+
+                df = pl.scan_csv(file, separator="\t")
+                filtered_df = df.filter(
+                    (pl.col("FDR") <= self.FDR_THRESHOLD) & 
+                    (pl.col("IncLevelDifference").abs() >= self.DPSI_THRESHOLD)
+                )
+                count = filtered_df.collect().height
+                rbp_counts[rbp] = count
+
+        rbp_counts_df = pd.DataFrame(list(rbp_counts.items()), columns=["RBP", "Event Count"])
+        summary_table = self.feature_metric_summary_table.copy()
+        summary_table = summary_table[summary_table["Cell Line"] == "HepG2"]
+        summary_table = summary_table.merge(rbp_counts_df, how="left", left_on="RBP", right_on="RBP")
+        summary_table = summary_table.dropna()
+
+        # Take unique rows of summary_table by RBP and the two columns used later
+        summary_table = summary_table[["RBP", "# RBP Differential Events", "Event Count"]].drop_duplicates(subset=["RBP"])
+
+        # Calculate correlation values
+        pearson_corr, _ = pearsonr(summary_table["# RBP Differential Events"], summary_table["Event Count"])
+        spearman_corr, _ = spearmanr(summary_table["# RBP Differential Events"], summary_table["Event Count"])
+
+        # Plot # RBP Differential Events vs event count as a scatterplot
+        plt.figure(figsize=(6, 4), dpi=200)
+        sns.scatterplot(
+            data=summary_table,
+            x="# RBP Differential Events",
+            y="Event Count",
+            alpha=0.7,
+            edgecolor="black",
+            color="deepskyblue",
+            s=20
+        )
+
+        # Add a diagonal line for reference
+        plt.plot(
+            [summary_table["# RBP Differential Events"].min(), summary_table["# RBP Differential Events"].max()],
+            [summary_table["# RBP Differential Events"].min(), summary_table["# RBP Differential Events"].max()],
+            color="red",
+            linestyle="--",
+            linewidth=1,
+            label="y=x"
+        )
+
+        # Annotate the top 6 values in "Event Count"
+        top_6 = summary_table.nlargest(10, "Event Count")
+        for _, row in top_6.iterrows():
+            plt.text(
+                row["# RBP Differential Events"] + -100, 
+                row["Event Count"]+100, 
+                row["RBP"], 
+                fontsize=6, 
+                color="black"
+            )
+
+        # Add labels, title, and correlation values
+        plt.title("Yogi's Data vs rMATS Original File # Diff Events", fontsize=12)
+        plt.xlabel("Yogi's Data # Diff Events", fontsize=10)
+        plt.ylabel("rMATS Original File # Diff Events", fontsize=10)
+        num_points = len(summary_table)
+        plt.text(
+            0.05, 0.85, 
+            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}", 
+            transform=plt.gca().transAxes, 
+            fontsize=8, 
+            verticalalignment='top'
+        )
+        plt.legend(fontsize=8)
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+        return summary_table
