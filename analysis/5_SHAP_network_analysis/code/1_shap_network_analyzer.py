@@ -20,6 +20,9 @@ class ShapNetworkInvestigator:
     SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
     SHAP_TYPE = "regular-observational"
 
+    FDR_THRESHOLD = 0.1
+    DPSI_THRESHOLD = 0.1
+
     CACHE_INFO = {
             "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
             # "SHAP_mp4": {
@@ -896,21 +899,25 @@ class ShapNetworkInvestigator:
         # Check if the summary table already exists
         if os.path.exists(self.CACHE_INFO["feature_metric_summary_table"]):
             logger.success("FROM CACHE: Feature metric summary table already exists.")
-            return pd.read_csv(self.CACHE_INFO["feature_metric_summary_table"])
+            
+            self.feature_metric_summary_table = pd.read_csv(self.CACHE_INFO["feature_metric_summary_table"], sep="\t")
+            return self.feature_metric_summary_table.head()
 
         else:
             logger.info("Feature metric summary table does not exist. Creating...")
 
-            # Initialize an empty list to store rows for the summary table
-            summary_rows = []
-
             # Get global SHAP for 5_dfs_average
             global_shap_data = self.calculate_global_SHAP(mode="5_dfs_average")
+            if not hasattr(self, 'elasticnet_info'):
+                self.load_elasticnet_coefficients()
 
+            summary_tables = []
             # Iterate through each cell line
             for cell_line in self.cell_lines:
                 logger.info(f"Processing cell line: {cell_line}")
-
+                
+                # Initialize an empty list to store rows for the summary table
+                summary_rows = []
                 # Access global SHAP for the specific cell line
                 global_shap = global_shap_data[cell_line]
                 # Get ElasticNet coefficients
@@ -927,23 +934,146 @@ class ShapNetworkInvestigator:
                         shap_value = global_shap.at[position, rbp]
                         coef_value = elasticnet_coefficients.at[position, rbp]
                         summary_rows.append({
+                            "RBP": rbp,
                             "Cell Line": cell_line,
                             "Feature": feature,
                             "Global SHAP": shap_value,
                             "ElasticNet Coefficient": coef_value,
-                            "Total Binding": None,  # Placeholder
-                            "# Differential Events": None  # Placeholder
                         })
 
-            # Convert the list of rows into a DataFrame
-            summary_table = pd.DataFrame(summary_rows).sort_values(by=["Cell Line", "Feature"])
+                # Convert the list of rows into a DataFrame
+                summary_table = pd.DataFrame(summary_rows).sort_values(by=["Cell Line", "Feature"])
+            
+                xgboost_metadata = self.hash_metadata[
+                    (self.hash_metadata["cell_line"] == cell_line) & 
+                    (self.hash_metadata["name"] == "XGBRegressor")
+                ].sort_values(by="hash")
+                
+                # Take the first hash
+                first_hash = xgboost_metadata.iloc[0]["hash"]
+                
+                # Load the corresponding SHAP file
+                shap_file = f"{self.SHAP_DIR}/{first_hash}.feather"
 
-            # # Save the summary table to a TSV file
-            # summary_table.to_csv(self.CACHE_INFO["feature_metric_summary_table"], sep="\t", index=False)
-            # logger.success("Created feature metric summary table")
+                # Scan the SHAP file and collect the schema names
+                df = pl.scan_ipc(shap_file)
+                schema = df.collect_schema().names()
+
+                logger.info("Calculating binding sum for each feature")
+                # Subset to columns that end in "_binding" and take the sum of those columns
+                binding_columns = [col for col in schema if col.endswith("_binding")]
+                binding_sum = df.select(pl.col(binding_columns).sum()).collect()
+
+                # Transpose binding_sum and reset its index
+                binding_sum_long = binding_sum.to_pandas().transpose().reset_index()
+                binding_sum_long.columns = ["Feature", "Binding Sum"]
+                # Remove the "_binding" suffix from the Feature column in binding_sum_long
+                binding_sum_long["Feature"] = binding_sum_long["Feature"].str.replace("_binding", "", regex=False)
+
+                summary_table_length_original = len(summary_table)
+                # Ensure a 1-to-1 inner merge with the summary table
+                summary_table = summary_table.merge(binding_sum_long, how="inner", on="Feature")
+                assert len(summary_table) == summary_table_length_original, "Inner merge resulted in a different number of rows"
+                # Assert that there are no null values in the merged summary_table
+                assert summary_table.notnull().all().all(), "Null values found in summary_table after merge"
+                
+                logger.info("Calculating # differential significant events")
+                #TODO add "RBP KD Present" back to list after generating new RBP ML dataset with correct "has_RBP_KD" values
+                for differential_event_type in ["RBP KD Absent"]: 
+
+                    filtered_df = df.filter(
+                        (pl.col("FDR") <= self.FDR_THRESHOLD) & 
+                        (pl.col("DeltaPSI").abs() >= self.DPSI_THRESHOLD) & 
+                        (pl.col("RBP_KD_Target") != "CTRL")
+                    )
+                    if differential_event_type == "RBP KD Present":
+                        filtered_df = filtered_df.filter(pl.col("has_RBP_KD") == True)
+
+                    filtered_df = filtered_df.select(["RBP_KD_Target", "rMATS Event ID"])
+
+                    rbp_event_counts = (
+                        filtered_df.unique()
+                        .group_by("RBP_KD_Target")
+                        .agg(pl.col("rMATS Event ID").n_unique().alias("# RBP Differential Events"))
+                        .collect()
+                        .to_pandas()
+                    ).sort_values("RBP_KD_Target")
+
+                    # Perform a left join between summary_table and rbp_event_counts
+                    # IMPORTANT: this is left join as eCLIP RBPs are features and there are eCLIP RBPs that don't have 
+                    # RBP KD experiments so the differential event count will be NaN
+                    summary_table_length_original = len(summary_table)
+                    summary_table = summary_table.merge(
+                        rbp_event_counts,
+                        how="left",
+                        left_on="RBP",
+                        right_on="RBP_KD_Target"
+                    ).drop(columns=["RBP_KD_Target"])
+                    # Ensure the number of rows remains the same after the inner join
+                    assert len(summary_table) == summary_table_length_original, "Inner join resulted in a different number of rows"
+
+                summary_tables.append(summary_table)
+                
+            # Concatenate all summary tables for each cell line
+            summary_table = pd.concat(summary_tables, ignore_index=True)
+            # Sort the summary table by Cell Line and Feature
+            summary_table = summary_table.sort_values(by=["Cell Line", "Feature"])
+            # Reset the index of the summary table
+            summary_table.reset_index(drop=True, inplace=True)
+
+            # Save the summary table to a TSV file
+            summary_table.to_csv(self.CACHE_INFO["feature_metric_summary_table"], sep="\t", index=False)
+            logger.success("Created feature metric summary table")
             return summary_table
 
 
+    def plot_feature_metric_summary_table(self):
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+        
+        for mode in ["All Features", "Only RBPs"]:
+            logger.info(f"Plotting for mode: {mode}")
+
+            fig, axes = plt.subplots(3, len(self.cell_lines), figsize=(15, 12), dpi=200, sharey=True, sharex=False)
+
+            for col_idx, cell_line in enumerate(self.cell_lines):
+
+                # Subset to the specific cell line
+                data = self.feature_metric_summary_table[self.feature_metric_summary_table["Cell Line"] == cell_line]
+                data = data.copy()
+                data["ElasticNet Coefficient"] = data["ElasticNet Coefficient"].abs()
+
+                if mode == "Only RBPs":
+                    # Group by RBP and aggregate
+                    data = data.groupby("RBP", as_index=False).agg({
+                        "Global SHAP": "mean",
+                        "ElasticNet Coefficient": "mean",
+                        "Binding Sum": "sum",
+                        "# RBP Differential Events": "mean"
+                    })
+
+                # Iterate over the x-axis columns to compare against "# RBP Differential Events"
+                for row_idx, x_col in enumerate(["Global SHAP", "ElasticNet Coefficient", "Binding Sum"]):
+                    ax = axes[row_idx, col_idx]
+                    sns.scatterplot(
+                        data=data,
+                        x=x_col,
+                        y="# RBP Differential Events",
+                        alpha=0.7,
+                        edgecolor="black",
+                        color="deepskyblue",
+                        ax=ax
+                    )
+                    ax.set_title(f"{cell_line}: {x_col} vs # Events", fontsize=10)
+                    ax.set_xlabel(x_col, fontsize=8)
+                    ax.set_ylabel("# RBP Differential Events", fontsize=8)
+                    ax.tick_params(axis="both", labelsize=8)
+
+            plt.suptitle(f"Feature Comparison ({mode})", fontsize=16, y=0.92)
+            plt.tight_layout(rect=[0, 0, 1, 0.9])
+            plt.show()
+
+            
 
     def tmp(self): 
         
