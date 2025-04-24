@@ -664,6 +664,9 @@ class ShapNetworkInvestigator:
                 mean_values = mean_df.to_numpy().flatten()
                 variance_values = variance_df.to_numpy().flatten()
 
+                del mean_df, variance_df, shap_dfs
+                gc.collect()
+
                 # Assert that there are no null or missing values in either mean or variance
                 assert not np.isnan(mean_values).any(), "Mean values contain NaN or missing values"
                 assert not np.isnan(variance_values).any(), "Variance values contain NaN or missing values"
