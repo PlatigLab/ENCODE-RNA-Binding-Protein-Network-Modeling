@@ -43,7 +43,8 @@ class ShapNetworkInvestigator:
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
                 "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
-            }
+            },
+            "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
         }
 
     def __post_init__(self):
@@ -891,6 +892,59 @@ class ShapNetworkInvestigator:
         plt.show()
 
     
+    def create_feature_metric_summary_table(self): 
+        # Check if the summary table already exists
+        if os.path.exists(self.CACHE_INFO["feature_metric_summary_table"]):
+            logger.success("FROM CACHE: Feature metric summary table already exists.")
+            return pd.read_csv(self.CACHE_INFO["feature_metric_summary_table"])
+
+        else:
+            logger.info("Feature metric summary table does not exist. Creating...")
+
+            # Initialize an empty list to store rows for the summary table
+            summary_rows = []
+
+            # Get global SHAP for 5_dfs_average
+            global_shap_data = self.calculate_global_SHAP(mode="5_dfs_average")
+
+            # Iterate through each cell line
+            for cell_line in self.cell_lines:
+                logger.info(f"Processing cell line: {cell_line}")
+
+                # Access global SHAP for the specific cell line
+                global_shap = global_shap_data[cell_line]
+                # Get ElasticNet coefficients
+                elasticnet_coefficients = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info[cell_line]["coefficients"])
+
+                # Ensure both dataframes have the same structure
+                assert global_shap.index.equals(elasticnet_coefficients.index), "Index mismatch between global SHAP and ElasticNet coefficients"
+                assert global_shap.columns.equals(elasticnet_coefficients.columns), "Column mismatch between global SHAP and ElasticNet coefficients"
+
+                # Flatten the dataframes into long format
+                for position in global_shap.index:
+                    for rbp in global_shap.columns:
+                        feature = f"{rbp}_{position}"
+                        shap_value = global_shap.at[position, rbp]
+                        coef_value = elasticnet_coefficients.at[position, rbp]
+                        summary_rows.append({
+                            "Cell Line": cell_line,
+                            "Feature": feature,
+                            "Global SHAP": shap_value,
+                            "ElasticNet Coefficient": coef_value,
+                            "Total Binding": None,  # Placeholder
+                            "# Differential Events": None  # Placeholder
+                        })
+
+            # Convert the list of rows into a DataFrame
+            summary_table = pd.DataFrame(summary_rows).sort_values(by=["Cell Line", "Feature"])
+
+            # # Save the summary table to a TSV file
+            # summary_table.to_csv(self.CACHE_INFO["feature_metric_summary_table"], sep="\t", index=False)
+            # logger.success("Created feature metric summary table")
+            return summary_table
+
+
+
     def tmp(self): 
         
         # self.shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line("K562")
