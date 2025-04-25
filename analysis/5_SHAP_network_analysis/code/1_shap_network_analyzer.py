@@ -518,7 +518,89 @@ class ShapNetworkInvestigator:
                 plt.tight_layout()
                 plt.show()
 
-        
+            # Convert global_SHAP data into pandas DataFrames
+            hepg2_df = global_SHAP["HepG2"].copy()
+            k562_df = global_SHAP["K562"].copy()
+
+            # Extract intersecting RBPs and positions
+            intersecting_rbps = hepg2_df.columns.intersection(k562_df.columns)
+            intersecting_positions = hepg2_df.index.intersection(k562_df.index)
+
+            # Subset the DataFrames to intersecting RBPs and positions using a for loop
+            hepg2_values = []
+            k562_values = []
+            features = []
+
+            for position in intersecting_positions:
+                for rbp in intersecting_rbps:
+                    hepg2_values.append(hepg2_df.at[position, rbp])
+                    k562_values.append(k562_df.at[position, rbp])
+                    features.append(f"{rbp}_{position}")
+
+            # Create a combined DataFrame for plotting
+            combined_df = pd.DataFrame({
+                "HepG2": hepg2_values,
+                "K562": k562_values,
+                "Feature": features
+            })
+
+            # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
+            top_hepg2_features = combined_df.nlargest(5, "HepG2")
+            top_k562_features = combined_df.nlargest(5, "K562")
+
+            # Combine the top features for annotation
+            top_features = pd.concat([top_hepg2_features, top_k562_features]).drop_duplicates()
+
+            # Calculate correlations
+            pearson_corr, _ = pearsonr(hepg2_values, k562_values)
+            spearman_corr, _ = spearmanr(hepg2_values, k562_values)
+
+            # Create scatterplot
+            plt.figure(figsize=(6,4), dpi=200)
+            sns.scatterplot(
+                x=hepg2_values,
+                y=k562_values,
+                alpha=0.7,
+                edgecolor="black",
+                color="deepskyblue",
+                s=20
+            )
+
+            # Annotate top features
+            for _, row in top_features.iterrows():
+                plt.text(
+                    row["HepG2"] - 0.01, 
+                    row["K562"] + 0.005, 
+                    row["Feature"], 
+                    fontsize=6, 
+                    color="black", 
+                    alpha=0.8
+                )
+
+            # Add y=x line
+            plt.plot(
+                [min(hepg2_values), max(hepg2_values)],
+                [min(hepg2_values), max(hepg2_values)],
+                color="red",
+                linestyle="--",
+                linewidth=1,
+                label="y=x"
+            )
+
+            # Add annotations
+            plt.title("Global SHAP: HepG2 vs K562", fontsize=14)
+            plt.xlabel("HepG2 Global SHAP", fontsize=12)
+            plt.ylabel("K562 Global SHAP", fontsize=12)
+            plt.text(
+                0.4, 0.95,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(hepg2_values)}",
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                verticalalignment='top'
+            )
+            plt.legend(fontsize=10)
+            plt.tight_layout()
+            plt.show()
 
     
     def plot_global_SHAP_mean_vs_variance(self, mode=None):
