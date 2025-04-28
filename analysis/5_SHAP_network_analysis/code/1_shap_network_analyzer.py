@@ -791,7 +791,13 @@ class ShapNetworkInvestigator:
                 output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance"][cell_line]
 
                 logger.success(f"FROM CACHE: Local SHAP mean vs variance plot for {cell_line} already exists.")
-                display(plt.imread(output_file))
+                
+                img = plt.imread(output_file)
+                plt.figure(figsize=(6,7), dpi=300)  # Adjust the figure size as needed
+                plt.imshow(img)
+                plt.axis('off')  # Hide axes for better visualization
+                plt.show()
+
         else:
             logger.info("Both local SHAP mean vs variance plots do not exist. Proceeding to generate the necessary ones...")
 
