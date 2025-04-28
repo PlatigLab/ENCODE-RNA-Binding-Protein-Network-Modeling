@@ -905,6 +905,59 @@ class ShapNetworkInvestigator:
         heatmap_HepG2 = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info["HepG2"]["coefficients"])
         heatmap_K562 = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info["K562"]["coefficients"])
 
+        # Create a figure with 2 columns: left for histograms, right for boxplots
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=200, sharex=True, sharey="col")
+
+        for row_idx, (cell_line, heatmap) in enumerate({"HepG2": heatmap_HepG2, "K562": heatmap_K562}.items()):
+            # Flatten the heatmap values into a single array
+            elasticnet_values = heatmap.to_numpy().flatten()
+            num_points = len(elasticnet_values)
+
+            # Left subplot: histogram
+            sns.histplot(
+                elasticnet_values,
+                bins=50,
+                stat="percent",
+                color="deepskyblue",
+                edgecolor="black",
+                alpha=0.7,
+                ax=axes[row_idx, 0]
+            )
+            axes[row_idx, 0].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+            axes[row_idx, 0].set_xlabel("")
+            axes[row_idx, 0].set_ylabel("")
+            axes[row_idx, 0].tick_params(axis="both", labelsize=10)
+
+            # Right subplot: boxplot with stripplot
+            sns.boxplot(
+                data=elasticnet_values,
+                orient="h",
+                color="deepskyblue",
+                ax=axes[row_idx, 1],
+                width=0.5,
+                showmeans=True,
+                meanline=True,
+                meanprops={"color": "red", "linewidth": 1.5}
+            )
+            sns.stripplot(
+                data=elasticnet_values,
+                orient="h",
+                color="black",
+                size=5,
+                alpha=0.1,
+                ax=axes[row_idx, 1]
+            )
+            axes[row_idx, 1].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+            axes[row_idx, 1].set_xlabel("")
+            axes[row_idx, 1].set_ylabel("")
+            axes[row_idx, 1].tick_params(axis="both", labelsize=10)
+
+        plt.suptitle("ElasticNet Coefficients per Cell Line", fontsize=16, y=0.98)
+        fig.supxlabel("ElasticNet Coefficient", fontsize=14)
+        fig.supylabel("Percentage", fontsize=14)
+        plt.tight_layout()
+        plt.show()
+
         # Find intersecting and unique columns
         intersecting_columns = heatmap_HepG2.columns.intersection(heatmap_K562.columns)
         unique_HepG2_columns = heatmap_HepG2.columns.difference(heatmap_K562.columns)
