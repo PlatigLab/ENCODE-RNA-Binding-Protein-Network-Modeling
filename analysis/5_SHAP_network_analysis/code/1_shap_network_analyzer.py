@@ -1178,6 +1178,7 @@ class ShapNetworkInvestigator:
                         coef_value = elasticnet_coefficients.at[position, rbp]
                         summary_rows.append({
                             "RBP": rbp,
+                            "Position": position,
                             "Cell Line": cell_line,
                             "Feature": feature,
                             "Global SHAP": shap_value,
@@ -1202,61 +1203,69 @@ class ShapNetworkInvestigator:
                 df = pl.scan_ipc(shap_file)
                 schema = df.collect_schema().names()
 
-                logger.info("Calculating binding sum for each feature")
+                logger.info("Calculating Binding Percentage for each feature")
                 # Subset to columns that end in "_binding" and take the sum of those columns
                 binding_columns = [col for col in schema if col.endswith("_binding")]
                 binding_sum = df.select(pl.col(binding_columns).sum()).collect()
+                num_rows = df.select(pl.count()).collect().item()
+                
+                # Calculate binding percentage
+                binding_percentage = binding_sum / num_rows
 
-                # Transpose binding_sum and reset its index
-                binding_sum_long = binding_sum.to_pandas().transpose().reset_index()
-                binding_sum_long.columns = ["Feature", "Binding Sum"]
-                # Remove the "_binding" suffix from the Feature column in binding_sum_long
-                binding_sum_long["Feature"] = binding_sum_long["Feature"].str.replace("_binding", "", regex=False)
+                # Transpose binding_percentage and reset its index
+                binding_percentage_long = binding_percentage.to_pandas().transpose().reset_index()
+                binding_percentage_long.columns = ["Feature", "Binding Percentage"]
+                # Remove the "_binding" suffix from the Feature column in binding_percentage_long
+                binding_percentage_long["Feature"] = binding_percentage_long["Feature"].str.replace("_binding", "", regex=False)
 
                 summary_table_length_original = len(summary_table)
                 # Ensure a 1-to-1 inner merge with the summary table
-                summary_table = summary_table.merge(binding_sum_long, how="inner", on="Feature")
+                summary_table = summary_table.merge(binding_percentage_long, how="inner", on="Feature")
                 assert len(summary_table) == summary_table_length_original, "Inner merge resulted in a different number of rows"
                 # Assert that there are no null values in the merged summary_table
                 assert summary_table.notnull().all().all(), "Null values found in summary_table after merge"
                 
                 logger.info("Calculating # differential significant events")
-                #TODO add "RBP KD Present" back to list after generating new RBP ML dataset with correct "has_RBP_KD" values
-                for differential_event_type in ["RBP KD Absent"]: 
 
-                    filtered_df = df.filter(
-                        (pl.col("FDR") <= self.FDR_THRESHOLD) & 
-                        (pl.col("DeltaPSI").abs() >= self.DPSI_THRESHOLD) & 
-                        (pl.col("RBP_KD_Target") != "CTRL")
-                    )
-                    if differential_event_type == "RBP KD Present":
-                        filtered_df = filtered_df.filter(pl.col("has_RBP_KD") == True)
-
-                    filtered_df = filtered_df.select(["RBP_KD_Target", "rMATS Event ID"])
-
-                    rbp_event_counts = (
-                        filtered_df.unique()
-                        .group_by("RBP_KD_Target")
-                        .agg(pl.col("rMATS Event ID").n_unique().alias("# RBP Differential Events"))
-                        .collect()
-                        .to_pandas()
-                    ).sort_values("RBP_KD_Target")
-
-                    # Perform a left join between summary_table and rbp_event_counts
-                    # IMPORTANT: this is left join as eCLIP RBPs are features and there are eCLIP RBPs that don't have 
-                    # RBP KD experiments so the differential event count will be NaN
-                    summary_table_length_original = len(summary_table)
-                    summary_table = summary_table.merge(
-                        rbp_event_counts,
-                        how="left",
-                        left_on="RBP",
-                        right_on="RBP_KD_Target"
-                    ).drop(columns=["RBP_KD_Target"])
-                    # Ensure the number of rows remains the same after the inner join
-                    assert len(summary_table) == summary_table_length_original, "Inner join resulted in a different number of rows"
-
-                summary_tables.append(summary_table)
+                differential_df = df.filter(
+                    (pl.col("FDR") <= self.FDR_THRESHOLD) &
+                    (pl.col("DeltaPSI").abs() >= self.DPSI_THRESHOLD) &
+                    (pl.col("RBP_KD_Target") != "CTRL")
+                ).select(
+                    ["index", "RBP_KD_Target", "rMATS Event ID"]
+                ).unique(
+                    subset = ["RBP_KD_Target", "rMATS Event ID"]
+                ).collect()
                 
+                has_RBP_KD_df = self.get_has_RBP_KD_results(df, cell_line)
+                # Perform a left join on the "index" column
+                joined_df = differential_df.join(has_RBP_KD_df, on="index", how="left")
+
+                assert len(joined_df) == len(differential_df), "The length of the joined dataframe changed after the join"
+                assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the joined dataframe"
+            
+                for rbp in summary_table["RBP"].unique():
+                    num_diff_events = len(joined_df.filter(pl.col("RBP_KD_Target") == rbp))
+                    num_diff_events_with_rbp_kd = len(
+                        joined_df.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col("has_RBP_KD") == True))
+                    )
+                    summary_table.loc[summary_table["RBP"] == rbp, "# RBP Diff. Events"] = num_diff_events
+                    summary_table.loc[summary_table["RBP"] == rbp, "# RBP Diff. Events w/ RBP KD"] = num_diff_events_with_rbp_kd
+
+                    for position in range(1,7): 
+                        feature = f"{rbp}_{position}"
+                        num_diff_events_with_rbp_kd_in_position = len(
+                            joined_df.filter(
+                                (pl.col("RBP_KD_Target") == rbp) & 
+                                (pl.col(f"has_RBP_KD_{position}") == True) 
+                            )
+                        )        
+
+                        summary_table.loc[summary_table["Feature"] == feature, "# RBP Diff. Events w/ RBP KD at Position"] = num_diff_events_with_rbp_kd_in_position        
+                
+                # Add the summary table to the list
+                summary_tables.append(summary_table)
+
             # Concatenate all summary tables for each cell line
             summary_table = pd.concat(summary_tables, ignore_index=True)
             # Sort the summary table by Cell Line and Feature
