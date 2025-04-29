@@ -1283,49 +1283,74 @@ class ShapNetworkInvestigator:
         if not hasattr(self, 'feature_metric_summary_table'):
             self.create_feature_metric_summary_table()
         
-        for mode in ["All Features", "Only RBPs"]:
-            logger.info(f"Plotting for mode: {mode}")
+        for plotting_column in ["# RBP Diff. Events", "# RBP Diff. Events w/ RBP KD", "# RBP Diff. Events w/ RBP KD at Position"]:
+            logger.info(f"Plotting {plotting_column} for each cell line")
+            for mode in ["All Features", "Only RBPs"]:
 
-            fig, axes = plt.subplots(3, len(self.cell_lines), figsize=(15, 12), dpi=200, sharey=True, sharex=False)
+                if plotting_column == "# RBP Diff. Events w/ RBP KD at Position" and mode == "Only RBPs":
+                    logger.info(f"Skipping {plotting_column} for {mode} as it is not applicable")
+                    continue
 
-            for col_idx, cell_line in enumerate(self.cell_lines):
+                logger.info(f"Plotting for mode: {mode}")
 
-                # Subset to the specific cell line
-                data = self.feature_metric_summary_table[self.feature_metric_summary_table["Cell Line"] == cell_line]
-                data = data.copy()
-                data["ElasticNet Coefficient"] = data["ElasticNet Coefficient"].abs()
+                fig, axes = plt.subplots(3, len(self.cell_lines), figsize=(13, 12), dpi=300, sharey=True, sharex="row")
+                row_colors = ["lightcoral", "lightgreen", "lightblue"]
 
-                if mode == "Only RBPs":
-                    # Group by RBP and aggregate
-                    data = data.groupby("RBP", as_index=False).agg({
-                        "Global SHAP": "mean",
-                        "ElasticNet Coefficient": "mean",
-                        "Binding Sum": "sum",
-                        "# RBP Differential Events": "mean"
-                    })
+                for col_idx, cell_line in enumerate(self.cell_lines):
+                    # Subset to the specific cell line
+                    data = self.feature_metric_summary_table[self.feature_metric_summary_table["Cell Line"] == cell_line]
+                    data = data.copy()
+                    data["ElasticNet Coefficient"] = data["ElasticNet Coefficient"].abs()
 
-                # Iterate over the x-axis columns to compare against "# RBP Differential Events"
-                for row_idx, x_col in enumerate(["Global SHAP", "ElasticNet Coefficient", "Binding Sum"]):
-                    ax = axes[row_idx, col_idx]
-                    sns.scatterplot(
-                        data=data,
-                        x=x_col,
-                        y="# RBP Differential Events",
-                        alpha=0.7,
-                        edgecolor="black",
-                        color="deepskyblue",
-                        ax=ax
-                    )
-                    ax.set_title(f"{cell_line}: {x_col} vs # Events", fontsize=10)
-                    ax.set_xlabel(x_col, fontsize=8)
-                    ax.set_ylabel("# RBP Differential Events", fontsize=8)
-                    ax.tick_params(axis="both", labelsize=8)
+                    if mode == "Only RBPs":
+                        # Group by RBP and aggregate
+                        data = data.groupby("RBP", as_index=False).agg({
+                            "Global SHAP": "mean",
+                            "ElasticNet Coefficient": "mean",
+                            "Binding Percentage": "mean",
+                            plotting_column: "mean"
+                        })
 
-            plt.suptitle(f"Feature Comparison ({mode})", fontsize=16, y=0.92)
-            plt.tight_layout(rect=[0, 0, 1, 0.9])
-            plt.show()
+                    # Iterate over the x-axis columns to compare against plotting_column
+                    for row_idx, x_col in enumerate(["Global SHAP", "ElasticNet Coefficient", "Binding Percentage"]):
+                        ax = axes[row_idx, col_idx]
+                        sns.scatterplot(
+                            data=data,
+                            x=x_col,
+                            y=plotting_column,
+                            alpha=0.7,
+                            edgecolor="black",
+                            color=row_colors[row_idx],
+                            ax=ax
+                        )
+                        ax.set_title(f"{cell_line}: {x_col}", fontsize=12)
+                        ax.set_xlabel(x_col, fontsize=14)
+                        ax.set_ylabel("")
+                        ax.tick_params(axis="both", labelsize=12)
 
-            
+
+                        # Label the top 5 y-axis values
+                        top_5 = data.nlargest(5, plotting_column)
+                        for _, row in top_5.iterrows():
+                            if mode == "Only RBPs":
+                                text = row["RBP"]
+                            elif mode == "All Features":
+                                text = row["Feature"]
+                            ax.text(
+                                row[x_col],
+                                row[plotting_column]+20,
+                                text,
+                                fontsize=8,
+                                color="black",
+                                alpha=0.8
+                            )
+
+                plt.suptitle(f"XGBoost, Linear Model, Binding vs {plotting_column}\nNOTE: {mode}", fontsize=20, y=1.02)
+                fig.supylabel(f"{plotting_column}", fontsize=20, x=-0.02)
+                # plt.tight_layout(rect=[0, 0, 1, 0.9])
+                plt.tight_layout()
+                plt.show()
+
 
     def tmp(self): 
 
