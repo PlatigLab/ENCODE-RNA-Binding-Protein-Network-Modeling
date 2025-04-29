@@ -15,6 +15,7 @@ from scipy.stats import pearsonr, spearmanr
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
     MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/pickled_models/"
+    CORRECTED_HAS_RBP_KD_DIR = "../../1_create_RBP_ML_input/4_create_num_peaks_ML_input/corrected_has_RBP_KD_output/"
 
     SHAP_MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
     SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
@@ -1107,6 +1108,36 @@ class ShapNetworkInvestigator:
         plt.show()
 
     
+    def get_has_RBP_KD_results(self, df, cell_line):
+
+        if isinstance(df, pl.LazyFrame):
+            df = df.select("index").collect()
+
+        # Use the corrected_has_rbp_kd_dir with the cell line to glob for the file
+        corrected_file_pattern = os.path.join(self.CORRECTED_HAS_RBP_KD_DIR, f"{cell_line}*.feather")
+        corrected_files = glob.glob(corrected_file_pattern)
+        assert len(corrected_files) == 1, f"Expected exactly one file for {cell_line}, but found {len(corrected_files)}"
+
+        # Load the feather file
+        corrected_df = pl.read_ipc(corrected_files[0])
+
+        # Ensure the 'index' column exists in both dataframes
+        assert "index" in df.columns, "'index' column is missing in the input dataframe"
+        assert "index" in corrected_df.columns, "'index' column is missing in the corrected dataframe"
+
+        # Perform a left join on the 'index' column
+        joined_df = df.join(corrected_df, on="index", how="left")
+
+        # Assert that all indices in df are in the corrected dataframe
+        assert set(df["index"].to_list()).issubset(set(corrected_df["index"].to_list())), "Some indices in df are missing in the corrected dataframe"
+        # Assert that the length of the dataframe has not changed after the join
+        assert len(joined_df) == len(df), "The length of the dataframe changed after the join"
+        # Assert that there are no null values in the joined dataframe
+        assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the joined dataframe"
+
+        return joined_df
+
+
     def create_feature_metric_summary_table(self): 
         # Check if the summary table already exists
         if os.path.exists(self.CACHE_INFO["feature_metric_summary_table"]):
