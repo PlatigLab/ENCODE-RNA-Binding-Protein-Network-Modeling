@@ -1293,26 +1293,29 @@ class ShapNetworkInvestigator:
 
                 logger.info(f"Plotting for mode: {mode}")
 
-                fig, axes = plt.subplots(3, len(self.cell_lines), figsize=(13, 12), dpi=300, sharey=True, sharex="row")
-                row_colors = ["lightcoral", "lightgreen", "lightblue"]
+                fig, axes = plt.subplots(3, len(self.cell_lines), figsize=(13, 13), dpi=300, sharey=True, sharex="row")
+                row_colors = ["lightcoral", "lightgreen", "lightskyblue"]
 
                 for col_idx, cell_line in enumerate(self.cell_lines):
                     # Subset to the specific cell line
                     data = self.feature_metric_summary_table[self.feature_metric_summary_table["Cell Line"] == cell_line]
                     data = data.copy()
-                    data["ElasticNet Coefficient"] = data["ElasticNet Coefficient"].abs()
+                    data["Abs(ElasticNet Coefficient)"] = data["ElasticNet Coefficient"].abs()
+                    
+                    logger.warning("REMINDER: multiplying 'Binding Percentage' by 100 due to mistake in not originally doing so")
+                    data["Binding Percentage"] *= 100
 
                     if mode == "Only RBPs":
                         # Group by RBP and aggregate
                         data = data.groupby("RBP", as_index=False).agg({
                             "Global SHAP": "mean",
-                            "ElasticNet Coefficient": "mean",
+                            "Abs(ElasticNet Coefficient)": "mean",
                             "Binding Percentage": "mean",
                             plotting_column: "mean"
                         })
 
                     # Iterate over the x-axis columns to compare against plotting_column
-                    for row_idx, x_col in enumerate(["Global SHAP", "ElasticNet Coefficient", "Binding Percentage"]):
+                    for row_idx, x_col in enumerate(["Global SHAP", "Abs(ElasticNet Coefficient)", "Binding Percentage"]):
                         ax = axes[row_idx, col_idx]
                         sns.scatterplot(
                             data=data,
@@ -1323,34 +1326,58 @@ class ShapNetworkInvestigator:
                             color=row_colors[row_idx],
                             ax=ax
                         )
-                        ax.set_title(f"{cell_line}: {x_col}", fontsize=12)
-                        ax.set_xlabel(x_col, fontsize=14)
+                        ax.set_title(f"{cell_line}: {x_col}", fontsize=14)
+                        ax.set_xlabel(x_col, fontsize=12, color = row_colors[row_idx], alpha=1)
                         ax.set_ylabel("")
                         ax.tick_params(axis="both", labelsize=12)
 
+                        # Label the top 10 values on both the x-axis and the plotting_column axis
+                        top_10_x = data.nlargest(10, x_col)
+                        top_10_y = data.nlargest(10, plotting_column)
+                        top_10_combined = pd.concat([top_10_x, top_10_y]).drop_duplicates()
 
-                        # Label the top 5 y-axis values
-                        top_5 = data.nlargest(5, plotting_column)
-                        for _, row in top_5.iterrows():
+                        for _, row in top_10_combined.iterrows():
                             if mode == "Only RBPs":
                                 text = row["RBP"]
                             elif mode == "All Features":
                                 text = row["Feature"]
                             ax.text(
                                 row[x_col],
-                                row[plotting_column]+20,
+                                row[plotting_column]+30,
                                 text,
-                                fontsize=8,
+                                fontsize=6,
                                 color="black",
                                 alpha=0.8
                             )
 
+                        # Add Pearson, Spearman, and number of points in the center right of the plot
+                        pearson_corr, _ = pearsonr(data[x_col], data[plotting_column])
+                        spearman_corr, _ = spearmanr(data[x_col], data[plotting_column])
+                        num_points = len(data)
+
+                        ax.text(
+                            0.98, 0.5,
+                            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                            transform=ax.transAxes,
+                            fontsize=12,
+                            verticalalignment='center',
+                            horizontalalignment='right'
+                        )
+
+                if mode == "Only RBPs":
+                    suffix = "- X-axis RBP value comes from average of 6 positions"
+                elif mode == "All Features":
+                    suffix = ""
+
                 plt.suptitle(
-                    f"XGBoost, Linear Model, Binding vs\nSignificant {plotting_column} (FDR ≤ {self.FDR_THRESHOLD}, ΔPSI ≥ {self.DPSI_THRESHOLD})\n NOTE: {mode}", 
+                    f"XGBoost, Linear Model, Binding vs\nSignificant {plotting_column} (FDR ≤ {self.FDR_THRESHOLD}, ΔPSI ≥ {self.DPSI_THRESHOLD})\n NOTE: {mode} {suffix}", 
                     fontsize=20, y=1.02
                 )
                 fig.supylabel(
                     f"{plotting_column}", fontsize=20, x=-0.02
+                )
+                fig.supxlabel(
+                    f"Cell Line", fontsize=20
                 )
                 # plt.tight_layout(rect=[0, 0, 1, 0.9])
                 plt.tight_layout()
