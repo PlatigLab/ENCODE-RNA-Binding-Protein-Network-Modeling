@@ -1357,6 +1357,431 @@ class ShapNetworkInvestigator:
                 plt.show()
 
 
+    def plot_differential_splicing_types(self): 
+
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+
+        plotting_columns_info = {
+            "# RBP Diff. Events": "RBP-specific",
+            "# RBP Diff. Events w/ RBP KD": "RBP-specific",
+            "# RBP Diff. Events w/ RBP KD at Position": "Feature-specific"
+        }
+
+        for plotting_column, specificity in plotting_columns_info.items():
+            logger.info(f"Processing {plotting_column} ({specificity})")
+
+            # Deep copy the feature metric summary table
+            metric_summary_table = self.feature_metric_summary_table.copy()
+            # Assert that there are no null or missing values in the metric_summary_table
+            assert metric_summary_table.notnull().all().all(), "Null or missing values found in the metric_summary_table"
+
+            if specificity == "RBP-specific":
+                metric_summary_table = metric_summary_table.drop_duplicates(subset=["Cell Line", "RBP"], keep="first")
+            elif specificity == "Feature-specific":
+                pass  # Use the entire table
+
+            # # First Figure: Histogram and Boxplot
+            fig, axes = plt.subplots(len(self.cell_lines), 2, figsize=(8, 5), dpi=300, sharex=True, sharey="col")
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                cell_line_data = metric_summary_table[metric_summary_table["Cell Line"] == cell_line]
+
+                # Histogram
+                sns.histplot(
+                    cell_line_data[plotting_column],
+                    bins=50,
+                    stat="percent",
+                    color="deepskyblue",
+                    edgecolor="black",
+                    alpha=0.7,
+                    ax=axes[row_idx, 0]
+                )
+                axes[row_idx, 0].set_title(f"{cell_line} Histogram", fontsize=10)
+                axes[row_idx, 0].text(
+                    0.5, 0.95, f"n={len(cell_line_data)}",
+                    transform=axes[row_idx, 0].transAxes,
+                    fontsize=8, verticalalignment="top"
+                )
+
+                # Boxplot with Stripplot
+                sns.boxplot(
+                    data=cell_line_data[plotting_column],
+                    orient="h",
+                    color="deepskyblue",
+                    ax=axes[row_idx, 1],
+                    width=0.5,
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "red", "linewidth": 1.5}
+                )
+                sns.stripplot(
+                    data=cell_line_data[plotting_column],
+                    orient="h",
+                    color="black",
+                    size=5,
+                    alpha=0.2,
+                    ax=axes[row_idx, 1]
+                )
+                axes[row_idx, 1].set_title(f"{cell_line} Boxplot", fontsize=10)
+                axes[row_idx, 1].text(
+                    0.5, 0.95, f"n = {len(cell_line_data)}",
+                    transform=axes[row_idx, 1].transAxes,
+                    fontsize=8, verticalalignment="top"
+                )
+
+                # Label the top 5 points in the stripplot
+                top_5 = cell_line_data.nlargest(5, plotting_column)
+                for _, row in top_5.iterrows():
+                    axes[row_idx, 1].text(
+                        row[plotting_column],  # Adjust the x-coordinate for better visibility
+                        0,  # Use the index or a unique identifier for labeling
+                        row["RBP"] if specificity == "RBP-specific" else row["Feature"],
+                        fontsize=6,
+                        color="green",
+                        alpha=0.8
+                    )
+                
+                axes[row_idx, 0].set_xlabel("")
+                axes[row_idx, 1].set_xlabel("")
+                
+                
+            fig.supxlabel(f"{plotting_column}", fontsize=11)
+            fig.supylabel(f"Cell Line", fontsize=11, x=0.01)
+            plt.suptitle(f"Significant {plotting_column}\nNOTE: this is {specificity}", fontsize=14, y=0.99)
+            plt.tight_layout()
+            plt.show()
+
+            # Second Figure: Heatmap
+            if specificity == "RBP-specific":
+                y_fig_size = 7
+            elif specificity == "Feature-specific":
+                y_fig_size = 12
+            fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                # Subset data for the specific cell line
+                cell_line_data = metric_summary_table[metric_summary_table["Cell Line"] == cell_line]
+
+                if specificity == "RBP-specific":
+                    heatmap_data = cell_line_data.pivot(index="Cell Line", columns="RBP", values=plotting_column)
+                elif specificity == "Feature-specific":
+                    heatmap_data = cell_line_data.pivot(index="Position", columns="RBP", values=plotting_column)
+                assert heatmap_data.notnull().all().all(), "Null or missing values found in the heatmap data"
+
+                if specificity == "Feature-specific":
+                    # Perform hierarchical clustering
+                    linkage = sch.linkage(heatmap_data.T, method="ward")
+                    dendrogram = sch.dendrogram(linkage, no_plot=True)
+                    ordered_columns = [heatmap_data.columns[i] for i in dendrogram["leaves"]]
+                else:
+                    # Sort columns by the sum of their actual heatmap values
+                    ordered_columns = heatmap_data.sum(axis=0).sort_values().index.tolist()
+
+                heatmap_data = heatmap_data[ordered_columns]
+
+                # Plot heatmap for the cell line
+                sns.heatmap(
+                    heatmap_data,
+                    ax=ax,
+                    cmap="viridis",
+                    cbar=True,
+                    linewidths=0.5,
+                    linecolor="gray",
+                    cbar_kws={"shrink": 0.8, "aspect": 5, "pad": 0.01}  # Adjust colorbar position and size
+                )
+                cbar = ax.collections[0].colorbar  # Get the colorbar
+                cbar.ax.tick_params(labelsize=12)  # Set the font size of the colorbar ticks
+
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelsize=24)
+
+            fig.supxlabel("RBP", fontsize=30, x=0.45)
+            fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
+
+            if specificity == "Feature-specific":
+                suffix = "\nNOTE 2: Ward hierarchical clustering run for each cell line for ordering RBPs."
+            elif specificity == "RBP-specific":
+                suffix = ""
+
+            plt.suptitle(f"Significant {plotting_column} Heatmap\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
+            plt.tight_layout()
+            plt.show()
+
+            # Third Figure: Matching Features Heatmap
+            matching_data = {}
+
+            if specificity == "RBP-specific":
+                col_to_select = "RBP"
+            elif specificity == "Feature-specific":
+                col_to_select = "Feature"
+            
+            # Get unique per cell line
+            unique_per_cell_line = {
+                cell_line: set(metric_summary_table[metric_summary_table["Cell Line"] == cell_line][col_to_select].unique())
+                for cell_line in self.cell_lines
+            }
+            # Find the intersection across both cell lines
+            intersecting = unique_per_cell_line[self.cell_lines[0]].intersection(unique_per_cell_line[self.cell_lines[1]])
+            summary_table = metric_summary_table[metric_summary_table[col_to_select].isin(intersecting)]
+
+            if specificity == "Feature-specific":
+                # Create a pivot table for the heatmap
+                pivot_table = summary_table[summary_table["Cell Line"] == self.cell_lines[0]].pivot(
+                    index="Position",
+                    columns="RBP",
+                    values=plotting_column
+                )
+                assert pivot_table.notnull().all().all(), "Null or missing values found in the pivot table"
+
+                # Perform hierarchical clustering on the pivot table
+                linkage = sch.linkage(pivot_table.T, method="ward")
+                dendrogram = sch.dendrogram(linkage, no_plot=True)
+                ordered_features = [pivot_table.columns[i] for i in dendrogram["leaves"]]
+
+                # Create a new pivot table with the ordered features
+                matching_data = {
+                    cell_line: summary_table[summary_table["Cell Line"] == cell_line].pivot(
+                        index="Position",
+                        columns="RBP",
+                        values=plotting_column
+                    ).reindex(columns=ordered_features)
+                    for cell_line in self.cell_lines
+                }
+
+            elif specificity == "RBP-specific":
+                ordered_features = summary_table[summary_table["Cell Line"] == self.cell_lines[0]].sort_values(by=plotting_column)[col_to_select].tolist()
+                
+                matching_data = {
+                    cell_line: summary_table[summary_table["Cell Line"] == cell_line].pivot( 
+                        index= "Cell Line", 
+                        columns=col_to_select,
+                        values=plotting_column
+                    ).reindex(columns = ordered_features)
+                    for cell_line in self.cell_lines
+                }
+
+            # Determine global min and max values for consistent color scaling
+            vmin = min(matching_data[cell_line].min().min() for cell_line in self.cell_lines)
+            vmax = max(matching_data[cell_line].max().max() for cell_line in self.cell_lines)
+
+            fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300, sharex=True)
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Position for the single colorbar
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                sns.heatmap(
+                    matching_data[cell_line],
+                    cmap="viridis",
+                    cbar=(ax == axes[0]),  # Add colorbar only for the first heatmap
+                    cbar_ax=(cbar_ax if ax == axes[0] else None),
+                    linewidths=0.5,
+                    linecolor="gray",
+                    vmin=vmin,
+                    vmax=vmax,
+                    ax=ax
+                )
+                ax.set_title(f"{cell_line} {'Ordered' if cell_line == self.cell_lines[0] else 'Matching'}", fontsize=30)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelsize=24)
+
+            # Add colorbar title
+            cbar_ax.tick_params(labelsize=20)
+            cbar_ax.set_box_aspect(20)  # Make the colorbar skinnier
+
+            fig.supxlabel("RBP", fontsize=30, x=0.45)
+            fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
+
+            if specificity == "Feature-specific":
+                suffix = "\nNOTE 2: Ward hierarchical clustering run for each cell line for ordering RBPs."
+            elif specificity == "RBP-specific":
+                suffix = ""
+
+            plt.suptitle(f"Significant {plotting_column} for Matching\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
+            plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
+            plt.show()
+
+            # Fourth Figure: Scatterplot
+            
+            # Convert matching_data to long-form tables
+            long_form_0 = matching_data[self.cell_lines[0]].stack().reset_index()
+            long_form_1 = matching_data[self.cell_lines[1]].stack().reset_index()
+
+            # Rename columns for clarity
+            if specificity == "Feature-specific":
+                long_form_0.columns = ["Position", "RBP", f"{self.cell_lines[0]} {plotting_column}"]
+                long_form_1.columns = ["Position", "RBP", f"{self.cell_lines[1]} {plotting_column}"]
+
+                # Merge the two tables on RBP and Position
+                merged_data = pd.merge(long_form_0, long_form_1, on=["Position", "RBP"])
+
+            elif specificity == "RBP-specific":
+                long_form_0.columns = ["Cell Line", "RBP", f"{self.cell_lines[0]} {plotting_column}"]
+                long_form_1.columns = ["Cell Line", "RBP", f"{self.cell_lines[1]} {plotting_column}"]
+
+                # Merge the two tables on RBP
+                merged_data = pd.merge(long_form_0, long_form_1, on=["RBP"])
+            
+            assert merged_data.notnull().all().all(), "Null or missing values found in the merged data"
+            assert len(merged_data) == len(long_form_0), "The length of the merged data is not equal to the length of long_form_0"
+
+            # Calculate correlations
+            pearson_corr, _ = pearsonr(
+                merged_data[f"{self.cell_lines[0]} {plotting_column}"],
+                merged_data[f"{self.cell_lines[1]} {plotting_column}"]
+            )
+            spearman_corr, _ = spearmanr(
+                merged_data[f"{self.cell_lines[0]} {plotting_column}"],
+                merged_data[f"{self.cell_lines[1]} {plotting_column}"]
+            )
+
+            # Plot scatterplot
+            plt.figure(figsize=(5, 4), dpi=200)
+            sns.scatterplot(
+                data=merged_data,
+                x=f"{self.cell_lines[0]} {plotting_column}",
+                y=f"{self.cell_lines[1]} {plotting_column}",
+                alpha=0.7,
+                edgecolor="black",
+                color="deepskyblue",
+                s=20
+            )
+
+            # Add y=x line
+            plt.plot(
+                [merged_data[f"{self.cell_lines[0]} {plotting_column}"].min(), merged_data[f"{self.cell_lines[0]} {plotting_column}"].max()],
+                [merged_data[f"{self.cell_lines[0]} {plotting_column}"].min(), merged_data[f"{self.cell_lines[0]} {plotting_column}"].max()],
+                color="red",
+                linestyle="--",
+                linewidth=1,
+                label="y=x"
+            )
+
+            # Annotate top 5 highest values
+            top_5 = merged_data.nlargest(5, f"{self.cell_lines[1]} {plotting_column}")
+            for _, row in top_5.iterrows():
+                if specificity == "RBP-specific":
+                    text = row["RBP"]
+                elif specificity == "Feature-specific":
+                    text = f"{row['RBP']}_{row['Position']}"
+                plt.text(
+                    row[f"{self.cell_lines[0]} {plotting_column}"],
+                    row[f"{self.cell_lines[1]} {plotting_column}"],
+                    text,
+                    fontsize=8,
+                    color="black",
+                    alpha=0.8
+                )
+
+            plt.title(f"Significant {plotting_column} \n({specificity})", fontsize=12, y=1.01)
+            plt.xlabel(f"{self.cell_lines[0]}", fontsize=12)
+            plt.ylabel(f"{self.cell_lines[1]}", fontsize=12)
+            plt.text(
+                0.75, 0.97,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(merged_data)}",
+                transform=plt.gca().transAxes,
+                fontsize=8,
+                verticalalignment="top"
+            )
+            plt.tight_layout()
+            plt.show()
+
+
+    def plot_differential_ranks(self): 
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+
+        # Copy the feature metric summary table
+        summary_table = self.feature_metric_summary_table.copy()
+        # Take unique values by both Cell Line and RBP
+        summary_table = summary_table.drop_duplicates(subset=["Cell Line", "RBP"])
+
+        for cell_line in self.cell_lines:
+            # Subset the data for the specific cell line
+            cell_line_data = summary_table[summary_table["Cell Line"] == cell_line].copy()
+
+            # Rank the columns of interest
+            cell_line_data["Rank: # RBP Diff. Events"] = cell_line_data["# RBP Diff. Events"].rank(ascending=False)
+            cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"] = cell_line_data["# RBP Diff. Events w/ RBP KD"].rank(ascending=False)
+
+            # Calculate the change in ranks
+            cell_line_data["Rank Change"] = abs(cell_line_data["Rank: # RBP Diff. Events"] - cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"])
+
+            # Scatterplot of the ranks
+            plt.figure(figsize=(6,4), dpi=300)
+            sns.scatterplot(
+                data=cell_line_data,
+                x="Rank: # RBP Diff. Events",
+                y="Rank: # RBP Diff. Events w/ RBP KD",
+                alpha=0.7,
+                edgecolor="black",
+                color="deepskyblue",
+                s=20
+            )
+
+            # Add a diagonal line for reference
+            plt.plot(
+                [cell_line_data["Rank: # RBP Diff. Events"].min(), cell_line_data["Rank: # RBP Diff. Events"].max()],
+                [cell_line_data["Rank: # RBP Diff. Events"].min(), cell_line_data["Rank: # RBP Diff. Events"].max()],
+                color="red",
+                linestyle="--",
+                linewidth=1,
+                label="y=x"
+            )
+
+            # Annotate the top 5 rank changes
+            top_5 = cell_line_data.nlargest(15, "Rank Change")
+            for _, row in top_5.iterrows():
+                plt.text(
+                    row["Rank: # RBP Diff. Events"]-2,
+                    row["Rank: # RBP Diff. Events w/ RBP KD"]+2,
+                    row["RBP"],
+                    fontsize=4,
+                    color="black",
+                    alpha=0.8
+                )
+
+            # Add labels, title, and legend
+            plt.title(f"Rank Comparison for {cell_line} (Scatterplot)", fontsize=14)
+            plt.xlabel("Rank: # RBP Diff. Events", fontsize=12)
+            plt.ylabel("Rank: # RBP Diff. Events w/ RBP KD", fontsize=12)
+            plt.legend(fontsize=10)
+            plt.tight_layout()
+            plt.show()
+
+            # Lineplot of the ranks
+            plt.figure(figsize=(6,4), dpi=300)
+            sorted_data = cell_line_data.sort_values("Rank: # RBP Diff. Events")
+
+            # Plot a separate line for each row
+            for _, row in sorted_data.iterrows():
+                plt.plot(
+                    [row["Rank: # RBP Diff. Events"], row["Rank: # RBP Diff. Events"]],
+                    [row["Rank: # RBP Diff. Events"], row["Rank: # RBP Diff. Events w/ RBP KD"]],
+                    marker="o",
+                    linestyle="-",
+                    color="deepskyblue",
+                    alpha=0.7
+                )
+
+            # Annotate the top 5 rank changes
+            for _, row in top_5.iterrows():
+                plt.text(
+                    row["Rank: # RBP Diff. Events"]-1,
+                    row["Rank: # RBP Diff. Events w/ RBP KD"]+2,
+                    row["RBP"],
+                    fontsize=4,
+                    color="black",
+                    alpha=0.8
+                )
+
+            # Add labels, title, and legend
+            plt.title(f"Rank Comparison for {cell_line} (Lineplot)", fontsize=14)
+            plt.xlabel("Rank: # RBP Diff. Events", fontsize=12)
+            plt.ylabel("Rank: # RBP Diff. Events w/ RBP KD", fontsize=12)
+            plt.tight_layout()
+            plt.show()
+
 
     def tmp(self): 
 
