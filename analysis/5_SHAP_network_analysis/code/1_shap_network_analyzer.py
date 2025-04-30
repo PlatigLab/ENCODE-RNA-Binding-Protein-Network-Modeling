@@ -1593,7 +1593,7 @@ class ShapNetworkInvestigator:
             fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
 
             if specificity == "Feature-specific":
-                suffix = "\nNOTE 2: Ward hierarchical clustering run for each cell line for ordering RBPs."
+                suffix = f"\nNOTE 2: Ward hierarchical clustering run in {self.cell_lines[0]} for ordering RBPs."
             elif specificity == "RBP-specific":
                 suffix = ""
 
@@ -1657,23 +1657,26 @@ class ShapNetworkInvestigator:
                 label="y=x"
             )
 
-            # Annotate top 5 highest values
-            top_5 = merged_data.nlargest(5, f"{self.cell_lines[1]} {plotting_column}")
-            for _, row in top_5.iterrows():
+            # Annotate top 5 highest values in both columns
+            top_5_col1 = merged_data.nlargest(10, f"{self.cell_lines[0]} {plotting_column}")
+            top_5_col2 = merged_data.nlargest(10, f"{self.cell_lines[1]} {plotting_column}")
+            top_5_combined = pd.concat([top_5_col1, top_5_col2]).drop_duplicates()
+
+            for _, row in top_5_combined.iterrows():
                 if specificity == "RBP-specific":
                     text = row["RBP"]
                 elif specificity == "Feature-specific":
                     text = f"{row['RBP']}_{row['Position']}"
                 plt.text(
-                    row[f"{self.cell_lines[0]} {plotting_column}"],
-                    row[f"{self.cell_lines[1]} {plotting_column}"],
+                    row[f"{self.cell_lines[0]} {plotting_column}"] - 20,
+                    row[f"{self.cell_lines[1]} {plotting_column}"] + 20,
                     text,
-                    fontsize=8,
+                    fontsize=4,
                     color="black",
                     alpha=0.8
                 )
 
-            plt.title(f"Significant {plotting_column} \n({specificity})", fontsize=12, y=1.01)
+            plt.title(f"Significant {plotting_column} for Matching\n({specificity})", fontsize=12, y=1.01)
             plt.xlabel(f"{self.cell_lines[0]}", fontsize=12)
             plt.ylabel(f"{self.cell_lines[1]}", fontsize=12)
             plt.text(
@@ -1736,16 +1739,37 @@ class ShapNetworkInvestigator:
                     row["Rank: # RBP Diff. Events"]-2,
                     row["Rank: # RBP Diff. Events w/ RBP KD"]+2,
                     row["RBP"],
-                    fontsize=4,
+                    fontsize=2,
                     color="black",
                     alpha=0.8
                 )
+
+            # Calculate Pearson and Spearman correlations
+            pearson_corr, _ = pearsonr(
+                cell_line_data["Rank: # RBP Diff. Events"],
+                cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"]
+            )
+            spearman_corr, _ = spearmanr(
+                cell_line_data["Rank: # RBP Diff. Events"],
+                cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"]
+            )
 
             # Add labels, title, and legend
             plt.title(f"Rank Comparison for {cell_line} (Scatterplot)", fontsize=14)
             plt.xlabel("Rank: # RBP Diff. Events", fontsize=12)
             plt.ylabel("Rank: # RBP Diff. Events w/ RBP KD", fontsize=12)
-            plt.legend(fontsize=10)
+
+            # Add correlation and point count in the bottom right corner
+            num_points = len(cell_line_data)
+            plt.text(
+                0.97, 0.03,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                transform=plt.gca().transAxes,
+                fontsize=8,
+                verticalalignment='bottom',
+                horizontalalignment='right'
+            )
+
             plt.tight_layout()
             plt.show()
 
