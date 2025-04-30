@@ -1345,11 +1345,17 @@ class ShapNetworkInvestigator:
                                 alpha=0.8
                             )
 
-                plt.suptitle(f"XGBoost, Linear Model, Binding vs {plotting_column}\nNOTE: {mode}", fontsize=20, y=1.02)
-                fig.supylabel(f"{plotting_column}", fontsize=20, x=-0.02)
+                plt.suptitle(
+                    f"XGBoost, Linear Model, Binding vs\nSignificant {plotting_column} (FDR ≤ {self.FDR_THRESHOLD}, ΔPSI ≥ {self.DPSI_THRESHOLD})\n NOTE: {mode}", 
+                    fontsize=20, y=1.02
+                )
+                fig.supylabel(
+                    f"{plotting_column}", fontsize=20, x=-0.02
+                )
                 # plt.tight_layout(rect=[0, 0, 1, 0.9])
                 plt.tight_layout()
                 plt.show()
+
 
 
     def tmp(self): 
