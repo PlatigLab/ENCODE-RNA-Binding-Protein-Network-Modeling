@@ -1468,9 +1468,23 @@ class ShapNetworkInvestigator:
                         alpha=0.8
                     )
                 
+                # Calculate the percentage of values above the threshold
+                threshold = 0  # Set your desired threshold here
+                percentage_above_threshold = (cell_line_data[plotting_column] > threshold).mean() * 100
+
+                # Add the percentage to the bottom right corner of the plot
+                axes[row_idx, 1].text(
+                    0.95, 0.05,
+                    f"% Values Above {threshold}: {percentage_above_threshold:.2f}%",
+                    transform=axes[row_idx, 1].transAxes,
+                    fontsize=8,
+                    verticalalignment="bottom",
+                    horizontalalignment="right", 
+                    color = "chocolate"
+                )
+                
                 axes[row_idx, 0].set_xlabel("")
                 axes[row_idx, 1].set_xlabel("")
-                
                 
             fig.supxlabel(f"{plotting_column}", fontsize=11)
             fig.supylabel(f"Cell Line", fontsize=11, x=0.01)
