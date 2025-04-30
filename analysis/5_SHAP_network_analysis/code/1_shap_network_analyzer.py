@@ -1521,6 +1521,8 @@ class ShapNetworkInvestigator:
 
                 ax.set_xlabel("")
                 ax.set_ylabel("")
+                if specificity == "Feature-specific":
+                    ax.set_title(f"{cell_line}", fontsize=20)
                 ax.tick_params(axis='y', labelsize=24)
 
             fig.supxlabel("RBP", fontsize=30, x=0.45)
