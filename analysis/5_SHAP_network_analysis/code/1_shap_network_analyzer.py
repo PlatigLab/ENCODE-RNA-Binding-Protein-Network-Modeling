@@ -1497,59 +1497,66 @@ class ShapNetworkInvestigator:
                 y_fig_size = 7
             elif specificity == "Feature-specific":
                 y_fig_size = 12
-            fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300)
+            
+            for log_transform in [False, True]:
+                fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300)
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                # Subset data for the specific cell line
-                cell_line_data = metric_summary_table[metric_summary_table["Cell Line"] == cell_line]
+                for ax, cell_line in zip(axes, self.cell_lines):
+                    # Subset data for the specific cell line
+                    cell_line_data = metric_summary_table[metric_summary_table["Cell Line"] == cell_line]
 
-                if specificity == "RBP-specific":
-                    heatmap_data = cell_line_data.pivot(index="Cell Line", columns="RBP", values=plotting_column)
-                elif specificity == "Feature-specific":
-                    heatmap_data = cell_line_data.pivot(index="Position", columns="RBP", values=plotting_column)
-                assert heatmap_data.notnull().all().all(), "Null or missing values found in the heatmap data"
+                    if specificity == "RBP-specific":
+                        heatmap_data = cell_line_data.pivot(index="Cell Line", columns="RBP", values=plotting_column)
+                    elif specificity == "Feature-specific":
+                        heatmap_data = cell_line_data.pivot(index="Position", columns="RBP", values=plotting_column)
+                    assert heatmap_data.notnull().all().all(), "Null or missing values found in the heatmap data"
+
+                    if specificity == "Feature-specific":
+                        # Perform hierarchical clustering
+                        linkage = sch.linkage(heatmap_data.T, method="ward")
+                        dendrogram = sch.dendrogram(linkage, no_plot=True)
+                        ordered_columns = [heatmap_data.columns[i] for i in dendrogram["leaves"]]
+                    else:
+                        # Sort columns by the sum of their actual heatmap values
+                        ordered_columns = heatmap_data.sum(axis=0).sort_values().index.tolist()
+
+                    heatmap_data = heatmap_data[ordered_columns]
+
+                    # Define the norm for the colorbar scale
+                    norm = LogNorm() if log_transform else None
+
+                    # Plot heatmap for the cell line
+                    sns.heatmap(
+                        heatmap_data,
+                        ax=ax,
+                        cmap="viridis",
+                        cbar=True,
+                        linewidths=0.5,
+                        linecolor="gray",
+                        cbar_kws={"shrink": 0.8, "aspect": 5, "pad": 0.01},  # Adjust colorbar position and size
+                        norm=norm  # Apply log scale to the colorbar if specified
+                    )
+                    cbar = ax.collections[0].colorbar  # Get the colorbar
+                    cbar.ax.tick_params(labelsize=12)  # Set the font size of the colorbar ticks
+
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    if specificity == "Feature-specific":
+                        ax.set_title(f"{cell_line}", fontsize=20)
+                    ax.tick_params(axis='y', labelsize=24)
+
+                fig.supxlabel("RBP", fontsize=30, x=0.45)
+                fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
 
                 if specificity == "Feature-specific":
-                    # Perform hierarchical clustering
-                    linkage = sch.linkage(heatmap_data.T, method="ward")
-                    dendrogram = sch.dendrogram(linkage, no_plot=True)
-                    ordered_columns = [heatmap_data.columns[i] for i in dendrogram["leaves"]]
-                else:
-                    # Sort columns by the sum of their actual heatmap values
-                    ordered_columns = heatmap_data.sum(axis=0).sort_values().index.tolist()
+                    suffix = "\nNOTE 2: Ward hierarchical clustering run for each cell line for ordering RBPs."
+                elif specificity == "RBP-specific":
+                    suffix = ""
 
-                heatmap_data = heatmap_data[ordered_columns]
-
-                # Plot heatmap for the cell line
-                sns.heatmap(
-                    heatmap_data,
-                    ax=ax,
-                    cmap="viridis",
-                    cbar=True,
-                    linewidths=0.5,
-                    linecolor="gray",
-                    cbar_kws={"shrink": 0.8, "aspect": 5, "pad": 0.01}  # Adjust colorbar position and size
-                )
-                cbar = ax.collections[0].colorbar  # Get the colorbar
-                cbar.ax.tick_params(labelsize=12)  # Set the font size of the colorbar ticks
-
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                if specificity == "Feature-specific":
-                    ax.set_title(f"{cell_line}", fontsize=20)
-                ax.tick_params(axis='y', labelsize=24)
-
-            fig.supxlabel("RBP", fontsize=30, x=0.45)
-            fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
-
-            if specificity == "Feature-specific":
-                suffix = "\nNOTE 2: Ward hierarchical clustering run for each cell line for ordering RBPs."
-            elif specificity == "RBP-specific":
-                suffix = ""
-
-            plt.suptitle(f"Significant {plotting_column} Heatmap\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
-            plt.tight_layout()
-            plt.show()
+                transform_label = "(Log Transformed)" if log_transform else "(No Log Transform)"
+                plt.suptitle(f"{transform_label} Significant {plotting_column} Heatmap\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
+                plt.tight_layout()
+                plt.show()
 
             # Third Figure: Matching Features Heatmap
             matching_data = {}
@@ -1608,41 +1615,47 @@ class ShapNetworkInvestigator:
             vmin = min(matching_data[cell_line].min().min() for cell_line in self.cell_lines)
             vmax = max(matching_data[cell_line].max().max() for cell_line in self.cell_lines)
 
-            fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300, sharex=True)
-            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Position for the single colorbar
+            for log_transform in [False, True]:
+                fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300, sharex=True)
+                cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Position for the single colorbar
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                sns.heatmap(
-                    matching_data[cell_line],
-                    cmap="viridis",
-                    cbar=(ax == axes[0]),  # Add colorbar only for the first heatmap
-                    cbar_ax=(cbar_ax if ax == axes[0] else None),
-                    linewidths=0.5,
-                    linecolor="gray",
-                    vmin=vmin,
-                    vmax=vmax,
-                    ax=ax
-                )
-                ax.set_title(f"{cell_line} {'Ordered' if cell_line == self.cell_lines[0] else 'Matching'}", fontsize=30)
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.tick_params(axis='y', labelsize=24)
+                # Define a single norm for both cell lines
+                norm = LogNorm(vmin=vmin+1, vmax=vmax) if log_transform else None
 
-            # Add colorbar title
-            cbar_ax.tick_params(labelsize=20)
-            cbar_ax.set_box_aspect(20)  # Make the colorbar skinnier
+                for ax, cell_line in zip(axes, self.cell_lines):
+                    sns.heatmap(
+                        matching_data[cell_line],
+                        cmap="viridis",
+                        cbar=(ax == axes[0]),  # Add colorbar only for the first heatmap
+                        cbar_ax=(cbar_ax if ax == axes[0] else None),
+                        linewidths=0.5,
+                        linecolor="gray",
+                        norm=norm,  # Use the shared norm for both heatmaps
+                        vmin= vmin if not log_transform else None,  # Explicitly pass vmin
+                        vmax=vmax if not log_transform else None,  # Explicitly pass vmax
+                        ax=ax
+                    )
+                    ax.set_title(f"{cell_line} {'Ordered' if cell_line == self.cell_lines[0] else 'Matching'}", fontsize=30)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    ax.tick_params(axis='y', labelsize=24)
 
-            fig.supxlabel("RBP", fontsize=30, x=0.45)
-            fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
+                # Add colorbar title
+                cbar_ax.tick_params(labelsize=20)
+                cbar_ax.set_box_aspect(20)  # Make the colorbar skinnier
 
-            if specificity == "Feature-specific":
-                suffix = f"\nNOTE 2: Ward hierarchical clustering run in {self.cell_lines[0]} for ordering RBPs."
-            elif specificity == "RBP-specific":
-                suffix = ""
+                fig.supxlabel("RBP", fontsize=30, x=0.45)
+                fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
 
-            plt.suptitle(f"Significant {plotting_column} for Matching\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
-            plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
-            plt.show()
+                if specificity == "Feature-specific":
+                    suffix = f"\nNOTE 2: Ward hierarchical clustering run in {self.cell_lines[0]} for ordering RBPs."
+                elif specificity == "RBP-specific":
+                    suffix = ""
+
+                transform_label = "(Log Transformed)" if log_transform else "(No Log Transform)"
+                plt.suptitle(f"{transform_label} Significant {plotting_column} for Matching\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
+                plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
+                plt.show()
 
             # Fourth Figure: Scatterplot
             
