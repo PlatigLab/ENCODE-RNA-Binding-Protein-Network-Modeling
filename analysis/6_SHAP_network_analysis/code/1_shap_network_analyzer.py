@@ -1210,7 +1210,7 @@ class ShapNetworkInvestigator:
                 num_rows = df.select(pl.count()).collect().item()
                 
                 # Calculate binding percentage
-                binding_percentage = binding_sum / num_rows
+                binding_percentage = (binding_sum / num_rows)*100
 
                 # Transpose binding_percentage and reset its index
                 binding_percentage_long = binding_percentage.to_pandas().transpose().reset_index()
@@ -1249,8 +1249,8 @@ class ShapNetworkInvestigator:
                     num_diff_events_with_rbp_kd = len(
                         joined_df.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col("has_RBP_KD") == True))
                     )
-                    summary_table.loc[summary_table["RBP"] == rbp, "# RBP Diff. Events"] = num_diff_events
-                    summary_table.loc[summary_table["RBP"] == rbp, "# RBP Diff. Events w/ RBP KD"] = num_diff_events_with_rbp_kd
+                    summary_table.loc[summary_table["RBP"] == rbp, "# Diff. Events"] = num_diff_events
+                    summary_table.loc[summary_table["RBP"] == rbp, "# Diff. Events + Binding (Any Pos.)"] = num_diff_events_with_rbp_kd
 
                     for position in range(1,7): 
                         feature = f"{rbp}_{position}"
@@ -1261,13 +1261,20 @@ class ShapNetworkInvestigator:
                             )
                         )        
 
-                        summary_table.loc[summary_table["Feature"] == feature, "# RBP Diff. Events w/ RBP KD at Position"] = num_diff_events_with_rbp_kd_in_position        
+                        summary_table.loc[summary_table["Feature"] == feature, "# Diff. Events + Binding (Specific Pos.)"] = num_diff_events_with_rbp_kd_in_position        
                 
                 # Add the summary table to the list
                 summary_tables.append(summary_table)
 
             # Concatenate all summary tables for each cell line
             summary_table = pd.concat(summary_tables, ignore_index=True)
+
+            # Create new columns for percentages using a loop
+            for suffix in ["Any Pos.", "Specific Pos."]:
+                summary_table[f"% Diff. Events + Binding ({suffix})"] = (
+                    summary_table[f"# Diff. Events + Binding ({suffix})"] / summary_table["# Diff. Events"]
+                ) * 100
+
             # Sort the summary table by Cell Line and Feature
             summary_table = summary_table.sort_values(by=["Cell Line", "Feature"])
             # Reset the index of the summary table
@@ -1283,11 +1290,11 @@ class ShapNetworkInvestigator:
         if not hasattr(self, 'feature_metric_summary_table'):
             self.create_feature_metric_summary_table()
         
-        for plotting_column in ["# RBP Diff. Events", "# RBP Diff. Events w/ RBP KD", "# RBP Diff. Events w/ RBP KD at Position"]:
+        for plotting_column in ["# Diff. Events", "# Diff. Events + Binding (Any Pos.)", "# Diff. Events + Binding (Specific Pos.)"]:
             logger.info(f"Plotting {plotting_column} for each cell line")
             for mode in ["All Features", "Only RBPs"]:
 
-                if plotting_column == "# RBP Diff. Events w/ RBP KD at Position" and mode == "Only RBPs":
+                if plotting_column == "# Diff. Events + Binding (Specific Pos.)" and mode == "Only RBPs":
                     logger.info(f"Skipping {plotting_column} for {mode} as it is not applicable")
                     continue
 
@@ -1390,9 +1397,9 @@ class ShapNetworkInvestigator:
             self.create_feature_metric_summary_table()
 
         plotting_columns_info = {
-            "# RBP Diff. Events": "RBP-specific",
-            "# RBP Diff. Events w/ RBP KD": "RBP-specific",
-            "# RBP Diff. Events w/ RBP KD at Position": "Feature-specific"
+            "# Diff. Events": "RBP-specific",
+            "# Diff. Events + Binding (Any Pos.)": "RBP-specific",
+            "# Diff. Events + Binding (Specific Pos.)": "Feature-specific"
         }
 
         for plotting_column, specificity in plotting_columns_info.items():
@@ -1760,18 +1767,18 @@ class ShapNetworkInvestigator:
             cell_line_data = summary_table[summary_table["Cell Line"] == cell_line].copy()
 
             # Rank the columns of interest
-            cell_line_data["Rank: # RBP Diff. Events"] = cell_line_data["# RBP Diff. Events"].rank(ascending=False)
-            cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"] = cell_line_data["# RBP Diff. Events w/ RBP KD"].rank(ascending=False)
+            cell_line_data["Rank: # Diff. Events"] = cell_line_data["# Diff. Events"].rank(ascending=False)
+            cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"] = cell_line_data["# Diff. Events + Binding (Any Pos.)"].rank(ascending=False)
 
             # Calculate the change in ranks
-            cell_line_data["Rank Change"] = abs(cell_line_data["Rank: # RBP Diff. Events"] - cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"])
+            cell_line_data["Rank Change"] = abs(cell_line_data["Rank: # Diff. Events"] - cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"])
 
             # Scatterplot of the ranks
             plt.figure(figsize=(6,4), dpi=300)
             sns.scatterplot(
                 data=cell_line_data,
-                x="Rank: # RBP Diff. Events",
-                y="Rank: # RBP Diff. Events w/ RBP KD",
+                x="Rank: # Diff. Events",
+                y="Rank: # Diff. Events + Binding (Any Pos.)",
                 alpha=0.7,
                 edgecolor="black",
                 color="deepskyblue",
@@ -1780,8 +1787,8 @@ class ShapNetworkInvestigator:
 
             # Add a diagonal line for reference
             plt.plot(
-                [cell_line_data["Rank: # RBP Diff. Events"].min(), cell_line_data["Rank: # RBP Diff. Events"].max()],
-                [cell_line_data["Rank: # RBP Diff. Events"].min(), cell_line_data["Rank: # RBP Diff. Events"].max()],
+                [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
+                [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
                 color="red",
                 linestyle="--",
                 linewidth=1,
@@ -1792,8 +1799,8 @@ class ShapNetworkInvestigator:
             top_5 = cell_line_data.nlargest(15, "Rank Change")
             for _, row in top_5.iterrows():
                 plt.text(
-                    row["Rank: # RBP Diff. Events"]-2,
-                    row["Rank: # RBP Diff. Events w/ RBP KD"]+2,
+                    row["Rank: # Diff. Events"]-2,
+                    row["Rank: # Diff. Events + Binding (Any Pos.)"]+2,
                     row["RBP"],
                     fontsize=2,
                     color="black",
@@ -1802,18 +1809,18 @@ class ShapNetworkInvestigator:
 
             # Calculate Pearson and Spearman correlations
             pearson_corr, _ = pearsonr(
-                cell_line_data["Rank: # RBP Diff. Events"],
-                cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"]
+                cell_line_data["Rank: # Diff. Events"],
+                cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"]
             )
             spearman_corr, _ = spearmanr(
-                cell_line_data["Rank: # RBP Diff. Events"],
-                cell_line_data["Rank: # RBP Diff. Events w/ RBP KD"]
+                cell_line_data["Rank: # Diff. Events"],
+                cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"]
             )
 
             # Add labels, title, and legend
             plt.title(f"Rank Comparison for {cell_line} (Scatterplot)", fontsize=14)
-            plt.xlabel("Rank: # RBP Diff. Events", fontsize=12)
-            plt.ylabel("Rank: # RBP Diff. Events w/ RBP KD", fontsize=12)
+            plt.xlabel("Rank: # Diff. Events", fontsize=12)
+            plt.ylabel("Rank: # Diff. Events + Binding (Any Pos.)", fontsize=12)
 
             # Add correlation and point count in the bottom right corner
             num_points = len(cell_line_data)
@@ -1831,13 +1838,13 @@ class ShapNetworkInvestigator:
 
             # Lineplot of the ranks
             plt.figure(figsize=(6,4), dpi=300)
-            sorted_data = cell_line_data.sort_values("Rank: # RBP Diff. Events")
+            sorted_data = cell_line_data.sort_values("Rank: # Diff. Events")
 
             # Plot a separate line for each row
             for _, row in sorted_data.iterrows():
                 plt.plot(
-                    [row["Rank: # RBP Diff. Events"], row["Rank: # RBP Diff. Events"]],
-                    [row["Rank: # RBP Diff. Events"], row["Rank: # RBP Diff. Events w/ RBP KD"]],
+                    [row["Rank: # Diff. Events"], row["Rank: # Diff. Events"]],
+                    [row["Rank: # Diff. Events"], row["Rank: # Diff. Events + Binding (Any Pos.)"]],
                     marker="o",
                     linestyle="-",
                     color="deepskyblue",
@@ -1847,8 +1854,8 @@ class ShapNetworkInvestigator:
             # Annotate the top 5 rank changes
             for _, row in top_5.iterrows():
                 plt.text(
-                    row["Rank: # RBP Diff. Events"]-1,
-                    row["Rank: # RBP Diff. Events w/ RBP KD"]+2,
+                    row["Rank: # Diff. Events"]-1,
+                    row["Rank: # Diff. Events + Binding (Any Pos.)"]+2,
                     row["RBP"],
                     fontsize=4,
                     color="black",
@@ -1857,8 +1864,8 @@ class ShapNetworkInvestigator:
 
             # Add labels, title, and legend
             plt.title(f"Rank Comparison for {cell_line} (Lineplot)", fontsize=14)
-            plt.xlabel("Rank: # RBP Diff. Events", fontsize=12)
-            plt.ylabel("Rank: # RBP Diff. Events w/ RBP KD", fontsize=12)
+            plt.xlabel("Rank: # Diff. Events", fontsize=12)
+            plt.ylabel("Rank: # Diff. Events + Binding (Any Pos.)", fontsize=12)
             plt.tight_layout()
             plt.show()
 
