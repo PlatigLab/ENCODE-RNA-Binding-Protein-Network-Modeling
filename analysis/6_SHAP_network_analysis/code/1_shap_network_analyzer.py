@@ -1751,7 +1751,7 @@ class ShapNetworkInvestigator:
             elif specificity == "Feature-specific":
                 text = f"{row['RBP']}_{row['Position']}"
             plt.text(
-                row[f"{self.cell_lines[0]} {plotting_column}"] - 20,
+                row[f"{self.cell_lines[0]} {plotting_column}"] - 10,
                 row[f"{self.cell_lines[1]} {plotting_column}"] + 20,
                 text,
                 fontsize=4,
@@ -1778,115 +1778,98 @@ class ShapNetworkInvestigator:
             self.create_feature_metric_summary_table()
 
         # Copy the feature metric summary table
-        summary_table = self.feature_metric_summary_table.copy()
-        # Take unique values by both Cell Line and RBP
-        summary_table = summary_table.drop_duplicates(subset=["Cell Line", "RBP"])
+        copy_df = self.feature_metric_summary_table.copy()
 
-        for cell_line in self.cell_lines:
-            # Subset the data for the specific cell line
-            cell_line_data = summary_table[summary_table["Cell Line"] == cell_line].copy()
+        for column_suffix in ["Any Pos.", "Specific Pos."]:
+            rank_column = f"# Diff. Events + Binding ({column_suffix})"
 
-            # Rank the columns of interest
-            cell_line_data["Rank: # Diff. Events"] = cell_line_data["# Diff. Events"].rank(ascending=False)
-            cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"] = cell_line_data["# Diff. Events + Binding (Any Pos.)"].rank(ascending=False)
+            if column_suffix == "Any Pos.":
+                # Take unique values by both Cell Line and RBP
+                summary_table = copy_df.drop_duplicates(subset=["Cell Line", "RBP"])
+            else: 
+                summary_table = copy_df
+                
 
-            # Calculate the change in ranks
-            cell_line_data["Rank Change"] = abs(cell_line_data["Rank: # Diff. Events"] - cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"])
+            # Create a figure with 2 rows (one for each cell line) and 1 column
+            fig, axes = plt.subplots(2, 1, figsize=(5,7), dpi=300, sharex=False, sharey=False)
 
-            # Scatterplot of the ranks
-            plt.figure(figsize=(6,4), dpi=300)
-            sns.scatterplot(
-                data=cell_line_data,
-                x="Rank: # Diff. Events",
-                y="Rank: # Diff. Events + Binding (Any Pos.)",
-                alpha=0.7,
-                edgecolor="black",
-                color="deepskyblue",
-                s=20
-            )
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                # Subset the data for the specific cell line
+                cell_line_data = summary_table[summary_table["Cell Line"] == cell_line].copy()
 
-            # Add a diagonal line for reference
-            plt.plot(
-                [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
-                [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
-                color="red",
-                linestyle="--",
-                linewidth=1,
-                label="y=x"
-            )
+                # Rank the columns of interest
+                cell_line_data["Rank: # Diff. Events"] = cell_line_data["# Diff. Events"].rank(ascending=False)
+                cell_line_data[f"Rank: {rank_column}"] = cell_line_data[rank_column].rank(ascending=False)
 
-            # Annotate the top 5 rank changes
-            top_5 = cell_line_data.nlargest(15, "Rank Change")
-            for _, row in top_5.iterrows():
-                plt.text(
-                    row["Rank: # Diff. Events"]-2,
-                    row["Rank: # Diff. Events + Binding (Any Pos.)"]+2,
-                    row["RBP"],
-                    fontsize=2,
-                    color="black",
-                    alpha=0.8
+                # Calculate the change in ranks
+                cell_line_data["Rank Change"] = abs(
+                    cell_line_data["Rank: # Diff. Events"] - cell_line_data[f"Rank: {rank_column}"]
                 )
 
-            # Calculate Pearson and Spearman correlations
-            pearson_corr, _ = pearsonr(
-                cell_line_data["Rank: # Diff. Events"],
-                cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"]
-            )
-            spearman_corr, _ = spearmanr(
-                cell_line_data["Rank: # Diff. Events"],
-                cell_line_data["Rank: # Diff. Events + Binding (Any Pos.)"]
-            )
-
-            # Add labels, title, and legend
-            plt.title(f"Rank Comparison for {cell_line} (Scatterplot)", fontsize=14)
-            plt.xlabel("Rank: # Diff. Events", fontsize=12)
-            plt.ylabel("Rank: # Diff. Events + Binding (Any Pos.)", fontsize=12)
-
-            # Add correlation and point count in the bottom right corner
-            num_points = len(cell_line_data)
-            plt.text(
-                0.97, 0.03,
-                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
-                transform=plt.gca().transAxes,
-                fontsize=8,
-                verticalalignment='bottom',
-                horizontalalignment='right'
-            )
-
-            plt.tight_layout()
-            plt.show()
-
-            # Lineplot of the ranks
-            plt.figure(figsize=(6,4), dpi=300)
-            sorted_data = cell_line_data.sort_values("Rank: # Diff. Events")
-
-            # Plot a separate line for each row
-            for _, row in sorted_data.iterrows():
-                plt.plot(
-                    [row["Rank: # Diff. Events"], row["Rank: # Diff. Events"]],
-                    [row["Rank: # Diff. Events"], row["Rank: # Diff. Events + Binding (Any Pos.)"]],
-                    marker="o",
-                    linestyle="-",
+                # Scatterplot of the ranks
+                ax = axes[row_idx]
+                sns.scatterplot(
+                    data=cell_line_data,
+                    x="Rank: # Diff. Events",
+                    y=f"Rank: {rank_column}",
+                    alpha=0.7,
+                    edgecolor="black",
                     color="deepskyblue",
-                    alpha=0.7
+                    s=20,
+                    ax=ax
                 )
 
-            # Annotate the top 5 rank changes
-            for _, row in top_5.iterrows():
-                plt.text(
-                    row["Rank: # Diff. Events"]-1,
-                    row["Rank: # Diff. Events + Binding (Any Pos.)"]+2,
+                # Add a diagonal line for reference
+                ax.plot(
+                    [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
+                    [cell_line_data["Rank: # Diff. Events"].min(), cell_line_data["Rank: # Diff. Events"].max()],
+                    color="red",
+                    linestyle="--",
+                    linewidth=1,
+                    label="y=x"
+                )
+
+                # Annotate the top 5 rank changes
+                top_5 = cell_line_data.nlargest(15, "Rank Change")
+                for _, row in top_5.iterrows():
+                    ax.text(
+                    row["Rank: # Diff. Events"] - 2,
+                    row[f"Rank: {rank_column}"] + 2,
                     row["RBP"],
-                    fontsize=4,
+                    fontsize=3,
                     color="black",
                     alpha=0.8
+                    )
+
+                spearman_corr, _ = spearmanr(
+                    cell_line_data["Rank: # Diff. Events"],
+                    cell_line_data[f"Rank: {rank_column}"]
                 )
 
-            # Add labels, title, and legend
-            plt.title(f"Rank Comparison for {cell_line} (Lineplot)", fontsize=14)
-            plt.xlabel("Rank: # Diff. Events", fontsize=12)
-            plt.ylabel("Rank: # Diff. Events + Binding (Any Pos.)", fontsize=12)
+                # Add labels, title, and legend
+                ax.set_title(f"{cell_line}", fontsize=12)
+                ax.set_xlabel("Rank: # Diff. Events", fontsize=10)
+                ax.set_ylabel(f"Rank: {rank_column}", fontsize=10)
+
+                # Add correlation and point count in the bottom right corner
+                num_points = len(cell_line_data)
+                ax.text(
+                    0.99, 0.03,
+                    f"Spearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                    transform=ax.transAxes,
+                    fontsize=8,
+                    verticalalignment="bottom",
+                    horizontalalignment="right"
+                )
+
+            # Adjust layout and show the plot
             plt.tight_layout()
+
+            if column_suffix == "Any Pos.":
+                plt.suptitle(f"Rank Comparison ({column_suffix})\nNOTE: this is RBP-specific", fontsize=12, y=1.04)
+            elif column_suffix == "Specific Pos.":
+                plt.suptitle(f"Rank Comparison ({column_suffix})\nNOTE: this is Feature-specific but x-axis is RBP-specific", fontsize=12, y=1.05)
+
             plt.show()
 
 
