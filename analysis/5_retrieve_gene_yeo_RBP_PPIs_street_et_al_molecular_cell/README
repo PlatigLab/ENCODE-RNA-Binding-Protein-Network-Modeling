@@ -1,0 +1,8 @@
+Retrieve Gene Yeo RBP PPIs
+______________________________________________
+
+This directory contains the script `retrieve_ppis.py`, which is used to retrieve RBP protein-protein interactions (PPIs) from the dataset described in Street et al., Molecular Cell 2024.
+
+For more details on the script, use the command:
+
+python retrieve_ppis.py --help   
