@@ -51,10 +51,15 @@ class ShapNetworkInvestigator:
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
         }
 
-    differential_plotting_columns_info = {
+    non_normalized_differential_plotting_columns_info = {
         "# Diff. Events": "RBP-specific",
         "# Diff. Events + Binding (Any Pos.)": "RBP-specific",
         "# Diff. Events + Binding (Specific Pos.)": "Feature-specific"
+    }
+
+    normalized_differential_plotting_columns_info = {
+        "% Diff. Events + Binding (Any Pos.)": "RBP-specific",
+        "% Diff. Events + Binding (Specific Pos.)": "Feature-specific",
     }
 
 
@@ -1403,7 +1408,7 @@ class ShapNetworkInvestigator:
         if not hasattr(self, 'feature_metric_summary_table'):
             self.create_feature_metric_summary_table()
 
-        for plotting_column, specificity in self.differential_plotting_columns_info.items():
+        for plotting_column, specificity in self.non_normalized_differential_plotting_columns_info.items():
             logger.info(f"Processing {plotting_column} ({specificity})")
 
             # Deep copy the feature metric summary table
@@ -1535,7 +1540,7 @@ class ShapNetworkInvestigator:
                     row[plotting_column],  # Adjust the x-coordinate for better visibility
                     -0.05,  # Use the index or a unique identifier for labeling
                     row["RBP"] if specificity == "RBP-specific" else row["Feature"],
-                    fontsize=6,
+                    fontsize=4,
                     color="green",
                     alpha=0.8
                 )
