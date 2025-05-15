@@ -1583,12 +1583,13 @@ class ShapNetworkInvestigator:
 
 
     def plot_diff_events_heatmaps(self, metric_summary_table, plotting_column, specificity, matching_data):
+        
         # Second Figure: Heatmap
         if specificity == "RBP-specific":
             y_fig_size = 7
         elif specificity == "Feature-specific":
             y_fig_size = 12
-        
+
         for log_transform in [False, True]:
             fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300)
 
@@ -1616,6 +1617,10 @@ class ShapNetworkInvestigator:
                 # Define the norm for the colorbar scale
                 norm = LogNorm() if log_transform else None
 
+                # Always annotate with integer values from the table
+                annot = heatmap_data.astype(int)
+                fmt = "d"
+
                 # Plot heatmap for the cell line
                 sns.heatmap(
                     heatmap_data,
@@ -1625,16 +1630,22 @@ class ShapNetworkInvestigator:
                     linewidths=0.5,
                     linecolor="gray",
                     cbar_kws={"shrink": 0.8, "aspect": 5, "pad": 0.01},  # Adjust colorbar position and size
-                    norm=norm  # Apply log scale to the colorbar if specified
+                    norm=norm,  # Apply log scale to the colorbar if specified
+                    annot=annot,
+                    fmt=fmt,  # Use the annotation as is
+                    annot_kws={"size": 17, "rotation": 90},
                 )
                 cbar = ax.collections[0].colorbar  # Get the colorbar
                 cbar.ax.tick_params(labelsize=12)  # Set the font size of the colorbar ticks
 
                 ax.set_xlabel("")
                 ax.set_ylabel("")
+                ax.set_title(f"{cell_line} (# RBPs = {len(heatmap_data.columns)})", fontsize=24)
+
                 if specificity == "Feature-specific":
-                    ax.set_title(f"{cell_line}", fontsize=20)
-                ax.tick_params(axis='y', labelsize=24)
+                    ax.tick_params(axis='y', labelsize=24)
+                elif specificity == "RBP-specific":
+                    ax.tick_params(axis='y', labelleft=False)
 
             fig.supxlabel("RBP", fontsize=30, x=0.45)
             fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=30, x=-0.0001)
@@ -1663,6 +1674,10 @@ class ShapNetworkInvestigator:
             norm = LogNorm(vmin=vmin+1, vmax=vmax) if log_transform else None
 
             for ax, cell_line in zip(axes, self.cell_lines):
+                # Always annotate with integer values from the table
+                annot = matching_data[cell_line].astype(int)
+                fmt = "d"
+
                 sns.heatmap(
                     matching_data[cell_line],
                     cmap="viridis",
@@ -1671,11 +1686,14 @@ class ShapNetworkInvestigator:
                     linewidths=0.5,
                     linecolor="gray",
                     norm=norm,  # Use the shared norm for both heatmaps
-                    vmin= vmin if not log_transform else None,  # Explicitly pass vmin
+                    vmin=vmin if not log_transform else None,  # Explicitly pass vmin
                     vmax=vmax if not log_transform else None,  # Explicitly pass vmax
-                    ax=ax
+                    ax=ax,
+                    annot=annot,
+                    fmt=fmt,  # Use the annotation as is
+                    annot_kws={"size": 25, "rotation": 90},
                 )
-                ax.set_title(f"{cell_line} {'Ordered' if cell_line == self.cell_lines[0] else 'Matching'}", fontsize=30)
+                ax.set_title(f"{cell_line} {'Ordered' if cell_line == self.cell_lines[0] else 'Matching'} (# RBPs = {len(matching_data[cell_line].columns)})", fontsize=24)
                 ax.set_xlabel("")
                 ax.set_ylabel("")
                 ax.tick_params(axis='y', labelsize=24)
@@ -1696,6 +1714,7 @@ class ShapNetworkInvestigator:
             plt.suptitle(f"{transform_label} Significant {plotting_column} for Matching\nNOTE: this is {specificity}{suffix}", fontsize=30, y=1.02)
             plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
             plt.show()
+
 
     def plot_diff_events_matching_scatterplot(self, matching_data, plotting_column, specificity):
         # Convert matching_data to long-form tables
