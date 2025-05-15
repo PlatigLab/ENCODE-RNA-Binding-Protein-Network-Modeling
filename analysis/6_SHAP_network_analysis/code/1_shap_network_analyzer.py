@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 import scipy.cluster.hierarchy as sch
@@ -1305,6 +1305,18 @@ class ShapNetworkInvestigator:
             logger.success("Created feature metric summary table")
             return summary_table
 
+    
+    def get_feature_metric_table_without_null_differential_stats(self): 
+        # Check if the summary table already exists
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+        
+        table = copy.deepcopy(self.feature_metric_summary_table)
+        table = table[table["# Diff. Events"].notnull()]
+        assert table.notnull().all().all(), "Null values found in the table"
+
+        return table
+    
 
     def plot_feature_metric_summary_table(self):
         if not hasattr(self, 'feature_metric_summary_table'):
@@ -1413,17 +1425,9 @@ class ShapNetworkInvestigator:
 
     def plot_differential_splicing_types(self): 
 
-        if not hasattr(self, 'feature_metric_summary_table'):
-            self.create_feature_metric_summary_table()
-
         for plotting_column, specificity in self.non_normalized_differential_plotting_columns_info.items():
             logger.info(f"Processing {plotting_column} ({specificity})")
-
-            # Deep copy the feature metric summary table
-            metric_summary_table = self.feature_metric_summary_table.copy()
-            # Assert that there are no null or missing values in columns that do not begin with "%"
-            non_percentage_columns = [col for col in metric_summary_table.columns if not col.startswith("%")]
-            assert metric_summary_table[non_percentage_columns].notnull().all().all(), "Null or missing values found in non-percentage columns of the metric_summary_table"
+            metric_summary_table = self.get_feature_metric_table_without_null_differential_stats()
 
             if specificity == "RBP-specific":
                 metric_summary_table = metric_summary_table.drop_duplicates(subset=["Cell Line", "RBP"], keep="first")
