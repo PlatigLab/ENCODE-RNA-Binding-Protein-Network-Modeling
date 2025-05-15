@@ -1255,8 +1255,15 @@ class ShapNetworkInvestigator:
 
                 assert len(joined_df) == len(differential_df), "The length of the joined dataframe changed after the join"
                 assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the joined dataframe"
-            
+
+                kd_rbps = df.filter(pl.col("RBP_KD_Target") != "CTRL").select("RBP_KD_Target").unique().collect()["RBP_KD_Target"].to_list()
+                no_kd_rbps = set()
                 for rbp in summary_table["RBP"].unique():
+                    # IMPORTANT FIX: check if the RBP actually had knockdown data in the first place
+                    if rbp not in kd_rbps: 
+                        no_kd_rbps.add(rbp)
+                        continue
+
                     num_diff_events = len(joined_df.filter(pl.col("RBP_KD_Target") == rbp))
                     num_diff_events_with_rbp_kd = len(
                         joined_df.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col("has_RBP_KD") == True))
@@ -1275,6 +1282,7 @@ class ShapNetworkInvestigator:
 
                         summary_table.loc[summary_table["Feature"] == feature, "# Diff. Events + Binding (Specific Pos.)"] = num_diff_events_with_rbp_kd_in_position        
                 
+                logger.warning(f"RBPs with no knockdown data in {cell_line}: {', '.join(sorted(no_kd_rbps))}\nLength: {len(no_kd_rbps)}")
                 # Add the summary table to the list
                 summary_tables.append(summary_table)
 
