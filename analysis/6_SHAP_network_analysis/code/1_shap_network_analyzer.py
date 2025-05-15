@@ -1873,6 +1873,84 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
+    def plot_differential_ratios_heatmap(self): 
+
+        for plotting_column, specificity in self.normalized_differential_plotting_columns_info.items():
+            logger.info(f"Processing {plotting_column} ({specificity})")
+    
+            # Deep copy the feature metric summary table
+            data = self.feature_metric_summary_table.copy()
+            # Drop rows where the plotting_column is null
+            data = data.dropna(subset=[plotting_column])
+
+            # Create plotting_data dictionary
+            plotting_data = {}
+            if specificity == "RBP-specific":
+                
+                data = data.drop_duplicates(subset=["Cell Line", "RBP"])
+                for cell_line in self.cell_lines:
+                    cell_line_data = data[data["Cell Line"] == cell_line]
+                    plotting_data[cell_line] = cell_line_data.sort_values(by=plotting_column, ascending=True).set_index("RBP")[[plotting_column]].T
+
+            elif specificity == "Feature-specific":
+                for cell_line in self.cell_lines:
+                    cell_line_data = data[data["Cell Line"] == cell_line].pivot(index="Position", columns="RBP", values=plotting_column)
+                    linkage = sch.linkage(cell_line_data.T, method="ward")
+                    dendrogram = sch.dendrogram(linkage, no_plot=True)
+                    ordered_columns = [cell_line_data.columns[i] for i in dendrogram["leaves"]]
+                    plotting_data[cell_line] = cell_line_data[ordered_columns]
+
+            # Determine global min and max values for consistent color scaling
+            vmin = min(plotting_data[cell_line].min().min() for cell_line in self.cell_lines)
+            vmax = max(plotting_data[cell_line].max().max() for cell_line in self.cell_lines)
+            
+            if specificity == "RBP-specific":
+                y_fig_size = 9
+            elif specificity == "Feature-specific":
+                y_fig_size = 19
+
+            # Plot heatmaps for both cell lines
+            fig, axes = plt.subplots(2, 1, figsize=(30, y_fig_size), dpi=300, sharex=False)
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Position for the single colorbar
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                sns.heatmap(
+                    plotting_data[cell_line],
+                    cmap="Blues",  # Use the Blues colormap
+                    cbar=(ax == axes[0]),  # Add colorbar only for the first heatmap
+                    cbar_ax=(cbar_ax if ax == axes[0] else None),
+                    linewidths=0.5,
+                    linecolor="black",  # Set cell borders to black
+                    vmin=vmin,
+                    vmax=vmax,
+                    annot=plotting_data[cell_line].round(1),  # Annotate with values rounded to 1 decimal place
+                    fmt=".1f",  # Format annotations to 1 decimal place
+                    annot_kws={"size": 15, "rotation": 90},  # Rotate and enlarge annotation text
+                    ax=ax
+                )
+                ax.set_title(f"{cell_line} (# RBPs = {len(plotting_data[cell_line].columns)})", fontsize=20)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelleft=False)  # Remove y tick labels
+
+            # Add colorbar title
+            cbar_ax.set_title("%", fontsize=15)
+            cbar_ax.tick_params(labelsize=12)
+
+            fig.supxlabel("RBP", fontsize=20, x=0.45)
+            fig.supylabel("Cell Line" if specificity == "RBP-specific" else "Position", fontsize=20, x=-0.01)
+
+            plt.suptitle(
+                f"Heatmap of {plotting_column}\nNOTE: Different RBPs on each x-axis\nNOTE 2: {specificity} \n"
+                f"NOTE 3: {'Sorted by RBP' if specificity == 'RBP-specific' else 'Ward Hierarchical Clustering'}",
+                fontsize=25, y=1.02
+            )
+            plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
+            plt.show()
+
+            # TODO: compare matching values as scatterplot
+
+
     def tmp(self): 
 
         rbp_counts = {}
