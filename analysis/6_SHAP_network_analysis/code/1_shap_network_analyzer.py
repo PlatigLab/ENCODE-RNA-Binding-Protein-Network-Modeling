@@ -217,7 +217,7 @@ class ShapNetworkInvestigator:
         heatmap_df = heatmap_df.sort_index(axis=0).sort_index(axis=1)
 
         return heatmap_df
-
+    
 
     def delete_data(self, data_type=None):
         assert data_type is not None, "data_type cannot be None"
@@ -1873,7 +1873,7 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
-    def plot_differential_ratios_heatmap(self): 
+    def plot_differential_ratios(self): 
 
         for plotting_column, specificity in self.normalized_differential_plotting_columns_info.items():
             logger.info(f"Processing {plotting_column} ({specificity})")
@@ -1931,7 +1931,11 @@ class ShapNetworkInvestigator:
                 ax.set_title(f"{cell_line} (# RBPs = {len(plotting_data[cell_line].columns)})", fontsize=20)
                 ax.set_xlabel("")
                 ax.set_ylabel("")
-                ax.tick_params(axis='y', labelleft=False)  # Remove y tick labels
+
+                if specificity == "RBP-specific":
+                    ax.tick_params(axis='y', labelleft=False)  # Remove y tick labels
+                elif specificity == "Feature-specific":
+                    ax.tick_params(axis='y', labelsize=24)
 
             # Add colorbar title
             cbar_ax.set_title("%", fontsize=15)
@@ -1942,13 +1946,100 @@ class ShapNetworkInvestigator:
 
             plt.suptitle(
                 f"Heatmap of {plotting_column}\nNOTE: Different RBPs on each x-axis\nNOTE 2: {specificity} \n"
-                f"NOTE 3: {'Sorted by RBP' if specificity == 'RBP-specific' else 'Ward Hierarchical Clustering'}",
+                f"NOTE 3: {'Sorted by RBP Value' if specificity == 'RBP-specific' else 'Ward Hierarchical Clustering'}",
                 fontsize=25, y=1.02
             )
             plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
             plt.show()
 
-            # TODO: compare matching values as scatterplot
+    def plot_matching_differential_ratios_scatterplot(self):
+
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+        
+        # Get matching features across both cell lines
+        matching_features = self.get_matching_features()
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=200)
+
+        for i, (plotting_column, specificity) in enumerate(self.normalized_differential_plotting_columns_info.items()):
+            # Subset the summary table to matching features only
+            df = self.feature_metric_summary_table[
+                self.feature_metric_summary_table["Feature"].isin(matching_features)
+            ]
+
+            # Pivot to get values for both cell lines side by side
+            pivot = df.pivot(index="Feature", columns="Cell Line", values=plotting_column).dropna()
+            assert pivot.notnull().all().all(), "Null or missing values found in the pivot table"
+
+            # If RBP-specific, deduplicate by RBP extracted from Feature
+            if specificity == "RBP-specific":
+                # Extract RBP from Feature (e.g., "RBP_1" -> "RBP")
+                pivot = pivot.reset_index()
+                pivot["RBP"] = pivot["Feature"].str.split("_").str[0]
+                # Subset to unique RBPs (keep first occurrence)
+                pivot = pivot.drop_duplicates(subset="RBP").set_index("RBP")
+
+            x = pivot[self.cell_lines[0]]
+            y = pivot[self.cell_lines[1]]
+
+            # Calculate correlations
+            pearson_corr, _ = pearsonr(x, y)
+            spearman_corr, _ = spearmanr(x, y)
+            num_points = len(pivot)
+
+            # Scatterplot
+            ax = axes[i]
+            sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.7, s=30)
+            ax.plot([x.min(), x.max()], [x.min(), x.max()], color="red", linestyle="--", linewidth=1, label="y=x")
+            ax.set_xlabel(f"{self.cell_lines[0]} {plotting_column}", fontsize=10)
+            ax.set_ylabel(f"{self.cell_lines[1]} {plotting_column}", fontsize=10)
+            ax.set_title(f"Matching Features: {plotting_column}", fontsize=12)
+            ax.text(
+            0.98, 0.5,
+            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment='bottom',
+            horizontalalignment='right'
+            )
+
+            # Label the top 10 points on either axis using their index as the label
+            top_10_x = x.nlargest(10)
+            top_10_y = y.nlargest(10)
+            top_indices = set(top_10_x.index).union(set(top_10_y.index))
+            for idx in top_indices:
+                ax.text(
+                    x[idx],
+                    y[idx],
+                    str(idx),
+                    fontsize=6,
+                    color="black",
+                    alpha=0.8
+                )
+
+
+        plt.suptitle("% Diff. Splicing Metrics for Matching Features\nNOTE: when plotting percentages")
+        plt.tight_layout()
+        plt.show()
+
+
+    def get_matching_features(self):
+
+        if not hasattr(self, 'feature_metric_summary_table'):
+            self.create_feature_metric_summary_table()
+        
+        # Copy the feature metric summary table
+        summary_table = self.feature_metric_summary_table.copy()
+
+        # Get unique features for each cell line
+        features_per_cell_line = {
+            cell_line: set(summary_table[summary_table["Cell Line"] == cell_line]["Feature"].unique())
+            for cell_line in self.cell_lines
+        }
+        assert len(features_per_cell_line) == len(self.cell_lines), "Mismatch in number of cell lines"
+
+        return set.intersection(*features_per_cell_line.values())
 
 
     def tmp(self): 
