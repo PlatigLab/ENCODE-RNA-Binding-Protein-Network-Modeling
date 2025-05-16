@@ -60,8 +60,16 @@ class ShapNetworkInvestigator:
     normalized_differential_plotting_columns_info = {
         "% Diff. Events + Binding (Any Pos.)": "RBP-specific",
         "% Diff. Events + Binding (Specific Pos.)": "Feature-specific",
+        "Binding Norm. Ratio Diff Events": "RBP-specific",
+        "Binding Norm. Ratio Diff Events + Binding (Any Pos.)": "RBP-specific",
+        "Binding Norm. Ratio Diff Events + Binding (Specific Pos.)": "Feature-specific",
     }
 
+    binding_normalized_differential_plotting_columns_info = {
+        "Binding Norm. Ratio Diff Events": "RBP-specific",
+        "Binding Norm. Ratio Diff Events + Binding (Any Pos.)": "RBP-specific",
+        "Binding Norm. Ratio Diff Events + Binding (Specific Pos.)": "Feature-specific",
+    }
 
     def __post_init__(self):
 
@@ -1310,9 +1318,9 @@ class ShapNetworkInvestigator:
             summary_table = summary_table[cols]
 
             # Create binding-normalized columns as percentages
-            summary_table["Binding Normalized % Diff. Events"] = (summary_table["# Diff. Events"] / summary_table["Total RBP Binding"]) * 100
-            summary_table["Binding Normalized % Diff. Events + Binding (Any Pos.)"] = (summary_table["# Diff. Events + Binding (Any Pos.)"] / summary_table["Total RBP Binding"]) * 100
-            summary_table["Binding Normalized % Diff. Events + Binding (Specific Pos.)"] = (summary_table["# Diff. Events + Binding (Specific Pos.)"] / summary_table["Total Binding"]) * 100
+            summary_table["Binding Norm. Ratio Diff Events"] = (summary_table["# Diff. Events"] / summary_table["Total RBP Binding"]) 
+            summary_table["Binding Norm. Ratio Diff Events + Binding (Any Pos.)"] = (summary_table["# Diff. Events + Binding (Any Pos.)"] / summary_table["Total RBP Binding"]) 
+            summary_table["Binding Norm. Ratio Diff Events + Binding (Specific Pos.)"] = (summary_table["# Diff. Events + Binding (Specific Pos.)"] / summary_table["Total Binding"])
 
             # Sort the summary table by Cell Line and Feature
             summary_table = summary_table.sort_values(by=["Cell Line", "Feature"])
@@ -1332,7 +1340,15 @@ class ShapNetworkInvestigator:
         
         table = copy.deepcopy(self.feature_metric_summary_table)
         table = table[table["# Diff. Events"].notnull()]
-        assert table.notnull().all().all(), "Null values found in the table"
+        
+        # Allow nulls only in columns that begin with "Binding Normalized %"
+        allowed_null_prefix = "Binding Norm. Ratio"
+        cols_with_nulls = table.columns[table.isnull().any()].tolist()
+        disallowed_nulls = [col for col in cols_with_nulls if not col.startswith(allowed_null_prefix)]
+        if disallowed_nulls:
+            raise AssertionError(
+            f"Null values found in columns other than those starting with '{allowed_null_prefix}': {disallowed_nulls}"
+            )
 
         return table
     
