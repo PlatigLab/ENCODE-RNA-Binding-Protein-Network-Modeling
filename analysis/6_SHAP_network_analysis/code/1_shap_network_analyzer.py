@@ -1223,20 +1223,26 @@ class ShapNetworkInvestigator:
                 
                 # Calculate binding percentage
                 binding_percentage = (binding_sum / num_rows)*100
-
-                # Transpose binding_percentage and reset its index
+                # Transpose binding_percentage and binding_sum, reset their index
                 binding_percentage_long = binding_percentage.to_pandas().transpose().reset_index()
                 binding_percentage_long.columns = ["Feature", "Binding Percentage"]
-                # Remove the "_binding" suffix from the Feature column in binding_percentage_long
+
+                binding_sum_long = binding_sum.to_pandas().transpose().reset_index()
+                binding_sum_long.columns = ["Feature", "Total Binding"]
+
+                # Remove the "_binding" suffix from the Feature column in both DataFrames
                 binding_percentage_long["Feature"] = binding_percentage_long["Feature"].str.replace("_binding", "", regex=False)
+                binding_sum_long["Feature"] = binding_sum_long["Feature"].str.replace("_binding", "", regex=False)
+
+                # Merge binding_percentage_long and binding_sum_long on "Feature"
+                binding_metrics_long = binding_percentage_long.merge(binding_sum_long, how="inner", on="Feature")
 
                 summary_table_length_original = len(summary_table)
                 # Ensure a 1-to-1 inner merge with the summary table
-                summary_table = summary_table.merge(binding_percentage_long, how="inner", on="Feature")
+                summary_table = summary_table.merge(binding_metrics_long, how="inner", on="Feature")
                 assert len(summary_table) == summary_table_length_original, "Inner merge resulted in a different number of rows"
                 # Assert that there are no null values in the merged summary_table
                 assert summary_table.notnull().all().all(), "Null values found in summary_table after merge"
-                
                 logger.info("Calculating # differential significant events")
 
                 differential_df = df.filter(
@@ -1294,6 +1300,19 @@ class ShapNetworkInvestigator:
                 summary_table[f"% Diff. Events + Binding ({suffix})"] = (
                     summary_table[f"# Diff. Events + Binding ({suffix})"] / summary_table["# Diff. Events"]
                 ) * 100
+
+            # Create "Total RBP Binding" column: sum Total Binding for each RBP within each cell line
+            summary_table["Total RBP Binding"] = summary_table.groupby(["Cell Line", "RBP"])["Total Binding"].transform("sum")
+            
+            # Move "Total RBP Binding" column to be next to "Total Binding"
+            cols = summary_table.columns.tolist()
+            cols.insert(cols.index("Total Binding") + 1, cols.pop(cols.index("Total RBP Binding")))
+            summary_table = summary_table[cols]
+
+            # Create binding-normalized columns as percentages
+            summary_table["Binding Normalized % Diff. Events"] = (summary_table["# Diff. Events"] / summary_table["Total RBP Binding"]) * 100
+            summary_table["Binding Normalized % Diff. Events + Binding (Any Pos.)"] = (summary_table["# Diff. Events + Binding (Any Pos.)"] / summary_table["Total RBP Binding"]) * 100
+            summary_table["Binding Normalized % Diff. Events + Binding (Specific Pos.)"] = (summary_table["# Diff. Events + Binding (Specific Pos.)"] / summary_table["Total Binding"]) * 100
 
             # Sort the summary table by Cell Line and Feature
             summary_table = summary_table.sort_values(by=["Cell Line", "Feature"])
