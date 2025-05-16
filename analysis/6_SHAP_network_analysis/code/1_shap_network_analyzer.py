@@ -1794,7 +1794,7 @@ class ShapNetworkInvestigator:
         plt.xlabel(f"{self.cell_lines[0]}", fontsize=12)
         plt.ylabel(f"{self.cell_lines[1]}", fontsize=12)
         plt.text(
-            0.75, 0.97,
+            0.6, 0.97,
             f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(merged_data)}",
             transform=plt.gca().transAxes,
             fontsize=8,
@@ -1805,13 +1805,9 @@ class ShapNetworkInvestigator:
 
 
     def plot_differential_ranks(self): 
-        if not hasattr(self, 'feature_metric_summary_table'):
-            self.create_feature_metric_summary_table()
-
-        # Copy the feature metric summary table
-        copy_df = self.feature_metric_summary_table.copy()
 
         for column_suffix in ["Any Pos.", "Specific Pos."]:
+            copy_df = self.get_feature_metric_table_without_null_differential_stats()
             rank_column = f"# Diff. Events + Binding ({column_suffix})"
 
             if column_suffix == "Any Pos.":
@@ -1861,7 +1857,7 @@ class ShapNetworkInvestigator:
                 )
 
                 # Annotate the top 5 rank changes
-                top_5 = cell_line_data.nlargest(15, "Rank Change")
+                top_5 = cell_line_data.nlargest(20, "Rank Change")
                 for _, row in top_5.iterrows():
                     ax.text(
                     row["Rank: # Diff. Events"] - 2,
@@ -1879,8 +1875,8 @@ class ShapNetworkInvestigator:
 
                 # Add labels, title, and legend
                 ax.set_title(f"{cell_line}", fontsize=12)
-                ax.set_xlabel("Rank: # Diff. Events", fontsize=10)
-                ax.set_ylabel(f"Rank: {rank_column}", fontsize=10)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
 
                 # Add correlation and point count in the bottom right corner
                 num_points = len(cell_line_data)
@@ -1897,10 +1893,12 @@ class ShapNetworkInvestigator:
             plt.tight_layout()
 
             if column_suffix == "Any Pos.":
-                plt.suptitle(f"Rank Comparison ({column_suffix})\nNOTE: this is RBP-specific", fontsize=12, y=1.04)
+                plt.suptitle(f"Rank Comparison: # Diff Events Total vs Binding ({column_suffix})\nNOTE: this is RBP-specific\nNOTE 2: Rank 1 is highest", fontsize=10, y=1.06)
             elif column_suffix == "Specific Pos.":
-                plt.suptitle(f"Rank Comparison ({column_suffix})\nNOTE: this is Feature-specific but x-axis is RBP-specific", fontsize=12, y=1.05)
+                plt.suptitle(f"Rank Comparison: # Diff Events Total vs Binding ({column_suffix})\nNOTE: this is Feature-specific but x-axis is RBP-specific\nNOTE 2: Rank 1 is highest", fontsize=10, y=1.07)
 
+            fig.supxlabel("Rank: # Diff. Events", fontsize=10, y=-0.01)
+            fig.supylabel(f"Rank: {rank_column}", fontsize=10, x=-0.01)
             plt.show()
 
 
@@ -1908,11 +1906,7 @@ class ShapNetworkInvestigator:
 
         for plotting_column, specificity in self.normalized_differential_plotting_columns_info.items():
             logger.info(f"Processing {plotting_column} ({specificity})")
-    
-            # Deep copy the feature metric summary table
-            data = self.feature_metric_summary_table.copy()
-            # Drop rows where the plotting_column is null
-            data = data.dropna(subset=[plotting_column])
+            data = self.get_feature_metric_table_without_null_differential_stats()
 
             # Create plotting_data dictionary
             plotting_data = {}
@@ -1982,6 +1976,7 @@ class ShapNetworkInvestigator:
             )
             plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
             plt.show()
+
 
     def plot_matching_differential_ratios_scatterplot(self):
 
