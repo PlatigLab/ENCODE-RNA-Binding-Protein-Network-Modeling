@@ -568,58 +568,76 @@ class ShapNetworkInvestigator:
             # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
             top_hepg2_features = combined_df.nlargest(5, "HepG2")
             top_k562_features = combined_df.nlargest(5, "K562")
-
-            # Combine the top features for annotation
             top_features = pd.concat([top_hepg2_features, top_k562_features]).drop_duplicates()
 
-            # Calculate correlations
-            pearson_corr, _ = pearsonr(hepg2_values, k562_values)
-            spearman_corr, _ = spearmanr(hepg2_values, k562_values)
+            fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=300)
+            plot_types = [("Linear", None, None), ("Log-Log", "log", "log")]
 
-            # Create scatterplot
-            plt.figure(figsize=(6,4), dpi=200)
-            sns.scatterplot(
-                x=hepg2_values,
-                y=k562_values,
-                alpha=0.7,
-                edgecolor="black",
-                color="deepskyblue",
-                s=20
-            )
+            for i, (label, xscale, yscale) in enumerate(plot_types):
+                ax = axes[i]
+                x = combined_df["HepG2"]
+                y = combined_df["K562"]
 
-            # Annotate top features
-            for _, row in top_features.iterrows():
-                plt.text(
-                    row["HepG2"] - 0.01, 
-                    row["K562"] + 0.005, 
-                    row["Feature"], 
-                    fontsize=6, 
-                    color="black", 
-                    alpha=0.8
+                # For log-log, filter out non-positive values
+                if xscale == "log" and yscale == "log":
+                    mask = (x > 0) & (y > 0)
+                    x = x[mask]
+                    y = y[mask]
+                    features = combined_df["Feature"][mask]
+                else:
+                    features = combined_df["Feature"]
+
+                # Calculate correlations
+                pearson_corr, _ = pearsonr(x, y)
+                spearman_corr, _ = spearmanr(x, y)
+
+                sns.scatterplot(
+                    x=x,
+                    y=y,
+                    alpha=0.7,
+                    edgecolor="black",
+                    color="deepskyblue",
+                    s=20,
+                    ax=ax
                 )
 
-            # Add y=x line
-            plt.plot(
-                [min(hepg2_values), max(hepg2_values)],
-                [min(hepg2_values), max(hepg2_values)],
-                color="red",
-                linestyle="--",
-                linewidth=1,
-                label="y=x"
-            )
+                # Annotate top features (only on linear plot for clarity)
+                if i == 0:
+                    for _, row in top_features.iterrows():
+                        ax.text(
+                            row["HepG2"] - 0.01,
+                            row["K562"] + 0.005,
+                            row["Feature"],
+                            fontsize=6,
+                            color="black",
+                            alpha=0.8
+                        )
 
-            # Add annotations
-            plt.title("Global SHAP: HepG2 vs K562", fontsize=14)
-            plt.xlabel("HepG2 Global SHAP", fontsize=12)
-            plt.ylabel("K562 Global SHAP", fontsize=12)
-            plt.text(
-                0.4, 0.95,
-                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(hepg2_values)}",
-                transform=plt.gca().transAxes,
-                fontsize=10,
-                verticalalignment='top'
-            )
-            plt.legend(fontsize=10)
+                # Add y=x line
+                min_val = min(x.min(), y.min())
+                max_val = max(x.max(), y.max())
+                ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1, label="y=x")
+
+                if xscale:
+                    ax.set_xscale(xscale)
+                if yscale:
+                    ax.set_yscale(yscale)
+
+                ax.set_title(f"{label} Scale", fontsize=14)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.text(
+                    0.02, 0.97,
+                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(x)}",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='top',
+                    horizontalalignment='left'
+                )
+
+            plt.suptitle("Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
+            fig.supxlabel("HepG2 Global SHAP", fontsize=14)
+            fig.supylabel("K562 Global SHAP", fontsize=14)
             plt.tight_layout()
             plt.show()
 
@@ -631,9 +649,8 @@ class ShapNetworkInvestigator:
         if mode == '5_dfs':
 
             return_results = {}
-            fig, axes = plt.subplots(1, 2, figsize=(10, 4), dpi=300, sharex=True, sharey=True)
-
-            for ax, (cell_line, heatmaps) in zip(axes, global_SHAP.items()):
+            # First, compute the mean and variance tables for each cell line
+            for cell_line, heatmaps in global_SHAP.items():
                 # Assert that all heatmaps have the same shape and ordering
                 assert all(heatmap.shape == heatmaps[0].shape for heatmap in heatmaps), "Heatmaps have inconsistent dimensions"
                 assert all(heatmap.columns.tolist() == heatmaps[0].columns.tolist() for heatmap in heatmaps), "Column ordering mismatch in heatmaps"
@@ -668,20 +685,78 @@ class ShapNetworkInvestigator:
                 })
                 return_results[cell_line] = result_table.sort_values(by="Variance", ascending=False)
 
-                # Plot mean vs variance on a scatterplot
-                scatter = sns.scatterplot(data=result_table, x="Mean", y="Variance", alpha=0.7, edgecolor="black", color="deepskyblue", ax=ax)
-                ax.set_title(f"{cell_line}", fontsize=14)
-                ax.set_xlabel('')
-                ax.set_ylabel('')
+            # Plot 2 rows (scales) x N cell lines (columns)
+            n_cell_lines = len(return_results)
+            cell_lines = list(return_results.keys())
+            scales = [("linear", None, None), ("log-log", "log", "log")]
 
-                # Format the y-axis tick labels to include more explicit zeros
-                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1e}"))
+            fig, axes = plt.subplots(len(scales), n_cell_lines, figsize=(12, 9), dpi=300, sharex="row", sharey="row")
+            for col_idx, cell_line in enumerate(cell_lines):
+                result_table = return_results[cell_line]
 
-            plt.suptitle("Mean vs Variance of Global SHAP Values\nper Feature Across 5 Models", fontsize=16)
-            fig.supxlabel("Mean of Global SHAP", fontsize=14)
-            fig.supylabel("Variance of Global SHAP", fontsize=14)
+                for row_idx, (label, xscale, yscale) in enumerate(scales):
+                    ax = axes[row_idx, col_idx]
+                    plot_data = result_table.copy()
 
+                    # Apply log scale if needed for correlation calculation
+                    x = plot_data["Mean"]
+                    y = plot_data["Variance"]
+
+                    if xscale == "log" and yscale == "log":
+                        # Only keep points where both mean and variance are > 0
+                        mask = (x > 0) & (y > 0)
+                        x = np.log10(x[mask])
+                        y = np.log10(y[mask])
+                        plot_data = plot_data[mask]
+
+                    # Assert all values are finite real numbers after log transform
+                    assert np.isfinite(x).all(), "Non-finite values found in log10(mean)"
+                    assert np.isfinite(y).all(), "Non-finite values found in log10(variance)"
+
+                    num_points = len(plot_data)
+                    top5 = plot_data.nlargest(10, "Variance")
+
+                    pearson_corr, _ = pearsonr(x, y)
+                    spearman_corr, _ = spearmanr(x, y)
+
+                    sns.scatterplot(data=plot_data, x="Mean", y="Variance", alpha=0.7, edgecolor="black", color="lightskyblue", ax=ax)
+                    
+                    if xscale:
+                        ax.set_xscale(xscale)
+                    if yscale:
+                        ax.set_yscale(yscale)
+
+                    ax.set_title(f"{cell_line} ({label.replace('-', ' ').title()})", fontsize=16)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+
+                    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1e}"))
+
+                    ax.text(
+                        0.97, 0.4,
+                        f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                        transform=ax.transAxes,
+                        fontsize=10,
+                        verticalalignment='center',
+                        horizontalalignment='right'
+                    )
+
+                    # only annotate top row
+                    if row_idx == 0:
+                        for _, row in top5.iterrows():
+                            ax.text(
+                                row["Mean"]-0.01, row["Variance"]+0.0000001,
+                                row["RBP_Position"],
+                                fontsize=6, color="black", alpha=0.8
+                            )
+
+            plt.suptitle(
+                "Mean vs Variance of Global SHAP per Feature Across 5 Models\nNOTE 1: top row is linear scale, bottom row is log-log scale\nNOTE 2: log-log scale only shows points with both mean and variance > 0",
+                fontsize=16, 
+                y=1.01
+            )
             plt.tight_layout()
+
             plt.show()
             plt.close()
 
