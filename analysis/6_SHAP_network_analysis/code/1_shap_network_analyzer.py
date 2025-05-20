@@ -48,6 +48,7 @@ class ShapNetworkInvestigator:
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
                 "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
             },
+            "local_SHAP_mean_vs_variance_deciles": "../outputs/local_SHAP_mean_vs_variance/local_SHAP_mean_vs_variance_deciles.tsv",
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
         }
 
@@ -957,7 +958,70 @@ class ShapNetworkInvestigator:
 
                 logger.success(f"Saved mean vs variance hexbin plot for {cell_line} to {output_file}")
 
-    
+
+    def calculate_local_SHAP_mean_vs_variance_deciles(self): 
+        # Check if the local SHAP mean vs variance deciles TSV file exists
+        output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance_deciles"]
+        if os.path.exists(output_file):
+            logger.success("FROM CACHE: Local SHAP mean vs variance deciles table already exists.")
+            decile_df = pd.read_csv(output_file, sep="\t")
+            for cell_line in self.cell_lines:
+                logger.success(f"Loaded mean vs variance deciles table for {cell_line} from {output_file}")
+                display(decile_df[decile_df["Cell Line"] == cell_line])
+        else:
+            logger.info("Local SHAP mean vs variance deciles not calculated. Computing...")
+
+            all_deciles = []
+            for cell_line in self.cell_lines:
+                logger.info(f"Generating mean vs variance deciles for cell line {cell_line}")
+
+                # Retrieve the 5 SHAP DataFrames for the cell line
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+
+                # Calculate mean and variance using the pointwise SHAP metric function
+                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='mean'
+                )
+                variance_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=shap_dfs, 
+                    metric='variance'
+                )
+
+                # Flatten the mean and variance DataFrames for plotting
+                mean_values = mean_df.to_numpy().flatten()
+                variance_values = variance_df.to_numpy().flatten()
+
+                del mean_df, variance_df, shap_dfs
+                gc.collect()
+
+                # Assert that there are no null or missing values in either mean or variance
+                assert not np.isnan(mean_values).any(), "Mean values contain NaN or missing values"
+                assert not np.isnan(variance_values).any(), "Variance values contain NaN or missing values"
+
+                # Calculate deciles for both mean and variance (0th to 100th percentile, step 10)
+                mean_deciles = np.percentile(mean_values, np.arange(0, 101, 10))
+                variance_deciles = np.percentile(variance_values, np.arange(0, 101, 10))
+
+                # Prepare the table: each row is a decile edge, with corresponding mean and variance value
+                rows = []
+                for i, (mean_edge, var_edge) in enumerate(zip(mean_deciles, variance_deciles)):
+                    rows.append({
+                        "Cell Line": cell_line,
+                        "Decile": f"{i*10}th" if i not in [0, len(mean_deciles)-1] else ("min" if i == 0 else "max"),
+                        "Local SHAP Mean Value": mean_edge,
+                        "Local SHAP Variance Value": var_edge
+                    })
+
+                # Append to all_deciles
+                all_deciles.extend(rows)
+
+            # Convert to DataFrame and save as TSV
+            decile_df = pd.DataFrame(all_deciles).sort_values(by=["Cell Line", "Decile"])
+            decile_df.to_csv(output_file, sep="\t", index=False)
+            logger.success(f"Saved mean vs variance deciles table for all cell lines to {output_file}")
+
+
     def load_elasticnet_coefficients(self): 
 
         # Filter hash metadata for rows where 'name' contains 'ElasticNet'
