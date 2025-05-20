@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 import scipy.cluster.hierarchy as sch
@@ -8,7 +8,7 @@ from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from matplotlib.colors import LogNorm
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 
 
 @dataclass
@@ -1267,6 +1267,109 @@ class ShapNetworkInvestigator:
         plt.show()
 
     
+    def check_position_3_and_4_significance_for_global_SHAP_and_elasticnet(self):
+
+        if not hasattr(self, 'elasticnet_info'):
+            self.load_elasticnet_coefficients()
+        global_shap = self.calculate_global_SHAP(mode="5_dfs_average")
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300, sharex=True, sharey=False)
+        model_names = ["ElasticNet", "Global SHAP"]
+        cell_lines = self.cell_lines
+
+        for row_idx, cell_line in enumerate(cell_lines):
+            # Get ElasticNet coefficients and Global SHAP as 2D heatmaps
+            enet_heatmap = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info[cell_line]["coefficients"])
+            shap_heatmap = global_shap[cell_line]
+
+            for col_idx, (model, heatmap) in enumerate(zip(model_names, [enet_heatmap, shap_heatmap])):
+            
+                # Prepare data: group positions 1,2,5,6 as "1,2,5,6" and 3,4 as "3,4"
+                values = []
+                group_labels = []
+                for pos in heatmap.index:
+                    for rbp in heatmap.columns:
+                        val = heatmap.at[pos, rbp]
+                        if pos in [1, 2, 5, 6]:
+                            group_labels.append("1, 2, 5, 6")
+                        elif pos in [3, 4]:
+                            group_labels.append("3, 4")
+                        else:
+                            sys.exit(f"Unexpected position {pos} in heatmap index")
+
+                        values.append(val)
+
+                plot_df = pd.DataFrame({"Value": values, "Position": group_labels})
+
+                # Simpler violinplot and boxplot with contrasting colors and green outliers
+                ax = axes[row_idx, col_idx]
+                sns.violinplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Value",
+                    ax=ax,
+                    inner=None,
+                    density_norm="width",
+                    color="cornflowerblue",  # steelblue, a bit darker
+                    linewidth=1,
+                    alpha=0.4  # less shading
+                )
+                sns.boxplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Value",
+                    ax=ax,
+                    width=0.2,
+                    boxprops={"facecolor": "none", "edgecolor": "black", "zorder": 2},
+                    showcaps=True,
+                    showfliers=True,
+                    flierprops={"marker": "o", "color": "green", "markerfacecolor": "red", "markersize": 3, "alpha": 0.3},  # smaller dots, less alpha
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "gold", "linewidth": 2}
+                )
+
+                # Mann-Whitney U test: test if positions 3,4 have higher values than 1,2,5,6
+                group1 = plot_df[plot_df["Position"] == "1, 2, 5, 6"]["Value"]
+                group2 = plot_df[plot_df["Position"] == "3, 4"]["Value"]
+                p_val = mannwhitneyu(group2, group1, alternative="greater", nan_policy="raise").pvalue
+
+                # Annotate significance bar and p-value, adjust ylim to make more room
+                y_max = plot_df["Value"].max()
+                y_min = plot_df["Value"].min()
+                y_range = y_max - y_min
+                y_bar = y_max + 0.12 * y_range   # Move bar just above the top, with extra space
+                y_text = y_bar + 0.08 * y_range  # Place annotation further above the bar
+
+                # Draw the significance bar
+                ax.plot([0, 0, 1, 1], [y_bar, y_bar + 0.06*y_range, y_bar + 0.06*y_range, y_bar], lw=1.5, c='k')
+
+                # Always center annotation at x=0.5; combine asterisk and p-value if significant
+                annotation = f"* p={p_val:.2e}" if p_val < 0.05 else f"p={p_val:.2e}"
+                ax.text(0.5, y_text, annotation, ha='center', va='bottom', fontsize=10, color="black")
+
+                # Extend ylim to make more room for annotation
+                current_ylim = ax.get_ylim()
+                new_ylim = (current_ylim[0], y_text + 0.1 * y_range)
+                ax.set_ylim(new_ylim)
+
+                ax.set_title(f"{cell_line} - {model}", fontsize=16, pad=10)
+                ax.set_xlabel("")
+                # Set y-axis label based on model
+                if model == "Global SHAP":
+                    ax.set_ylabel("Global SHAP", fontsize=12)
+                elif model == "ElasticNet":
+                    ax.set_ylabel("ElasticNet Coef.", fontsize=12)
+
+        for ax in axes.flat:
+            ax.tick_params(axis='x', labelsize=12)
+        
+        fig.supxlabel("Positions", fontsize=16, y=0)
+        plt.suptitle("Global SHAP/ElasticNet Coefficient Comparison for Positions 3 and 4 vs. Other Positions\n\nNOTE: Mann-Whitney U test ran between distributions which \nchecked '3 and 4' greater than others (one-sided)", fontsize=16, y=1.0)
+        plt.tight_layout()
+        plt.show()
+
+
     def get_has_RBP_KD_results(self, df, cell_line):
 
         if isinstance(df, pl.LazyFrame):
