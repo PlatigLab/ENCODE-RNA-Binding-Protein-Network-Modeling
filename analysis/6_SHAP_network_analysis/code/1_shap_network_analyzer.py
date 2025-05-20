@@ -1274,12 +1274,12 @@ class ShapNetworkInvestigator:
         global_shap = self.calculate_global_SHAP(mode="5_dfs_average")
 
         fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300, sharex=True, sharey=False)
-        model_names = ["ElasticNet", "Global SHAP"]
+        model_names = ["Abs(ElasticNet)", "Global SHAP"]
         cell_lines = self.cell_lines
 
         for row_idx, cell_line in enumerate(cell_lines):
             # Get ElasticNet coefficients and Global SHAP as 2D heatmaps
-            enet_heatmap = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info[cell_line]["coefficients"])
+            enet_heatmap = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info[cell_line]["coefficients"]).abs()
             shap_heatmap = global_shap[cell_line]
 
             for col_idx, (model, heatmap) in enumerate(zip(model_names, [enet_heatmap, shap_heatmap])):
@@ -1353,19 +1353,22 @@ class ShapNetworkInvestigator:
                 new_ylim = (current_ylim[0], y_text + 0.1 * y_range)
                 ax.set_ylim(new_ylim)
 
-                ax.set_title(f"{cell_line} - {model}", fontsize=16, pad=10)
+                ax.set_title(f"{cell_line} - {model}", fontsize=14, pad=10)
                 ax.set_xlabel("")
                 # Set y-axis label based on model
                 if model == "Global SHAP":
                     ax.set_ylabel("Global SHAP", fontsize=12)
-                elif model == "ElasticNet":
-                    ax.set_ylabel("ElasticNet Coef.", fontsize=12)
+                elif model == "Abs(ElasticNet)":
+                    ax.set_ylabel("Abs(ElasticNet Coef.)", fontsize=12)
 
         for ax in axes.flat:
             ax.tick_params(axis='x', labelsize=12)
         
-        fig.supxlabel("Positions", fontsize=16, y=0)
-        plt.suptitle("Global SHAP/ElasticNet Coefficient Comparison for Positions 3 and 4 vs. Other Positions\n\nNOTE: Mann-Whitney U test ran between distributions which \nchecked '3 and 4' greater than others (one-sided)", fontsize=16, y=1.0)
+        fig.supxlabel("Positions", fontsize=14, y=0)
+        plt.suptitle(
+            "Global SHAP/Abs(ElasticNet Coefficient) Comparison for Positions 3 and 4 vs. Other Positions\n\n" \
+            "NOTE 1: Absolute value used for ElasticNet coefficients.\n" \
+            "NOTE 2: MWU test checks '3 and 4' greater than others (one-sided)", fontsize=16, y=1.0)
         plt.tight_layout()
         plt.show()
 
