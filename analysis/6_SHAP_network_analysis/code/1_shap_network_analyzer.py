@@ -1667,7 +1667,7 @@ class ShapNetworkInvestigator:
         if not hasattr(self, 'feature_metric_summary_table'):
             self.create_feature_metric_summary_table()
         
-        for plotting_column in ["# Diff. Events", "# Diff. Events + Binding (Any Pos.)", "# Diff. Events + Binding (Specific Pos.)"]:
+        for plotting_column in self.binding_normalized_differential_plotting_columns_info:
             logger.info(f"Plotting {plotting_column} for each cell line")
             for mode in ["All Features", "Only RBPs"]:
 
