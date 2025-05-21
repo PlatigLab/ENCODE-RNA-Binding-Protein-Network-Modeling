@@ -1372,6 +1372,71 @@ class ShapNetworkInvestigator:
         plt.tight_layout()
         plt.show()
 
+        # New figure: violinplot and boxplot for each position (1-6) per cell line and model
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300, sharex=True, sharey=False)
+        model_names = ["Abs(ElasticNet)", "Global SHAP"]
+        cell_lines = self.cell_lines
+
+        for row_idx, cell_line in enumerate(cell_lines):
+            enet_heatmap = self.convert_RBP_position_to_2d_heatmap(self.elasticnet_info[cell_line]["coefficients"]).abs()
+            shap_heatmap = global_shap[cell_line]
+
+            for col_idx, (model, heatmap) in enumerate(zip(model_names, [enet_heatmap, shap_heatmap])):
+                # Prepare data: group by position (1-6)
+                values = []
+                positions = []
+                for pos in sorted(heatmap.index):
+                    for rbp in heatmap.columns:
+                        values.append(heatmap.at[pos, rbp])
+                        positions.append(pos)
+                plot_df = pd.DataFrame({"Value": values, "Position": positions})
+                plot_df = plot_df.sort_values(by="Position")
+
+                ax = axes[row_idx, col_idx]
+                sns.violinplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Value",
+                    ax=ax,
+                    inner=None,
+                    density_norm="width",
+                    color="cornflowerblue",
+                    linewidth=1,
+                    alpha=0.4
+                )
+                sns.boxplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Value",
+                    ax=ax,
+                    width=0.2,
+                    boxprops={"facecolor": "none", "edgecolor": "black", "zorder": 2},
+                    showcaps=True,
+                    showfliers=True,
+                    flierprops={"marker": "o", "color": "green", "markerfacecolor": "red", "markersize": 3, "alpha": 0.3},
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "gold", "linewidth": 2}
+                )
+                ax.set_title(f"{cell_line} - {model}", fontsize=14, pad=10)
+                ax.set_xlabel("")
+                if model == "Global SHAP":
+                    ax.set_ylabel("Global SHAP", fontsize=12)
+                elif model == "Abs(ElasticNet)":
+                    ax.set_ylabel("Abs(ElasticNet Coef.)", fontsize=12)
+                else:
+                    ax.set_ylabel("Value", fontsize=12)
+                ax.tick_params(axis='x', labelsize=12)
+                ax.tick_params(axis='y', labelsize=12)
+
+        fig.supxlabel("Position", fontsize=18, y=0)
+        plt.suptitle(
+            "Global SHAP/Abs(ElasticNet Coefficient) Distribution by Position",
+            fontsize=16, y=1.01
+        )
+        plt.tight_layout()
+        plt.show()
+        
 
     def get_has_RBP_KD_results(self, df, cell_line):
 
