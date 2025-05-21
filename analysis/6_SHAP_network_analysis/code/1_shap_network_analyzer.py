@@ -1431,7 +1431,7 @@ class ShapNetworkInvestigator:
 
         fig.supxlabel("Position", fontsize=18, y=0)
         plt.suptitle(
-            "Global SHAP/Abs(ElasticNet Coefficient) Distribution by Position",
+            "Global SHAP/Abs(ElasticNet Coefficient) Distribution by Position\nNOTE: Absolute value used for ElasticNet coefficients.",
             fontsize=16, y=1.01
         )
         plt.tight_layout()
