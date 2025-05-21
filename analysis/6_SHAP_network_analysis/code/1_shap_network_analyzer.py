@@ -1685,9 +1685,6 @@ class ShapNetworkInvestigator:
                     data = self.feature_metric_summary_table[self.feature_metric_summary_table["Cell Line"] == cell_line]
                     data = data.copy()
                     data["Abs(ElasticNet Coefficient)"] = data["ElasticNet Coefficient"].abs()
-                    
-                    logger.warning("REMINDER: multiplying 'Binding Percentage' by 100 due to mistake in not originally doing so")
-                    data["Binding Percentage"] *= 100
 
                     if mode == "Only RBPs":
                         # Group by RBP and aggregate
