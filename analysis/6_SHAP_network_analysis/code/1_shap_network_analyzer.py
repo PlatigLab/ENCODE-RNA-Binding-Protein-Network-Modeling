@@ -977,6 +977,17 @@ class ShapNetworkInvestigator:
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
                 shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                # get absolute value of all columns in each df in shap_dfs except for index which is not a numerical column
+                shap_dfs = [
+                    df.select(
+                        [pl.col(col).abs() if col != 'index' else pl.col(col) for col in shap_dfs[0].columns]
+                    )
+                    for df in shap_dfs
+                ]
+
+                # Assert that all SHAP DataFrames have the same shape and ordering
+                assert all(df.shape == shap_dfs[0].shape for df in shap_dfs), "SHAP DataFrames have inconsistent dimensions"
+                assert all(df.columns == shap_dfs[0].columns for df in shap_dfs), "Column ordering mismatch in SHAP DataFrames"
 
                 # Calculate mean and variance using the pointwise SHAP metric function
                 mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
