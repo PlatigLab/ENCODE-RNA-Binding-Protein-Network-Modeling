@@ -169,8 +169,8 @@ class ShapNetworkInvestigator:
         return result_df
 
     
-    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line):
-        
+    def get_SHAP_data_as_lazyframe(self, cell_line): 
+
         # Filter hash metadata for rows where 'name' contains 'xgboost'
         xgboost_metadata = self.hash_metadata[self.hash_metadata['name']=="XGBRegressor"]
         group = xgboost_metadata[xgboost_metadata['cell_line'] == cell_line]
@@ -184,7 +184,17 @@ class ShapNetworkInvestigator:
             feather_file = f"{self.SHAP_DIR}/{hash_value}.feather"
 
             # Read the feather file using polars
-            df = pl.scan_ipc(feather_file)
+            shap_dfs.append(
+                pl.scan_ipc(feather_file)
+            )
+        
+        return shap_dfs
+    
+
+    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line):
+        
+        shap_dfs =  []
+        for i, df in enumerate(self.get_SHAP_data_as_lazyframe(cell_line)):
             
             schema = df.collect_schema().names()
             # Subset to all columns in schema that end in "_shap" and the "index" column
@@ -192,7 +202,7 @@ class ShapNetworkInvestigator:
 
             df = df.select(shap_columns).sort('index').collect()
             
-            logger.info(f"Loaded SHAP file for cell line {cell_line} with hash {hash_value} and shape {df.shape}")
+            logger.info(f"Loaded SHAP file for cell line {cell_line} with iteration {i+1} and shape {df.shape}")
             shap_dfs.append(df)
 
         return shap_dfs
