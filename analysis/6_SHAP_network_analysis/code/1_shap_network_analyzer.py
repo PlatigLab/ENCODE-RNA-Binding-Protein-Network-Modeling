@@ -48,6 +48,7 @@ class ShapNetworkInvestigator:
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
                 "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
             },
+            "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
             "local_SHAP_mean_vs_variance_deciles": "../outputs/local_SHAP_mean_vs_variance/local_SHAP_mean_vs_variance_deciles.tsv",
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
         }
