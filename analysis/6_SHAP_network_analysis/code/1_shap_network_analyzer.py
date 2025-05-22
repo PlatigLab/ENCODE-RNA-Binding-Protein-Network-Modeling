@@ -253,6 +253,53 @@ class ShapNetworkInvestigator:
 
         gc.collect()
 
+    
+    def check_no_SHAP_variance_per_binding_pattern(self): 
+
+        # Check if the SHAP variance per binding pattern file exists
+        if os.path.exists(self.CACHE_INFO["SHAP_dispersion_per_binding_pattern"]):
+            # Load the SHAP variance per binding pattern file
+            shap_variance_df = pd.read_csv(self.CACHE_INFO["SHAP_dispersion_per_binding_pattern"], sep="\t")
+            assert shap_variance_df["num_unique_shap_rows"].nunique() == 1 and shap_variance_df["num_unique_shap_rows"].iloc[0] == 1, "num_unique_shap_rows contains values other than 1"
+            logger.success("FROM CACHE: loaded SHAP variance per binding pattern stats")
+            return shap_variance_df
+        
+        else: 
+            all_results = []
+            for cell_line in self.cell_lines:
+                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+
+                for i, lf in enumerate(shap_lazyframes):
+                    binding_cols = [col for col in lf.collect_schema().names() if col.endswith("_binding")]
+                    shap_cols = [col for col in lf.collect_schema().names() if col.endswith("_shap")]
+
+                    df = lf.select(binding_cols + shap_cols).collect()
+                    logger.info(f"Loaded SHAP file for cell line {cell_line} with iteration {i+1} and shape {df.shape}")
+
+                    # Group by binding pattern and count unique SHAP rows per group
+                    grouped = []
+                    for binding_pattern_id, group in enumerate(df.group_by(binding_cols, maintain_order=True)):
+                        group_df = group[1]
+                        num_unique_shap_rows = group_df.select(shap_cols).unique().height
+
+                        # Only keep summary/statistical columns, not the actual binding/shap values
+                        row = {
+                            "cell_line": cell_line,
+                            "model_number": i + 1,
+                            "binding pattern ID": binding_pattern_id,
+                            "num_unique_shap_rows": num_unique_shap_rows,
+                        }
+                        grouped.append(row)
+                        
+                    all_results.extend(grouped)
+
+                    del df
+                    gc.collect()
+
+            final_df = pd.DataFrame(all_results)
+            final_df.to_csv(self.CACHE_INFO["SHAP_dispersion_per_binding_pattern"], sep="\t", index=False)
+            return final_df
+
 
     # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
 
