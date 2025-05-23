@@ -41,8 +41,14 @@ class ShapNetworkInvestigator:
                 "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
             },
             "global_SHAP": {
-                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
-                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
+                "Binding-Unique": {
+                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
+                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
+                },
+                "All-Data": {
+                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
+                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
+                }
             },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
@@ -174,7 +180,7 @@ class ShapNetworkInvestigator:
 
         # Filter hash metadata for rows where 'name' contains 'xgboost'
         xgboost_metadata = self.hash_metadata[self.hash_metadata['name']=="XGBRegressor"]
-        group = xgboost_metadata[xgboost_metadata['cell_line'] == cell_line]
+        group = xgboost_metadata[xgboost_metadata['cell_line'] == cell_line].sort_values(by=['hash'])
         assert len(group) == 5, f"Expected 5 SHAP files for cell line {cell_line}, but found {len(group)}"
 
         # Group by cell_line
@@ -192,18 +198,25 @@ class ShapNetworkInvestigator:
         return shap_dfs
     
 
-    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line):
+    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line, binding_unique=None):
+        assert binding_unique in ["All-Data", "Binding-Unique"]
         
         shap_dfs =  []
         for i, df in enumerate(self.get_SHAP_data_as_lazyframe(cell_line)):
             
             schema = df.collect_schema().names()
+
+            if binding_unique == "Binding-Unique": 
+                # Subset to all columns in schema that end in "_binding" and the "index" column
+                binding_columns = [col for col in schema if col.endswith("_binding")]
+                # Take unique rows based on binding columns, keeping the first occurrence (lowest index)
+                df = df.unique(subset=binding_columns, maintain_order=True, keep="first")
+
             # Subset to all columns in schema that end in "_shap" and the "index" column
             shap_columns = [col for col in schema if col.endswith("_shap")] + ["index"]
-
             df = df.select(shap_columns).sort('index').collect()
             
-            logger.info(f"Loaded SHAP file for cell line {cell_line} with iteration {i+1} and shape {df.shape}")
+            logger.info(f"Loaded SHAP file for {cell_line}, iteration {i+1}, {binding_unique}, shape {df.shape}")
             shap_dfs.append(df)
 
         return shap_dfs
@@ -325,7 +338,7 @@ class ShapNetworkInvestigator:
 
     #             #TODO fix this at the end
     #             # Retrieve the 5 SHAP DataFrames for the cell line
-    #             # shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+    #             # shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
     #             # self.shap_dfs = shap_dfs
 
     #             shap_dfs = self.shap_dfs
@@ -404,10 +417,11 @@ class ShapNetworkInvestigator:
             shutil.rmtree(temp_dir)
 
 
-    def calculate_global_SHAP(self, mode=None): 
+    def calculate_global_SHAP(self, mode=None, binding_unique=None): 
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
+        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either True or False"
 
-        output_file = self.CACHE_INFO["global_SHAP"][mode]
+        output_file = self.CACHE_INFO["global_SHAP"][binding_unique][mode]
         # Check if the output file exists
         if os.path.exists(output_file):
             with open(output_file, 'rb') as f:
@@ -417,10 +431,10 @@ class ShapNetworkInvestigator:
         
         else:
             logger.info(f"Global SHAP file for mode {mode} does not exist. Calculating...")
-
             global_heatmaps = {}
+
             dfs_global_SHAP = {
-                cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line) for cell_line in self.cell_lines
+                cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=binding_unique) for cell_line in self.cell_lines
             }
 
             if mode == '5_dfs':
@@ -452,9 +466,10 @@ class ShapNetworkInvestigator:
             logger.success(f"Saved global SHAP file for mode {mode} to {output_file}")
 
 
-    def plot_global_SHAP(self, mode=None):
+    def plot_global_SHAP(self, mode=None, binding_unique=None):
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
-        global_SHAP = self.calculate_global_SHAP(mode)
+        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either 'All-Data' or 'Binding-Unique'"
+        global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
 
         if mode == '5_dfs':
 
@@ -701,9 +716,11 @@ class ShapNetworkInvestigator:
             plt.show()
 
     
-    def plot_global_SHAP_mean_vs_variance(self, mode=None):
-        assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
-        global_SHAP = self.calculate_global_SHAP(mode)
+    def plot_global_SHAP_mean_vs_variance(self, mode=None, binding_unique=None):
+        assert mode =="5_dfs", "mode should be '5_dfs'"
+        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either 'All-Data' or 'Binding-Unique'"
+        
+        global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
 
         if mode == '5_dfs':
 
@@ -844,7 +861,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Calculating SHAP CV for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
                 # Calculate the coefficient of variation using the pointwise metric function
                 cv_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
                     cell_line_shap=shap_dfs, 
@@ -902,7 +919,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Calculating SHAP std for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
                 # Calculate the coefficient of variation using the pointwise metric function
                 std_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
                     cell_line_shap=shap_dfs, 
@@ -966,7 +983,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Generating mean vs variance hexbin plot for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
 
                 # Calculate mean and variance using the pointwise SHAP metric function
                 mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
@@ -1034,7 +1051,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Generating mean vs variance deciles for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
                 # get absolute value of all columns in each df in shap_dfs except for index which is not a numerical column
                 shap_dfs = [
                     df.select(
