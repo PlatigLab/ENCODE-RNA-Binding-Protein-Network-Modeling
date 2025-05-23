@@ -41,7 +41,7 @@ class ShapNetworkInvestigator:
                 "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
             },
             "global_SHAP": {
-                "Binding-Unique": {
+                "Unique-Binding": {
                     "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
                     "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
                 },
@@ -199,14 +199,14 @@ class ShapNetworkInvestigator:
     
 
     def retrieve_5_SHAP_tables_per_cell_line(self, cell_line, binding_unique=None):
-        assert binding_unique in ["All-Data", "Binding-Unique"]
+        assert binding_unique in ["All-Data", "Unique-Binding"]
         
         shap_dfs =  []
         for i, df in enumerate(self.get_SHAP_data_as_lazyframe(cell_line)):
             
             schema = df.collect_schema().names()
 
-            if binding_unique == "Binding-Unique": 
+            if binding_unique == "Unique-Binding": 
                 # Subset to all columns in schema that end in "_binding" and the "index" column
                 binding_columns = [col for col in schema if col.endswith("_binding")]
                 # Take unique rows based on binding columns, keeping the first occurrence (lowest index)
@@ -419,14 +419,14 @@ class ShapNetworkInvestigator:
 
     def calculate_global_SHAP(self, mode=None, binding_unique=None): 
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
-        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either True or False"
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either True or False"
 
         output_file = self.CACHE_INFO["global_SHAP"][binding_unique][mode]
         # Check if the output file exists
         if os.path.exists(output_file):
             with open(output_file, 'rb') as f:
                 global_SHAP = pickle.load(f)
-            logger.success(f"FROM CACHE: loaded global SHAP file for mode {mode}")
+            logger.success(f"FROM CACHE: loaded global SHAP file for mode {mode} and {binding_unique}")
             return global_SHAP
         
         else:
@@ -468,7 +468,7 @@ class ShapNetworkInvestigator:
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
         assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
-        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either 'All-Data' or 'Binding-Unique'"
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
 
         if mode == '5_dfs':
@@ -718,7 +718,7 @@ class ShapNetworkInvestigator:
     
     def plot_global_SHAP_mean_vs_variance(self, mode=None, binding_unique=None):
         assert mode =="5_dfs", "mode should be '5_dfs'"
-        assert binding_unique in ["All-Data", "Binding-Unique"], "binding_unique should be either 'All-Data' or 'Binding-Unique'"
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
         global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
 
