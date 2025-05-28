@@ -563,23 +563,29 @@ class ShapNetworkInvestigator:
                 axes[row_idx, 1].set_ylabel("")
                 axes[row_idx, 1].tick_params(axis="both", labelsize=12)
 
-            plt.suptitle("Global SHAP Values per Cell Line from Averaging 5 Models' Local SHAP", fontsize=20, y=0.98)
+            plt.suptitle(f"{binding_unique.replace('-', ' ')}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=20, y=0.98)
             fig.supxlabel("Global SHAP Value", fontsize=16)
             fig.supylabel("Percentage", fontsize=16)
             plt.tight_layout()
             plt.show()
 
-            for iteration, vmin_threshold in enumerate([None, 0.05]):
-                fig, axes = plt.subplots(2, 1, figsize=(35, 13), dpi=200, sharey=True)
+            for iteration, log_scale in enumerate([False, True]):
+                fig, axes = plt.subplots(2, 1, figsize=(35, 16), dpi=200, sharey=True)
 
                 for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
                     # Perform hierarchical clustering on the columns
                     linkage = sch.linkage(heatmap.T, method="ward")
                     dendrogram = sch.dendrogram(linkage, no_plot=True)
                     ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
-
                     # Reorder the heatmap columns based on the clustering
                     ordered_heatmap = heatmap[ordered_columns]
+
+                    # Set norm for log scale if needed
+                    if log_scale:
+                        # norm = LogNorm(vmin=max(heatmap.min().min(), 1e-6), vmax=heatmap.max().max())
+                        norm=LogNorm()
+                    else:
+                        norm = None
 
                     sns.heatmap(
                         ordered_heatmap,
@@ -589,8 +595,13 @@ class ShapNetworkInvestigator:
                         linewidths=0.01,  # Add black border around each cell
                         linecolor="gray",
                         cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},  # Adjust colorbar position and size
-                        vmin=vmin_threshold  # Apply minimum threshold for the second iteration
+                        vmin=None,
+                        norm=norm,
+                        annot=True,
+                        fmt=".3f",  # Default annotation format
+                        annot_kws={"size": 14, "rotation": 90},
                     )
+
                     cbar = ax.collections[0].colorbar
                     cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
                     ax.set_title(f"{cell_line}", fontsize=30)
@@ -598,14 +609,14 @@ class ShapNetworkInvestigator:
                     ax.set_ylabel("")
                     ax.tick_params(axis='y', labelsize=25)  # Make y-axis tick labels larger
 
-                # Add a caption for the second iteration
+                # Add a caption for the log scale iteration
                 caption = ""
-                if vmin_threshold is not None:
-                    caption = f"\nCAVEAT: colorbar set to minimum of {vmin_threshold}"
+                if log_scale:
+                    caption = "\nNOTE 2: colorbar is log-scaled and only shows values > 0."
 
                 fig.suptitle(
-                    f"Global SHAP w/ Ward Hierarchical Clustering Order\n"
-                    f"(NOTE: after averaging all local SHAP values across 5 models per cell line){caption}",
+                    f"{binding_unique.replace('-', ' ')}: Global SHAP w/ Ward Hierarchical Clustering Order\n"
+                    f"NOTE: after averaging all local SHAP values across 5 models per cell line{caption}",
                     fontsize=40, y=1.01, x=0.45
                 )
                 fig.supxlabel("RBP", fontsize=30)
@@ -709,7 +720,7 @@ class ShapNetworkInvestigator:
                     horizontalalignment='left'
                 )
 
-            plt.suptitle("Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
+            plt.suptitle(f"{binding_unique.replace('-', ' ')}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
             fig.supxlabel("HepG2 Global SHAP", fontsize=14)
             fig.supylabel("K562 Global SHAP", fontsize=14)
             plt.tight_layout()
