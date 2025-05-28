@@ -850,6 +850,78 @@ class ShapNetworkInvestigator:
             return return_results
 
 
+    def plot_global_SHAP_between_unique_binding_and_all_data(self): 
+        # Get global SHAP for both modes
+        global_shap_all = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")
+        global_shap_unique = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="Unique-Binding")
+
+        for log_scale in [False, True]:
+            fig, axes = plt.subplots(2, 1, figsize=(35, 18), dpi=300)
+
+            for i, cell_line in enumerate(self.cell_lines):
+                # Get heatmaps for both modes
+                df_all = global_shap_all[cell_line]
+                df_unique = global_shap_unique[cell_line]
+
+                # Ensure both DataFrames have the same columns and index after sorting
+                df_all = df_all.sort_index().sort_index(axis=1)
+                df_unique = df_unique.sort_index().sort_index(axis=1)
+                assert (df_all.columns.equals(df_unique.columns) and df_all.index.equals(df_unique.index)), "df_all and df_unique must have the same columns and index after sorting"
+
+                # Subtract unique - all
+                diff = df_unique - df_all
+                assert diff.shape == df_all.shape == df_unique.shape, "Difference DataFrame must have the same shape as original DataFrames"
+                assert diff.isnull().sum().sum() == 0, "Difference DataFrame contains null values"
+
+                # Cluster columns (RBPs) using Ward, keep original row (position) order
+                col_linkage = sch.linkage(diff.T, method="ward")
+                col_dendro = sch.dendrogram(col_linkage, no_plot=True)
+
+                # Reorder only columns
+                ordered_cols = [diff.columns[i] for i in col_dendro["leaves"]]
+                diff_ordered = diff.loc[diff.index, ordered_cols]
+
+                # Plot
+                if log_scale:
+                    norm = LogNorm()
+                else:
+                    norm = None
+                    
+                sns.heatmap(
+                    diff_ordered,
+                    ax=axes[i],
+                    cmap="bwr",
+                    center=0,
+                    linewidths=0.5,
+                    linecolor="gray",
+                    annot=True,
+                    fmt=".2f",
+                    annot_kws={"size": 14, "rotation": 90},
+                    cbar_kws={"shrink": 0.9, "aspect": 15, "pad": 0.01},
+                    norm=norm,
+                )
+
+                # Make colorbar tick labels larger
+                cbar = axes[i].collections[0].colorbar
+                cbar.ax.tick_params(labelsize=20)
+
+                axes[i].set_title(f"{cell_line}", fontsize=26)
+                axes[i].set_xlabel("")
+                axes[i].set_ylabel("")
+                axes[i].tick_params(axis='y', labelsize=26)
+                axes[i].tick_params(axis='x', labelsize=12)
+
+            note = ""
+            if log_scale:
+                note = "\nNOTE 2: colorbar is log-scaled and only shows values > 0."
+            plt.suptitle("Global SHAP Difference: 'Unique Binding' - 'All Data'\nNOTE: each heatmap clustered with Ward" + note, fontsize=30, y=1.02)
+            fig.supxlabel("RBP", fontsize=40)
+            fig.supylabel("Position", fontsize=40, x=-0.01)
+
+            plt.tight_layout()
+            plt.show()
+
+
     def calculate_SHAP_CV(self):
 
         output_file = self.CACHE_INFO["SHAP_CV"]
