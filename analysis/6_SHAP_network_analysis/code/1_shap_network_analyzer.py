@@ -52,6 +52,7 @@ class ShapNetworkInvestigator:
             },
             "specialized_global_SHAP": {
                 "Bound-Only": "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
+                "NOT-Bound-Only": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP.pkl",
             },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
@@ -470,14 +471,14 @@ class ShapNetworkInvestigator:
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
-        assert mode in ['5_dfs', '5_dfs_average', 'Bound-Only'], "mode should be either '5_dfs', '5_dfs_average', or 'Bound-Only'"
+        assert mode in ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only'], "mode should be either '5_dfs', '5_dfs_average', 'Bound-Only' or 'NOT-Bound-Only'"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
         if mode == '5_dfs' or mode == '5_dfs_average':
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
-        elif mode == 'Bound-Only':
+        elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
             assert binding_unique == "All-Data"
-            global_SHAP = self.calculate_specialized_global_SHAP(mode='Bound-Only')
+            global_SHAP = self.calculate_specialized_global_SHAP(mode=mode)
 
         if mode == '5_dfs':
 
@@ -518,7 +519,7 @@ class ShapNetworkInvestigator:
                 plt.show()
                 plt.close()
 
-        elif mode == '5_dfs_average' or mode == 'Bound-Only':
+        elif mode in ['5_dfs_average', 'Bound-Only', 'NOT-Bound-Only']:
 
             # Calculate the combined range of all heatmaps to define consistent bins
             all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
@@ -575,7 +576,7 @@ class ShapNetworkInvestigator:
 
             if mode == '5_dfs' or mode == '5_dfs_average':
                 prefix = binding_unique.replace('-', ' ')
-            elif mode == 'Bound-Only':
+            elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
                 prefix = mode.replace('-', ' ')
 
             plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=20, y=0.98)
@@ -2615,7 +2616,7 @@ class ShapNetworkInvestigator:
     
     
     def calculate_specialized_global_SHAP(self, mode=None): 
-        VALID_MODES = ["Bound-Only"]
+        VALID_MODES = ["Bound-Only", "NOT-Bound-Only"]
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
 
         if os.path.exists(self.CACHE_INFO["specialized_global_SHAP"][mode]):
@@ -2628,6 +2629,11 @@ class ShapNetworkInvestigator:
             logger.info(f"Calculating specialized global SHAP for mode: {mode}")
             specialized_global_SHAP = {}
 
+            if mode=="Bound-Only":
+                binding_value = 1
+            elif mode=="NOT-Bound-Only":
+                binding_value = 0
+
             for cell_line in self.cell_lines:
                 
                 shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
@@ -2639,8 +2645,8 @@ class ShapNetworkInvestigator:
                 for binding_col, shap_col in tqdm.tqdm(zip(binding_cols, shap_cols), total=len(binding_cols), desc=f"{cell_line} Features"):
                     filtered_dfs = []
                     for lf in shap_lazyframes:
-                        # Subset to rows where binding_col == 1, select shap_col and index
-                        filtered = lf.filter(pl.col(binding_col) == 1).select([shap_col, "index"]).collect()
+                        # Subset to rows where binding_col ==binding_value 
+                        filtered = lf.filter(pl.col(binding_col) == binding_value).select([shap_col, "index"]).collect()
                         filtered_dfs.append(filtered)
 
                     # Calculate mean using pointwise metric function
@@ -2659,6 +2665,7 @@ class ShapNetworkInvestigator:
                 pickle.dump(specialized_global_SHAP, f)
             logger.info(f"Specialized global SHAP saved to cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
 
+    
 
     def tmp(self): 
 
