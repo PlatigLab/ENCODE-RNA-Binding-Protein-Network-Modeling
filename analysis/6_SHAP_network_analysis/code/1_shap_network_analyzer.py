@@ -470,9 +470,14 @@ class ShapNetworkInvestigator:
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
-        assert mode in ['5_dfs', '5_dfs_average'], "mode should be either '5_dfs' or '5_dfs_average'"
+        assert mode in ['5_dfs', '5_dfs_average', 'Bound-Only'], "mode should be either '5_dfs', '5_dfs_average', or 'Bound-Only'"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
-        global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
+        
+        if mode == '5_dfs' or mode == '5_dfs_average':
+            global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
+        elif mode == 'Bound-Only':
+            assert binding_unique == "All-Data"
+            global_SHAP = self.calculate_specialized_global_SHAP(mode='Bound-Only')
 
         if mode == '5_dfs':
 
@@ -513,10 +518,11 @@ class ShapNetworkInvestigator:
                 plt.show()
                 plt.close()
 
-        elif mode == '5_dfs_average':
+        elif mode == '5_dfs_average' or mode == 'Bound-Only':
 
             # Calculate the combined range of all heatmaps to define consistent bins
             all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
+            all_values = all_values[~np.isnan(all_values)]  # Remove NaN values
             bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
 
             # Create a figure with 2 columns: left for histograms, right for boxplots
@@ -525,6 +531,7 @@ class ShapNetworkInvestigator:
             for row_idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
                 # Flatten the heatmap values into a single array
                 global_shap_values = heatmap.to_numpy().flatten()
+                global_shap_values = global_shap_values[~np.isnan(global_shap_values)]
                 num_points = len(global_shap_values)
 
                 # Left subplot: histogram
@@ -566,7 +573,12 @@ class ShapNetworkInvestigator:
                 axes[row_idx, 1].set_ylabel("")
                 axes[row_idx, 1].tick_params(axis="both", labelsize=12)
 
-            plt.suptitle(f"{binding_unique.replace('-', ' ')}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=20, y=0.98)
+            if mode == '5_dfs' or mode == '5_dfs_average':
+                prefix = binding_unique.replace('-', ' ')
+            elif mode == 'Bound-Only':
+                prefix = mode.replace('-', ' ')
+
+            plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=20, y=0.98)
             fig.supxlabel("Global SHAP Value", fontsize=16)
             fig.supylabel("Percentage", fontsize=16)
             plt.tight_layout()
@@ -577,7 +589,7 @@ class ShapNetworkInvestigator:
 
                 for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
                     # Perform hierarchical clustering on the columns
-                    linkage = sch.linkage(heatmap.T, method="ward")
+                    linkage = sch.linkage(heatmap.T.fillna(0), method="ward")
                     dendrogram = sch.dendrogram(linkage, no_plot=True)
                     ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
                     # Reorder the heatmap columns based on the clustering
@@ -590,8 +602,9 @@ class ShapNetworkInvestigator:
                     else:
                         norm = None
 
-                    sns.heatmap(
-                        ordered_heatmap,
+
+                    heatmap_kwargs = dict(
+                        data=ordered_heatmap,
                         ax=ax,
                         cmap="Blues",
                         cbar=True,
@@ -604,6 +617,13 @@ class ShapNetworkInvestigator:
                         fmt=".3f",  # Default annotation format
                         annot_kws={"size": 14, "rotation": 90},
                     )
+                    if mode == "Bound-Only":
+                        heatmap_kwargs["mask"] = ordered_heatmap.isnull()
+
+                    sns.heatmap(**heatmap_kwargs)
+
+                    if mode == "Bound-Only":
+                        ax.set_facecolor("black")
 
                     cbar = ax.collections[0].colorbar
                     cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
@@ -618,7 +638,7 @@ class ShapNetworkInvestigator:
                     caption = "\nNOTE 2: colorbar is log-scaled and only shows values > 0."
 
                 fig.suptitle(
-                    f"{binding_unique.replace('-', ' ')}: Global SHAP w/ Ward Hierarchical Clustering Order\n"
+                    f"{prefix}: Global SHAP w/ Ward Hierarchical Clustering Order\n"
                     f"NOTE: after averaging all local SHAP values across 5 models per cell line{caption}",
                     fontsize=40, y=1.01, x=0.45
                 )
@@ -654,8 +674,16 @@ class ShapNetworkInvestigator:
             })
 
             # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
-            top_hepg2_features = combined_df.nlargest(5, "HepG2")
-            top_k562_features = combined_df.nlargest(5, "K562")
+
+            if mode == 'Bound-Only':
+                n_largest = 30
+                fontsize= 4
+            else:
+                n_largest = 5
+                fontsize= 6
+
+            top_hepg2_features = combined_df.nlargest(n_largest, "HepG2")
+            top_k562_features = combined_df.nlargest(n_largest, "K562")
             top_features = pd.concat([top_hepg2_features, top_k562_features]).drop_duplicates()
 
             fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=300)
@@ -663,6 +691,10 @@ class ShapNetworkInvestigator:
 
             for i, (label, xscale, yscale) in enumerate(plot_types):
                 ax = axes[i]
+                
+                if mode == 'Bound-Only':
+                    combined_df = combined_df.dropna(subset=["HepG2", "K562"])
+
                 x = combined_df["HepG2"]
                 y = combined_df["K562"]
 
@@ -696,7 +728,7 @@ class ShapNetworkInvestigator:
                             row["HepG2"] - 0.01,
                             row["K562"] + 0.005,
                             row["Feature"],
-                            fontsize=6,
+                            fontsize=fontsize,
                             color="black",
                             alpha=0.8
                         )
@@ -723,7 +755,7 @@ class ShapNetworkInvestigator:
                     horizontalalignment='left'
                 )
 
-            plt.suptitle(f"{binding_unique.replace('-', ' ')}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
+            plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
             fig.supxlabel("HepG2 Global SHAP", fontsize=14)
             fig.supylabel("K562 Global SHAP", fontsize=14)
             plt.tight_layout()
