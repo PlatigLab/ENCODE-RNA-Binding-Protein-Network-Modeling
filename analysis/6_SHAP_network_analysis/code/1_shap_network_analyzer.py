@@ -50,6 +50,9 @@ class ShapNetworkInvestigator:
                     "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
                 }
             },
+            "specialized_global_SHAP": {
+                "Bound-Only": "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
+            },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
                 "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
@@ -2577,6 +2580,52 @@ class ShapNetworkInvestigator:
         assert len(features_per_cell_line) == len(self.cell_lines), "Mismatch in number of cell lines"
 
         return set.intersection(*features_per_cell_line.values())
+    
+    
+    def calculate_specialized_global_SHAP(self, mode=None): 
+        VALID_MODES = ["Bound-Only"]
+        assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
+
+        if os.path.exists(self.CACHE_INFO["specialized_global_SHAP"][mode]):
+            logger.info(f"Loading specialized global SHAP from cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
+            with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "rb") as f:
+                specialized_global_SHAP = pickle.load(f)
+            return specialized_global_SHAP
+        
+        else: 
+            logger.info(f"Calculating specialized global SHAP for mode: {mode}")
+            specialized_global_SHAP = {}
+
+            for cell_line in self.cell_lines:
+                
+                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+                schema = shap_lazyframes[0].collect_schema().names()
+                binding_cols = [col for col in schema if col.endswith("_binding")]
+                shap_cols = [col.replace("_binding", "_shap") for col in binding_cols]
+
+                results = {}
+                for binding_col, shap_col in tqdm.tqdm(zip(binding_cols, shap_cols), total=len(binding_cols), desc=f"{cell_line} Features"):
+                    filtered_dfs = []
+                    for lf in shap_lazyframes:
+                        # Subset to rows where binding_col == 1, select shap_col and index
+                        filtered = lf.filter(pl.col(binding_col) == 1).select([shap_col, "index"]).collect()
+                        filtered_dfs.append(filtered)
+
+                    # Calculate mean using pointwise metric function
+                    mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=filtered_dfs, metric="mean")
+                    # Take absolute value and average
+                    abs_mean = mean_df.select(pl.col(shap_col).abs().mean()).to_numpy()[0][0]
+                    results[shap_col] = abs_mean
+
+                # Convert results to a 1-row pandas DataFrame with columns as shap_col names
+                specialized_df = pd.DataFrame([results])
+                specialized_df = self.convert_RBP_position_to_2d_heatmap(specialized_df)
+                specialized_global_SHAP[cell_line] = specialized_df
+
+            # Save the specialized global SHAP to cache
+            with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "wb") as f:
+                pickle.dump(specialized_global_SHAP, f)
+            logger.info(f"Specialized global SHAP saved to cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
 
 
     def tmp(self): 
