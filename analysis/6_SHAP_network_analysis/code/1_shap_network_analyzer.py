@@ -980,7 +980,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Calculating SHAP CV for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
                 # Calculate the coefficient of variation using the pointwise metric function
                 cv_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
                     cell_line_shap=shap_dfs, 
@@ -1038,7 +1038,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Calculating SHAP std for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
                 # Calculate the coefficient of variation using the pointwise metric function
                 std_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
                     cell_line_shap=shap_dfs, 
@@ -1102,7 +1102,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Generating mean vs variance hexbin plot for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
 
                 # Calculate mean and variance using the pointwise SHAP metric function
                 mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
