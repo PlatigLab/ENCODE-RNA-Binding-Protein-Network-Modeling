@@ -2665,6 +2665,84 @@ class ShapNetworkInvestigator:
                 pickle.dump(specialized_global_SHAP, f)
             logger.info(f"Specialized global SHAP saved to cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
 
+
+    def plot_specialized_vs_regular_global_SHAP(self): 
+        
+        # Load all global SHAP variants
+        global_shap_regular = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")
+        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only")
+        global_shap_not_bound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only")
+
+        # Prepare all metric variants
+        shap_variants = {
+            "'Regular' All Data": global_shap_regular,
+            "NOT Bound Only": global_shap_not_bound,
+            "Bound Only": global_shap_bound,
+        }
+
+        # Get all pairwise combinations (excluding self-comparisons)
+        variant_pairs = list(combinations(shap_variants.items(), 2))
+
+        for (label_x, data_x), (label_y, data_y) in variant_pairs:
+            fig, axes = plt.subplots(1, len(self.cell_lines), figsize=(10, 5), dpi=300)
+
+            for idx, cell_line in enumerate(self.cell_lines):
+
+                df_x = data_x[cell_line]
+                df_y = data_y[cell_line]
+
+                # Melt both DataFrames to long format with RBP and Position columns
+                df_x_long = df_x.reset_index().melt(id_vars=df_x.index.name or "index", var_name="RBP", value_name="x_val")
+                df_x_long = df_x_long.rename(columns={df_x.index.name or "index": "Position"})
+                df_y_long = df_y.reset_index().melt(id_vars=df_y.index.name or "index", var_name="RBP", value_name="y_val")
+                df_y_long = df_y_long.rename(columns={df_y.index.name or "index": "Position"})
+
+                # Merge on RBP and Position to align values
+                merged = pd.merge(df_x_long, df_y_long, on=["RBP", "Position"])
+                # Remove NaNs
+                merged = merged.dropna(subset=["x_val", "y_val"])
+
+                # Correlations
+                pearson_corr, _ = pearsonr(merged["x_val"], merged["y_val"])
+                spearman_corr, _ = spearmanr(merged["x_val"], merged["y_val"])
+                num_points = len(merged)
+
+                ax = axes[idx]
+                sns.scatterplot(x=merged["x_val"], y=merged["y_val"], color="deepskyblue", edgecolor="black", alpha=0.5, s=20, ax=ax)
+                ax.set_title(f"{cell_line}", fontsize=14)
+                ax.set_xlabel('')
+                ax.set_ylabel('')
+
+                # Annotate top 10 points on x and y axes with RBP_Position
+                top_10_x = merged.nlargest(20, "x_val")
+                top_10_y = merged.nlargest(20, "y_val")
+                top = pd.concat([top_10_x, top_10_y]).drop_duplicates()
+                for _, row in top.iterrows():
+                    label = f"{row['RBP']}_{row['Position']}"
+                    ax.text(
+                        row["x_val"],
+                        row["y_val"],
+                        label,
+                        fontsize=4,
+                        color="black",
+                        alpha=1
+                    )
+
+                ax.text(
+                    0.98, 0.02,
+                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='bottom',
+                    horizontalalignment='right'
+                )
+
+            plt.suptitle(f"Global SHAP: {label_x} vs {label_y}\nNOTE: all metrics come from averaging SHAP across 5 models", fontsize=14)
+            fig.supxlabel(f"Global SHAP: {label_x}", fontsize=12)
+            fig.supylabel(f"Global SHAP: {label_y}", fontsize=12)
+            plt.tight_layout()
+            plt.show()
+
     
 
     def tmp(self): 
