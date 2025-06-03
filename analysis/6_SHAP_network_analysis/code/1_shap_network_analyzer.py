@@ -2618,17 +2618,43 @@ class ShapNetworkInvestigator:
         return set.intersection(*features_per_cell_line.values())
     
 
-    def parallel_helper_for_getting_local_SHAP_by_binding(self, binding_col, shap_lazyframes, binding_value):
+    def parallel_helper_for_getting_local_SHAP_by_binding(self, binding_col, shap_lazyframes, binding_value, condition, has_rbp_kd_df):
+        
         assert binding_col.endswith("_binding"), "Binding column must end with '_binding'"
         assert len(shap_lazyframes) == 5, "There should be exactly 5 lazyframes for the 5 cell lines"
         assert binding_value in [0, 1], "Binding value must be either 0 or 1"
+        assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position']
+
+        rbp, position = self.get_RBP_position(binding_col)
+
+        if condition == "RBP_KD_at_position":
+            assert isinstance(has_rbp_kd_df, pl.DataFrame), "has_rbp_kd_df must be a DataFrame"
+            assert binding_value == 0, "By definition, binding_value must be 0 for RBP_KD_at_position condition"
+
+            # Filter has_rbp_kd_df for rows where 'index' contains f"_{rbp}_KD-" and 'has_RBP_KD_{position}' is True
+            filtered_has_rbp_kd_df = has_rbp_kd_df.filter(
+                (pl.col("index").str.contains(f"_{rbp}_KD-")) &
+                (pl.col(f"has_RBP_KD_{position}") == True)
+            )
+            if filtered_has_rbp_kd_df.shape[0] == 0:
+                logger.warning(f"No rows for has_RBP_KD_{position} for {binding_col} == {binding_value} with condition {condition}")
 
         shap_col = binding_col.replace("_binding", "_shap")
 
         # Collect all rows from all 5 lazyframes where binding_col == binding_value
         dfs = []
-        for lf in shap_lazyframes:
+        for lf in shap_lazyframes:            
+            if condition == "CTRL": 
+                lf = lf.filter(pl.col("RBP_KD_Target") == "CTRL")
+            elif condition == "RBP_KD":
+                lf = lf.filter(pl.col("RBP_KD_Target") == rbp)
+            elif condition == "RBP_KD_at_position":
+                lf = lf.filter(pl.col("index").is_in(filtered_has_rbp_kd_df["index"]))
+
             filtered = lf.filter(pl.col(binding_col) == binding_value).select([shap_col, "index"]).collect()
+            if filtered.shape[0] == 0:
+                logger.warning(f"No rows found for {binding_col} == {binding_value} with condition {condition}")
+
             dfs.append(filtered)
 
         mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=dfs, metric='mean')
@@ -2644,9 +2670,17 @@ class ShapNetworkInvestigator:
             schema = shap_lazyframes[0].collect_schema().names()
             binding_cols = [col for col in schema if col.endswith("_binding")]
 
+            if condition == "RBP_KD_at_position":
+                has_rbp_kd_df = self.get_has_RBP_KD_results(
+                    shap_lazyframes[0].clone(), 
+                    cell_line
+                )
+            else: 
+                has_rbp_kd_df = None
+
             feature_dict = {}
             with concurrent.futures.ProcessPoolExecutor(max_workers = self.get_slurm_job_num_cpus()) as executor:
-                futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value): binding_col for binding_col in binding_cols}
+                futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value, condition, has_rbp_kd_df): binding_col for binding_col in binding_cols}
                 
                 for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(binding_cols), desc=f"{cell_line} {binding_value}-bound Features"):
                     shap_col, series = future.result()
