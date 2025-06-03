@@ -52,8 +52,17 @@ class ShapNetworkInvestigator:
                 }
             },
             "specialized_global_SHAP": {
-                "Bound-Only": "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
-                "NOT-Bound-Only": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP.pkl",
+                "Bound-Only": 
+                    {
+                        None: "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
+                    },
+                "NOT-Bound-Only": 
+                    {
+                        None: "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP.pkl",
+                        "CTRL": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-CTRL.pkl",
+                        "RBP_KD": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-RBP_KD.pkl",
+                        "RBP_KD_at_position": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-RBP_KD_at_position.pkl",
+                    },
             },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
@@ -431,7 +440,7 @@ class ShapNetworkInvestigator:
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
         elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
             assert binding_unique == "All-Data"
-            global_SHAP = self.calculate_specialized_global_SHAP(mode=mode)
+            global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None)
 
         if mode == '5_dfs':
 
@@ -1471,8 +1480,8 @@ class ShapNetworkInvestigator:
         # Loop over all SHAP types and plot for each
         shap_types = [
             ("5_dfs_average", '"Normal" Global SHAP', self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")),
-            ("Bound-Only", "Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="Bound-Only")),
-            ("NOT-Bound-Only", "NOT-Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only")),
+            ("Bound-Only", "Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)),
+            ("NOT-Bound-Only", "NOT-Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)),
         ]
 
         for shap_key, shap_label, global_shap in shap_types:
@@ -2694,19 +2703,22 @@ class ShapNetworkInvestigator:
         return result
 
     
-    def calculate_specialized_global_SHAP(self, mode=None): 
+    def calculate_specialized_global_SHAP(self, mode=None, condition=None): 
         VALID_MODES = ["Bound-Only", "NOT-Bound-Only"]
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
+        assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position'], "Condition must be None, 'CTRL', 'RBP_KD', or 'RBP_KD_at_position'"
 
-        if os.path.exists(self.CACHE_INFO["specialized_global_SHAP"][mode]):
-            logger.success(f"FROM CACHE: loading specialized global SHAP for mode: {mode}")
-            with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "rb") as f:
+        OUTPUT_FILE = self.CACHE_INFO["specialized_global_SHAP"][mode][condition]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: loading specialized global SHAP for mode {mode} and condition {condition} from {OUTPUT_FILE}")
+            with open(OUTPUT_FILE, "rb") as f:
                 specialized_global_SHAP = pickle.load(f)
             return specialized_global_SHAP
         
         else: 
 
-            logger.info(f"Calculating specialized global SHAP for mode: {mode}")
+            logger.info(f"Calculating specialized global SHAP for mode {mode} and condition {condition}")
             specialized_global_SHAP = {}
 
             if mode == "Bound-Only":
@@ -2715,7 +2727,7 @@ class ShapNetworkInvestigator:
                 binding_value = 0
 
             # Use the simplified function to get mean SHAP values for each feature at the given binding value
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value)
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=condition)
 
             for cell_line in self.cell_lines:
                 # local_shap[cell_line] is a dict: {shap_col: mean_series}
@@ -2726,10 +2738,10 @@ class ShapNetworkInvestigator:
                 specialized_global_SHAP[cell_line] = specialized_df
 
             # Save the specialized global SHAP to cache
-            with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "wb") as f:
+            with open(OUTPUT_FILE, "wb") as f:
                 pickle.dump(specialized_global_SHAP, f)
             
-            logger.info(f"Specialized global SHAP saved to cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
+            logger.info(f"Specialized global SHAP for mode {mode} and condition {condition} saved to cache: {OUTPUT_FILE}")
             return specialized_global_SHAP
 
 
@@ -2737,8 +2749,8 @@ class ShapNetworkInvestigator:
         
         # Load all global SHAP variants
         global_shap_regular = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")
-        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only")
-        global_shap_not_bound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only")
+        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)
+        global_shap_not_bound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)
 
         # Prepare all metric variants
         shap_variants = {
@@ -2809,7 +2821,7 @@ class ShapNetworkInvestigator:
             fig.supylabel(f"Global SHAP: {label_y}", fontsize=12)
             plt.tight_layout()
             plt.show()
-            
+
 
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
