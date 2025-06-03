@@ -237,6 +237,17 @@ class ShapNetworkInvestigator:
         return name[0], int(name[1])
     
 
+    def get_slurm_job_num_cpus(self): 
+
+        # Check if the SLURM_JOB_CPUS_PER_NODE environment variable is set
+        if 'SLURM_JOB_CPUS_PER_NODE' in os.environ:
+            num_cpus = int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
+            return num_cpus
+        else:
+            logger.warning("SLURM_JOB_CPUS_PER_NODE not set, defaulting to 1 CPU")
+            return 1
+    
+
     def convert_RBP_position_to_2d_heatmap(self, table):
 
         assert len(table) == 1, "Table should have only one row"
@@ -2634,7 +2645,7 @@ class ShapNetworkInvestigator:
             binding_cols = [col for col in schema if col.endswith("_binding")]
 
             feature_dict = {}
-            with concurrent.futures.ProcessPoolExecutor(max_workers=20) as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers = self.get_slurm_job_num_cpus()) as executor:
                 futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value): binding_col for binding_col in binding_cols}
                 
                 for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(binding_cols), desc=f"{cell_line} {binding_value}-bound Features"):
