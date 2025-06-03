@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, concurrent.futures
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 import scipy.cluster.hierarchy as sch
@@ -9,6 +9,7 @@ from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from matplotlib.colors import LogNorm
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
+from itertools import combinations
 
 
 @dataclass
@@ -2614,6 +2615,48 @@ class ShapNetworkInvestigator:
 
         return set.intersection(*features_per_cell_line.values())
     
+
+    def parallel_helper_for_getting_local_SHAP_by_binding(self, binding_col, shap_lazyframes, binding_value):
+        assert binding_col.endswith("_binding"), "Binding column must end with '_binding'"
+        assert len(shap_lazyframes) == 5, "There should be exactly 5 lazyframes for the 5 cell lines"
+        assert binding_value in [0, 1], "Binding value must be either 0 or 1"
+
+        shap_col = binding_col.replace("_binding", "_shap")
+
+        # Collect all rows from all 5 lazyframes where binding_col == binding_value
+        dfs = []
+        for lf in shap_lazyframes:
+            filtered = lf.filter(pl.col(binding_col) == binding_value).select([shap_col, "index"]).collect()
+            dfs.append(filtered)
+
+        mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=dfs, metric='mean')
+        return shap_col, mean_df[shap_col]
+    
+
+    def get_local_SHAP_based_on_binding(self, binding_value): 
+
+        result = {}
+
+        for cell_line in self.cell_lines:
+            shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+            schema = shap_lazyframes[0].collect_schema().names()
+            binding_cols = [col for col in schema if col.endswith("_binding")]
+
+            feature_dict = {}
+            with concurrent.futures.ProcessPoolExecutor(max_workers=20) as executor:
+                futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value): binding_col for binding_col in binding_cols}
+                
+                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(binding_cols), desc=f"{cell_line} {binding_value}-bound Features"):
+                    shap_col, series = future.result()
+                    feature_dict[shap_col] = series
+
+            result[cell_line] = feature_dict
+
+            del feature_dict
+            gc.collect()
+
+        return result
+
     
     def calculate_specialized_global_SHAP(self, mode=None): 
         VALID_MODES = ["Bound-Only", "NOT-Bound-Only"]
