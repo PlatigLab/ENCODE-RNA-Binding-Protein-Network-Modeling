@@ -320,69 +320,6 @@ class ShapNetworkInvestigator:
             return final_df
 
 
-    # def plot_local_SHAP_distribution_per_feature_as_mp4(self): 
-
-    #     if all(os.path.exists(output_file) for cell_line in self.CACHE_INFO["SHAP_mp4"] for output_file in self.CACHE_INFO["SHAP_mp4"][cell_line]):
-    #         output_files = [self.CACHE_INFO["SHAP_mp4"][cell_line] for cell_line in self.cell_lines]
-    #         logger.success("FROM CACHE: local SHAP distribution mp4s already exist.")
-
-    #         # Load the mp4s from the cache
-    #         for output_file in output_files:    
-    #             with open(output_file, 'rb') as f:
-    #                 mp4 = f.read()
-    #             # Display the mp4
-    #             plt.imshow(mp4)
-    #             plt.axis('off')
-    #             plt.show()
-
-        
-    #     else: 
-    #         for cell_line in self.cell_lines:
-
-    #             logger.info(f"Local SHAP distribution mp4 for {cell_line} does not exist. Calculating...")
-
-    #             #TODO fix this at the end
-    #             # Retrieve the 5 SHAP DataFrames for the cell line
-    #             # shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
-    #             # self.shap_dfs = shap_dfs
-
-    #             shap_dfs = self.shap_dfs
-
-    #             # Create a mp4 of the local SHAP distribution
-    #             for feature in sorted(shap_dfs[0].columns):
-    #                 fig, axes = plt.subplots(3, 2, figsize=(15, 10), dpi=300, sharex=True, sharey=True)
-
-    #                 # Plot histograms for each SHAP table
-    #                 for i, df in enumerate(shap_dfs):
-    #                     ax = axes[i // 2, i % 2]
-    #                     sns.histplot(df[feature].to_numpy(), bins=50, stat='percent', color='deepskyblue', edgecolor='black', alpha=0.7, ax=ax)
-    #                     ax.axvline(x=0, color='red', linestyle='--', linewidth=2)
-    #                     ax.set_title(f"Model {i + 1}")
-    #                     ax.set_xlabel('')
-    #                     ax.set_ylabel('')
-
-    #                 # # Add a table in the 6th subplot
-    #                 # ax = axes[2, 1]
-    #                 # ax.axis('off')
-    #                 # zero_percentages = [
-    #                 #     (df[feature] == 0).sum() / len(df[feature]) * 100 for df in shap_dfs
-    #                 # ]
-    #                 # table_data = [[f"Table {i + 1}", f"{zero_percentage:.2f}%"] for i, zero_percentage in enumerate(zero_percentages)]
-    #                 # ax.table(cellText=table_data, colLabels=["Table", "Zero %"], loc='center', cellLoc='center')
-
-    #                 fig.suptitle(f"{cell_line} - {feature}", fontsize=30, y=0.98)
-    #                 fig.supxlabel("Local SHAP Value", fontsize=20)
-    #                 fig.supylabel("% of Values in Bin", fontsize=20)
-
-
-    #                 plt.tight_layout(rect=[0, 0, 1, 0.95])
-    #                 # plt.savefig(output_file.replace(".mp4", f"_{feature}.png"))
-    #                 plt.show()
-    #                 plt.close()
-                
-    #             logger.success(f"Saved local SHAP distribution mp4 for {cell_line} to {output_file}")
-
-
     def create_plot_movie_from_features(self, data, output_file): 
 
         if os.path.exists(output_file):
@@ -2663,42 +2600,28 @@ class ShapNetworkInvestigator:
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
 
         if os.path.exists(self.CACHE_INFO["specialized_global_SHAP"][mode]):
-            logger.info(f"Loading specialized global SHAP from cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
+            logger.success(f"FROM CACHE: loading specialized global SHAP for mode: {mode}")
             with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "rb") as f:
                 specialized_global_SHAP = pickle.load(f)
             return specialized_global_SHAP
         
         else: 
+
             logger.info(f"Calculating specialized global SHAP for mode: {mode}")
             specialized_global_SHAP = {}
 
-            if mode=="Bound-Only":
+            if mode == "Bound-Only":
                 binding_value = 1
-            elif mode=="NOT-Bound-Only":
+            elif mode == "NOT-Bound-Only":
                 binding_value = 0
 
+            # Use the simplified function to get mean SHAP values for each feature at the given binding value
+            local_shap = self.get_local_SHAP_based_on_binding(binding_value)
+
             for cell_line in self.cell_lines:
-                
-                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
-                schema = shap_lazyframes[0].collect_schema().names()
-                binding_cols = [col for col in schema if col.endswith("_binding")]
-                shap_cols = [col.replace("_binding", "_shap") for col in binding_cols]
-
-                results = {}
-                for binding_col, shap_col in tqdm.tqdm(zip(binding_cols, shap_cols), total=len(binding_cols), desc=f"{cell_line} Features"):
-                    filtered_dfs = []
-                    for lf in shap_lazyframes:
-                        # Subset to rows where binding_col ==binding_value 
-                        filtered = lf.filter(pl.col(binding_col) == binding_value).select([shap_col, "index"]).collect()
-                        filtered_dfs.append(filtered)
-
-                    # Calculate mean using pointwise metric function
-                    mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=filtered_dfs, metric="mean")
-                    # Take absolute value and average
-                    abs_mean = mean_df.select(pl.col(shap_col).abs().mean()).to_numpy()[0][0]
-                    results[shap_col] = abs_mean
-
-                # Convert results to a 1-row pandas DataFrame with columns as shap_col names
+                # local_shap[cell_line] is a dict: {shap_col: mean_series}
+                # Take the mean of the absolute values for each shap_col
+                results = {shap_col: series.abs().mean() for shap_col, series in local_shap[cell_line].items()}
                 specialized_df = pd.DataFrame([results])
                 specialized_df = self.convert_RBP_position_to_2d_heatmap(specialized_df)
                 specialized_global_SHAP[cell_line] = specialized_df
@@ -2706,7 +2629,9 @@ class ShapNetworkInvestigator:
             # Save the specialized global SHAP to cache
             with open(self.CACHE_INFO["specialized_global_SHAP"][mode], "wb") as f:
                 pickle.dump(specialized_global_SHAP, f)
+            
             logger.info(f"Specialized global SHAP saved to cache: {self.CACHE_INFO['specialized_global_SHAP'][mode]}")
+            return specialized_global_SHAP
 
 
     def plot_specialized_vs_regular_global_SHAP(self): 
