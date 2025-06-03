@@ -60,7 +60,11 @@ class ShapNetworkInvestigator:
                 "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
             },
             "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
-            "local_SHAP_mean_vs_variance_deciles": "../outputs/local_SHAP_mean_vs_variance/local_SHAP_mean_vs_variance_deciles.tsv",
+            "local_SHAP_mean_vs_variance_deciles": {
+                "5_dfs_average": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles.tsv",
+                "Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_bound_only.tsv",
+                "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
+            },
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
         }
 
@@ -1091,73 +1095,111 @@ class ShapNetworkInvestigator:
                 logger.success(f"Saved mean vs variance hexbin plot for {cell_line} to {output_file}")
 
 
-    def calculate_local_SHAP_mean_vs_variance_deciles(self): 
+    def calculate_local_SHAP_mean_vs_variance_deciles(self, mode=None):
+        assert mode in ["Bound-Only", "NOT-Bound-Only", '5_dfs_average'], "mode should be either 'Bound-Only' or 'NOT-Bound-Only'"
+
         # Check if the local SHAP mean vs variance deciles TSV file exists
-        output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance_deciles"]
+        output_file = self.CACHE_INFO["local_SHAP_mean_vs_variance_deciles"][mode]
         if os.path.exists(output_file):
-            logger.success("FROM CACHE: Local SHAP mean vs variance deciles table already exists.")
+            logger.success(f"FROM CACHE: Local SHAP mean vs variance deciles table already exists for mode: {mode}")
             decile_df = pd.read_csv(output_file, sep="\t")
             for cell_line in self.cell_lines:
                 logger.success(f"Loaded mean vs variance deciles table for {cell_line} from {output_file}")
                 display(decile_df[decile_df["Cell Line"] == cell_line])
         else:
-            logger.info("Local SHAP mean vs variance deciles not calculated. Computing...")
+            logger.info(f"Local SHAP mean vs variance deciles not calculated. Computing for {mode} ...")
 
             all_deciles = []
+            # If mode is Bound-Only or NOT-Bound-Only, retrieve local_shap once outside the loop
+            if mode in ["Bound-Only", "NOT-Bound-Only"]:
+                binding_value = 1 if mode == "Bound-Only" else 0
+                local_shap = self.get_local_SHAP_based_on_binding(binding_value)
+            else:
+                local_shap = None
+
             for cell_line in self.cell_lines:
                 logger.info(f"Generating mean vs variance deciles for cell line {cell_line}")
 
-                # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=False)
-                # get absolute value of all columns in each df in shap_dfs except for index which is not a numerical column
-                shap_dfs = [
-                    df.select(
-                        [pl.col(col).abs() if col != 'index' else pl.col(col) for col in shap_dfs[0].columns]
+                if mode == '5_dfs_average':
+                    # Retrieve the 5 SHAP DataFrames for the cell line
+                    shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
+                    # get absolute value of all columns in each df in shap_dfs except for index which is not a numerical column
+                    shap_dfs = [
+                        df.select(
+                            [pl.col(col).abs() if col != 'index' else pl.col(col) for col in shap_dfs[0].columns]
+                        )
+                        for df in shap_dfs
+                    ]
+
+                    # Assert that all SHAP DataFrames have the same shape and ordering
+                    assert all(df.shape == shap_dfs[0].shape for df in shap_dfs), "SHAP DataFrames have inconsistent dimensions"
+                    assert all(df.columns == shap_dfs[0].columns for df in shap_dfs), "Column ordering mismatch in SHAP DataFrames"
+
+                    # Calculate mean and variance using the pointwise SHAP metric function
+                    mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                        cell_line_shap=shap_dfs, 
+                        metric='mean'
                     )
-                    for df in shap_dfs
-                ]
+                    variance_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                        cell_line_shap=shap_dfs, 
+                        metric='variance'
+                    )
 
-                # Assert that all SHAP DataFrames have the same shape and ordering
-                assert all(df.shape == shap_dfs[0].shape for df in shap_dfs), "SHAP DataFrames have inconsistent dimensions"
-                assert all(df.columns == shap_dfs[0].columns for df in shap_dfs), "Column ordering mismatch in SHAP DataFrames"
+                    # Flatten the mean and variance DataFrames for plotting
+                    mean_values = mean_df.to_numpy().flatten()
+                    variance_values = variance_df.to_numpy().flatten()
 
-                # Calculate mean and variance using the pointwise SHAP metric function
-                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
-                    cell_line_shap=shap_dfs, 
-                    metric='mean'
-                )
-                variance_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
-                    cell_line_shap=shap_dfs, 
-                    metric='variance'
-                )
+                    # Calculate deciles for both mean and variance (0th to 100th percentile, step 10)
+                    mean_deciles = np.percentile(mean_values, np.arange(0, 101, 10))
+                    variance_deciles = np.percentile(variance_values, np.arange(0, 101, 10))
+                    mean_median = np.median(mean_values)
+                    variance_median = np.median(variance_values)
 
-                # Flatten the mean and variance DataFrames for plotting
-                mean_values = mean_df.to_numpy().flatten()
-                variance_values = variance_df.to_numpy().flatten()
+                    del mean_df, variance_df, shap_dfs
+                    gc.collect()
 
-                del mean_df, variance_df, shap_dfs
-                gc.collect()
+                elif mode in ["Bound-Only", "NOT-Bound-Only"]:
+                    # local_shap[cell_line] is a dict: {shap_col: series}
+                    # Concatenate all series into a single 1D numpy array, take absolute value
+                    all_values = np.concatenate([s.to_numpy() for s in local_shap[cell_line].values()])
 
-                # Assert that there are no null or missing values in either mean or variance
-                assert not np.isnan(mean_values).any(), "Mean values contain NaN or missing values"
-                assert not np.isnan(variance_values).any(), "Variance values contain NaN or missing values"
+                    if mode == "Bound-Only":
+                        all_values = all_values[~np.isnan(all_values)]
 
-                # Calculate deciles for both mean and variance (0th to 100th percentile, step 10)
-                mean_deciles = np.percentile(mean_values, np.arange(0, 101, 10))
-                variance_deciles = np.percentile(variance_values, np.arange(0, 101, 10))
+                    all_values = np.abs(all_values)
+                    # Compute deciles and median of the distribution
+                    mean_deciles = np.percentile(all_values, np.arange(0, 101, 10))
+                    mean_median = np.median(all_values)
+                    variance_deciles = None
+                    variance_median = None
+                
+                if mode == 'Not-Bound-Only' or mode == '5_dfs_average': 
+                    assert not np.isnan(mean_values).any(), "Mean values contain NaN or missing values"
+                
+                if mode == '5_dfs_average':
+                    assert not np.isnan(variance_values).any(), "Variance values contain NaN or missing values"
 
                 # Prepare the table: each row is a decile edge, with corresponding mean and variance value
-                rows = []
-                for i, (mean_edge, var_edge) in enumerate(zip(mean_deciles, variance_deciles)):
-                    rows.append({
-                        "Cell Line": cell_line,
-                        "Decile": f"{i*10}th" if i not in [0, len(mean_deciles)-1] else ("min" if i == 0 else "max"),
-                        "Local SHAP Mean Value": mean_edge,
-                        "Local SHAP Variance Value": var_edge
-                    })
-
-                # Append to all_deciles
-                all_deciles.extend(rows)
+                if mode == '5_dfs_average':
+                    for i, (mean_edge, var_edge) in enumerate(zip(mean_deciles, variance_deciles)):
+                        all_deciles.append({
+                            "Cell Line": cell_line,
+                            "Decile": f"{i*10}th" if i not in [0, len(mean_deciles)-1] else ("min" if i == 0 else "max"),
+                            "Local SHAP Mean Value": mean_edge,
+                            "Local SHAP Variance Value": var_edge,
+                            "Local SHAP Mean Median": mean_median if i == 5 else np.nan,
+                            "Local SHAP Variance Median": variance_median if i == 5 else np.nan,
+                        })
+                else:
+                    for i, mean_edge in enumerate(mean_deciles):
+                        all_deciles.append({
+                            "Cell Line": cell_line,
+                            "Decile": f"{i*10}th" if i not in [0, len(mean_deciles)-1] else ("min" if i == 0 else "max"),
+                            "Local SHAP Mean Value": mean_edge,
+                            "Local SHAP Variance Value": np.nan,
+                            "Local SHAP Mean Median": mean_median if i == 5 else np.nan,
+                            "Local SHAP Variance Median": np.nan,
+                        })
 
             # Convert to DataFrame and save as TSV
             decile_df = pd.DataFrame(all_deciles).sort_values(by=["Cell Line", "Decile"])
