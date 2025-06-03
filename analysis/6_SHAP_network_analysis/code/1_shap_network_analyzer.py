@@ -433,14 +433,20 @@ class ShapNetworkInvestigator:
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
-        assert mode in ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only'], "mode should be either '5_dfs', '5_dfs_average', 'Bound-Only' or 'NOT-Bound-Only'"
+        VALID_MODES = ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']
+        assert mode in VALID_MODES, f"mode should be one of {VALID_MODES}"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
         if mode == '5_dfs' or mode == '5_dfs_average':
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
-        elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
+        else: 
             assert binding_unique == "All-Data"
-            global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None)
+            
+            if mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
+                assert binding_unique == "All-Data"
+                global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None)
+            elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
+                global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1])
 
         if mode == '5_dfs':
 
@@ -481,7 +487,7 @@ class ShapNetworkInvestigator:
                 plt.show()
                 plt.close()
 
-        elif mode in ['5_dfs_average', 'Bound-Only', 'NOT-Bound-Only']:
+        elif mode in ['5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
 
             # Calculate the combined range of all heatmaps to define consistent bins
             all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
@@ -540,8 +546,10 @@ class ShapNetworkInvestigator:
                 prefix = binding_unique.replace('-', ' ')
             elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
                 prefix = mode.replace('-', ' ')
+            elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
+                prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
 
-            plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=20, y=0.98)
+            plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=16, y=0.98)
             fig.supxlabel("Global SHAP Value", fontsize=16)
             fig.supylabel("Percentage", fontsize=16)
             plt.tight_layout()
@@ -565,7 +573,6 @@ class ShapNetworkInvestigator:
                     else:
                         norm = None
 
-
                     heatmap_kwargs = dict(
                         data=ordered_heatmap,
                         ax=ax,
@@ -580,12 +587,13 @@ class ShapNetworkInvestigator:
                         fmt=".3f",  # Default annotation format
                         annot_kws={"size": 14, "rotation": 90},
                     )
-                    if mode == "Bound-Only":
+                    
+                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
                         heatmap_kwargs["mask"] = ordered_heatmap.isnull()
 
                     sns.heatmap(**heatmap_kwargs)
 
-                    if mode == "Bound-Only":
+                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
                         ax.set_facecolor("black")
 
                     cbar = ax.collections[0].colorbar
@@ -655,7 +663,7 @@ class ShapNetworkInvestigator:
             for i, (label, xscale, yscale) in enumerate(plot_types):
                 ax = axes[i]
                 
-                if mode == 'Bound-Only':
+                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
                     combined_df = combined_df.dropna(subset=["HepG2", "K562"])
 
                 x = combined_df["HepG2"]
@@ -718,7 +726,7 @@ class ShapNetworkInvestigator:
                     horizontalalignment='left'
                 )
 
-            plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=16, y=1.02)
+            plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=14, y=1.02)
             fig.supxlabel("HepG2 Global SHAP", fontsize=14)
             fig.supylabel("K562 Global SHAP", fontsize=14)
             plt.tight_layout()
