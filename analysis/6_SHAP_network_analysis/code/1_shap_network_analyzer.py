@@ -1124,7 +1124,7 @@ class ShapNetworkInvestigator:
             # If mode is Bound-Only or NOT-Bound-Only, retrieve local_shap once outside the loop
             if mode in ["Bound-Only", "NOT-Bound-Only"]:
                 binding_value = 1 if mode == "Bound-Only" else 0
-                local_shap = self.get_local_SHAP_based_on_binding(binding_value)
+                local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value)
             else:
                 local_shap = None
 
@@ -2635,7 +2635,7 @@ class ShapNetworkInvestigator:
         return shap_col, mean_df[shap_col]
     
 
-    def get_local_SHAP_based_on_binding(self, binding_value): 
+    def get_local_SHAP_based_on_binding_and_covariates(self, binding_value, condition=None): 
 
         result = {}
 
@@ -2681,7 +2681,7 @@ class ShapNetworkInvestigator:
                 binding_value = 0
 
             # Use the simplified function to get mean SHAP values for each feature at the given binding value
-            local_shap = self.get_local_SHAP_based_on_binding(binding_value)
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value)
 
             for cell_line in self.cell_lines:
                 # local_shap[cell_line] is a dict: {shap_col: mean_series}
