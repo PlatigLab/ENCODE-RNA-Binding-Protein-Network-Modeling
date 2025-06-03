@@ -2809,86 +2809,39 @@ class ShapNetworkInvestigator:
             fig.supylabel(f"Global SHAP: {label_y}", fontsize=12)
             plt.tight_layout()
             plt.show()
+            
 
-    
+    def tmp_parallel_helper(self, args):
+        feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
+        _, shap_series = self.parallel_helper_for_getting_local_SHAP_by_binding(
+            feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df
+        )
+        abs_mean = shap_series.abs().mean()
+        return (feature, binding_value, condition, abs_mean)
+
 
     def tmp(self): 
 
-        rbp_counts = {}
+        feature_binding_values = [("TBRG4_1_binding", 1), ("TBRG4_1_binding", 0), ("SUGP2_4_binding", 1), ("SUGP2_4_binding", 0), ("PRPF8_4_binding", 1), ("PRPF8_4_binding", 0)]
+        shap_lazyframes = self.get_SHAP_data_as_lazyframe(self.cell_lines[0])
 
-        for file in sorted(glob.glob("../../../../../../data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/**/SE.*", recursive=True)):
-            if "HepG2" in file and "Transfection" not in file: 
-                rbp = file.split("/")[-2].split("-")[0]
-
-                df = pl.scan_csv(file, separator="\t")
-                filtered_df = df.filter(
-                    (pl.col("FDR") <= self.FDR_THRESHOLD) & 
-                    (pl.col("IncLevelDifference").abs() >= self.DPSI_THRESHOLD)
-                )
-                count = filtered_df.collect().height
-                rbp_counts[rbp] = count
-
-        rbp_counts_df = pd.DataFrame(list(rbp_counts.items()), columns=["RBP", "Event Count"])
-        summary_table = self.feature_metric_summary_table.copy()
-        summary_table = summary_table[summary_table["Cell Line"] == "HepG2"]
-        summary_table = summary_table.merge(rbp_counts_df, how="left", left_on="RBP", right_on="RBP")
-        summary_table = summary_table.dropna()
-
-        # Take unique rows of summary_table by RBP and the two columns used later
-        summary_table = summary_table[["RBP", "# RBP Differential Events", "Event Count"]].drop_duplicates(subset=["RBP"])
-
-        # Calculate correlation values
-        pearson_corr, _ = pearsonr(summary_table["# RBP Differential Events"], summary_table["Event Count"])
-        spearman_corr, _ = spearmanr(summary_table["# RBP Differential Events"], summary_table["Event Count"])
-
-        # Plot # RBP Differential Events vs event count as a scatterplot
-        plt.figure(figsize=(6, 4), dpi=200)
-        sns.scatterplot(
-            data=summary_table,
-            x="# RBP Differential Events",
-            y="Event Count",
-            alpha=0.7,
-            edgecolor="black",
-            color="deepskyblue",
-            s=20
-        )
-
-        # Add a diagonal line for reference
-        plt.plot(
-            [summary_table["# RBP Differential Events"].min(), summary_table["# RBP Differential Events"].max()],
-            [summary_table["# RBP Differential Events"].min(), summary_table["# RBP Differential Events"].max()],
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="y=x"
-        )
-
-        # Annotate the top 6 values in "Event Count"
-        top_6 = summary_table.nlargest(10, "Event Count")
-        for _, row in top_6.iterrows():
-            plt.text(
-                row["# RBP Differential Events"] + -100, 
-                row["Event Count"]+100, 
-                row["RBP"], 
-                fontsize=6, 
-                color="black"
+        has_rbp_kd_df = self.get_has_RBP_KD_results(
+                shap_lazyframes[0].clone(), 
+                self.cell_lines[0]
             )
+        
+        conditions = [None, "CTRL", "RBP_KD", "RBP_KD_at_position"]
 
-        # Add labels, title, and correlation values
-        plt.title("Yogi's Data vs rMATS Original File # Diff Events", fontsize=12)
-        plt.xlabel("Yogi's Data # Diff Events", fontsize=10)
-        plt.ylabel("rMATS Original File # Diff Events", fontsize=10)
-        num_points = len(summary_table)
-        plt.text(
-            0.05, 0.85, 
-            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}", 
-            transform=plt.gca().transAxes, 
-            fontsize=8, 
-            verticalalignment='top'
-        )
-        plt.legend(fontsize=8)
-        plt.tight_layout()
-        plt.show()
-        plt.close()
+        # Prepare all combinations of (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, self)
+        tasks = [
+            (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, )
+            for feature, binding_value in feature_binding_values
+            for condition in conditions
+            if not (binding_value == 1 and condition == "RBP_KD_at_position")
+        ]
 
-        return summary_table
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
+            results = list(executor.map(self.tmp_parallel_helper, tasks))
+            
+        for feature, binding_value, condition, abs_mean in results:
+            print(f"Feature: {feature}, Binding Value: {binding_value}, Condition: {condition}, Abs Mean: {abs_mean}")
