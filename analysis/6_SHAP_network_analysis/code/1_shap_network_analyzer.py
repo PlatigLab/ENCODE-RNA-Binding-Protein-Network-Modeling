@@ -2831,6 +2831,151 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
+    def shap_for_zero_binding_features_by_condition(self): 
+
+        # Get specialized global SHAP for NOT-Bound-Only and all valid conditions
+        mode = "NOT-Bound-Only"
+        valid_conditions = ["CTRL", "RBP_KD", "RBP_KD_at_position"]
+        # Get all specialized SHAP heatmaps for each condition
+        specialized_shap = {cond: self.calculate_specialized_global_SHAP(mode=mode, condition=cond) for cond in valid_conditions}
+
+        for cell_line in self.cell_lines:
+            # Gather all heatmaps for this cell line to compute global min/max
+            heatmaps = [specialized_shap[cond][cell_line] for cond in valid_conditions]
+            all_values = np.concatenate([h.values.flatten() for h in heatmaps])
+            all_values = all_values[~np.isnan(all_values)]
+            vmin, vmax = all_values.min(), all_values.max()
+
+            for log_scale in [False, True]:
+                fig, axes = plt.subplots(3, 1, figsize=(35, 28), dpi=300, sharex=True)
+                cbar_ax = fig.add_axes([0.94, 0.1, 0.02, 0.6])
+
+                # Use hierarchical clustering on "CTRL" condition to get column order
+                base_heatmap = specialized_shap["CTRL"][cell_line]
+                linkage = sch.linkage(base_heatmap.T, method="ward")
+                dendro = sch.dendrogram(linkage, no_plot=True)
+                ordered_cols = [base_heatmap.columns[i] for i in dendro["leaves"]]
+
+                for idx, cond in enumerate(valid_conditions):
+                    data = specialized_shap[cond][cell_line][ordered_cols]
+                    norm = LogNorm(vmin=max(vmin, 1e-8), vmax=vmax) if log_scale else None
+
+                    sns.heatmap(
+                        data,
+                        ax=axes[idx],
+                        cmap="Blues",
+                        cbar=(idx == 0),
+                        cbar_ax=(cbar_ax if idx == 0 else None),
+                        vmin=vmin,
+                        vmax=vmax,
+                        norm=norm,
+                        linewidths=0.5,
+                        linecolor="gray",
+                        annot=True,
+                        fmt=".3f",
+                        annot_kws={"size": 16, "rotation": 90},
+                    )
+
+                    # Always set the face color to black
+                    axes[idx].set_facecolor("black")
+                    
+                    if cond == "CTRL":
+                        subplot_title = "CTRL (RBPs clustered by Ward)"
+                    else:
+                        subplot_title = " (Matching RBP clustering order from CTRL)"
+                        if cond == "RBP_KD_at_position":
+                            subplot_title = "RBP KD at SPECIFIC Position" +  subplot_title
+                        elif cond == "RBP_KD":
+                            subplot_title = "RBP KD (regardless of KD RBP being originally bound to any position)" +  subplot_title
+
+                    axes[idx].set_title(f"{subplot_title}", fontsize=30)
+                    axes[idx].set_xlabel("")
+                    axes[idx].set_ylabel("")
+                    axes[idx].tick_params(axis='y', labelsize=24)
+                    axes[idx].tick_params(axis='x', labelsize=16)
+
+                cbar_ax.set_title('"Global SHAP"', fontsize=30, pad=20)
+                cbar_ax.tick_params(labelsize=24)
+                
+                fig.supxlabel("RBP", fontsize=40, x=0.45)
+                fig.supylabel("Position", fontsize=40, x=-0.01, y=0.35)
+                plt.suptitle(
+                    f"{cell_line}: 'NOT Bound Global SHAP' for [1] CTRL, [2] RBP KD, and [3] RBP KD (Specific Position)\n\nNOTE 1: 'RBP KD' takes all events from that feature's RBP KD sample (DOESN'T matter if KD RBP was bound to any position)\n\nNOTE 2: 'CTRL' RBP order clustered by Ward and all other heatmaps match RBP order\n\nNOTE 3: Black square indicates either [1] 'Feature\'s RBP never had KD experiment' or\n[2] 'Feature\'s RBP had KD experiment but no examples found' or\n[3] (IF APPLICABLE) Log of Zero\n\nNOTE 4: colorbar shared across all heatmaps\n\n{'NOTE 5: colors in log-scale (only shows values > 0)' if log_scale else ''}\n",
+                    fontsize=35, y=0.99
+                )
+                plt.tight_layout(rect=[0, 0, 0.91, 1])
+                plt.show()
+
+        # Take every 2-length combination of valid_conditions
+        condition_pairs = list(combinations(valid_conditions, 2))
+
+        for cell_line in self.cell_lines:
+            fig, axes = plt.subplots(len(condition_pairs), 1, figsize=(4, 8), dpi=300)
+            for ax, (cond1, cond2) in zip(axes, condition_pairs):
+                # Get the two heatmaps
+                df1 = specialized_shap[cond1][cell_line]
+                df2 = specialized_shap[cond2][cell_line]
+
+                # Convert to long form
+                df1_long = df1.reset_index().melt(id_vars=df1.index.name or "index", var_name="RBP", value_name=f"{cond1}_val")
+                df1_long = df1_long.rename(columns={df1.index.name or "index": "Position"})
+                df2_long = df2.reset_index().melt(id_vars=df2.index.name or "index", var_name="RBP", value_name=f"{cond2}_val")
+                df2_long = df2_long.rename(columns={df2.index.name or "index": "Position"})
+
+                # Merge on RBP and Position
+                merged = pd.merge(df1_long, df2_long, on=["RBP", "Position"])
+                # Remove rows with null values
+                merged = merged.dropna(subset=[f"{cond1}_val", f"{cond2}_val"])
+
+                x = merged[f"{cond1}_val"]
+                y = merged[f"{cond2}_val"]
+
+                # Calculate correlations
+                pearson_corr, _ = pearsonr(x, y)
+                spearman_corr, _ = spearmanr(x, y)
+                num_points = len(merged)
+
+                # Scatterplot
+                sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.7, s=10)
+
+                ax.plot([x.min(), x.max()], [x.min(), x.max()], color="red", linestyle="--", linewidth=1, label="y=x")
+
+                ax.set_xlabel(f"{cond1.replace('_', ' ')}", fontsize=10)
+                ax.set_ylabel(f"{cond2.replace('_', ' ')}", fontsize=10)
+                ax.set_title(f"{cond1.replace('_', ' ')} vs {cond2.replace('_', ' ')}", fontsize=10)
+
+                # Annotate top 10 points on each axis
+                top_10_x = merged.nlargest(10, f"{cond1}_val")
+                top_10_y = merged.nlargest(10, f"{cond2}_val")
+                top = pd.concat([top_10_x, top_10_y]).drop_duplicates()
+
+                for _, row in top.iterrows():
+                    label = f"{row['RBP']}_{row['Position']}"
+                    ax.text(
+                        row[f"{cond1}_val"],
+                        row[f"{cond2}_val"],
+                        label,
+                        fontsize=4,
+                        color="black",
+                        alpha=1
+                    )
+
+                # Add stats
+                ax.text(
+                    0.98, 0.02,
+                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                    transform=ax.transAxes,
+                    fontsize=8,
+                    verticalalignment='bottom',
+                    horizontalalignment='right'
+                )
+
+            plt.suptitle(f"{cell_line}: 'NOT Bound Global SHAP' Pairwise Combinations for\n[1] CTRL, [2] RBP KD, and [3] RBP KD (Specific Position)", fontsize=8, y=1.0)
+            plt.tight_layout()
+            plt.show()
+
+    
+
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
         _, shap_series = self.parallel_helper_for_getting_local_SHAP_by_binding(
