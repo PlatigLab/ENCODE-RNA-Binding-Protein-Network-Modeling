@@ -2974,7 +2974,158 @@ class ShapNetworkInvestigator:
             plt.tight_layout()
             plt.show()
 
+
+    def hacky_not_bound_global_SHAP_by_number_binding(self): 
+        combos = [
+            ("HepG2", "PRPF8_4"),
+            ("HepG2", "BCLAF1_4"),
+            ("K562", "AQR_4"),
+        ]
+
+        for cell_line, feature in combos:
+            rbp, pos = feature.split("_")
+            pos = int(pos)
+            binding_col = f"{rbp}_{pos}_binding"
+            shap_col = f"{rbp}_{pos}_shap"
+
+            shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+
+            # For each lazyframe, subset to rows where binding_col == 0, sort by 'index', and collect
+            filtered_dfs = [
+                lf.filter(pl.col(binding_col) == 0).select(["index", shap_col]).collect().sort("index")
+                for lf in shap_lazyframes
+            ]
+
+            # Calculate the mean SHAP values across the 5 filtered DataFrames
+            mean_shap_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                cell_line_shap=filtered_dfs,
+                metric="mean"
+            )
+
+            # Take the first lazyframe, filter to binding_col == 0, sort by 'index', and collect index + all "_binding" columns
+            schema = shap_lazyframes[0].collect_schema().names()
+            binding_cols = [col for col in schema if col.endswith("_binding")]
+            df_binding = (
+                shap_lazyframes[0]
+                .filter(pl.col(binding_col) == 0)
+                .select(["index"] + binding_cols)
+                .collect()
+                .sort("index")
+            )
+
+            # Compute horizontal sum of all "_binding" columns per row
+            df_binding = df_binding.with_columns(
+                pl.sum_horizontal([pl.col(col) for col in binding_cols]).alias("binding_sum")
+            )
+
+            # Add the mean SHAP value for shap_col to df_binding (indices are aligned due to sorting)
+            df_binding = df_binding.with_columns(
+                pl.Series(f"{shap_col}_mean", mean_shap_df[shap_col])
+            )
+
+            print(f"\n{cell_line} - {feature}")
+            for cutoff in [1, 2, 3, 4, 7, 10]:
+                subset = df_binding.filter(pl.col("binding_sum") >= cutoff)
+                abs_mean = subset[f"{shap_col}_mean"].abs().mean()
+                print(f"Cutoff >= {cutoff}: abs mean {shap_col}_mean = {abs_mean}")
+
     
+    def hacky_plot_bound_unbound_signed_local_SHAP_vs_PSI(self):
+
+        # Define the cell line and feature combinations
+        combos = [
+            ("HepG2", "PRPF8_4"),
+            ("HepG2", "BCLAF1_4"),
+            ("K562", "AQR_4"),
+        ]
+
+        for cell_line, feature in combos:
+            rbp, pos = feature.split("_")
+            pos = int(pos)
+            binding_col = f"{rbp}_{pos}_binding"
+            shap_col = f"{rbp}_{pos}_shap"
+            psi_col = "Target_PSI"
+
+            # Get SHAP lazyframes for the cell line
+            shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+
+            for binding_value in [1, 0]:
+                # For each lazyframe, filter to binding_col == binding_value, sort by 'index', and select index, psi_col, shap_col
+                dfs = []
+                for lf in shap_lazyframes:
+                    df = (
+                        lf.filter(pl.col(binding_col) == binding_value)
+                        .select(["index", psi_col, shap_col])
+                        .collect()
+                        .sort("index")
+                    )
+                    dfs.append(df)
+
+                # Calculate mean SHAP value across the 5 DataFrames
+                mean_shap_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=[df.select(["index", shap_col]) for df in dfs],
+                    metric="mean"
+                )
+                mean_shap_df = mean_shap_df.rename({shap_col: f"{shap_col}_mean"})
+
+                # Use the first dataframe as the base for index and psi
+                base_df = dfs[0].select(["index", psi_col])
+                base_df = base_df.with_columns(
+                    pl.Series(f"{shap_col}_mean", mean_shap_df[f"{shap_col}_mean"])
+                )
+                merged = base_df
+
+                # Prepare data for plotting
+                y = merged["Target_PSI"].to_numpy()
+                x = merged[f"{shap_col}_mean"].to_numpy()
+
+                # Prepare mask for SHAP >= 1e-6
+                mask = np.abs(x) >= 1e-6
+
+                fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=100)
+                plot_titles = [
+                    "All Data - Linear Colorbar",
+                    "All Data - Log Colorbar",
+                    "Abs(Local SHAP) ≥ 1e-6 - Linear Colorbar",
+                    "Abs(Local SHAP) ≥ 1e-6 - Log Colorbar"
+                ]
+                # Use axes.flat for simple iteration over axes
+                plot_configs = [
+                    (False, None, plot_titles[0]),
+                    (False, LogNorm(), plot_titles[1]),
+                    (True, None, plot_titles[2]),
+                    (True, LogNorm(), plot_titles[3]),
+                ]
+
+                for ax, (use_mask, norm, title) in zip(axes.flat, plot_configs):
+                    if use_mask:
+                        x_plot = x[mask]
+                        y_plot = y[mask]
+                    else:
+                        x_plot = x
+                        y_plot = y
+
+                    hb = ax.hexbin(
+                        x_plot, y_plot,
+                        gridsize=70,
+                        cmap='viridis',
+                        norm=norm,
+                        edgecolors='black',
+                        mincnt=1, 
+                        linewidths=0.2
+                    )
+                    ax.set_ylabel("Actual PSI", fontsize=10)
+                    ax.set_xlabel("Local SHAP (Mean Across 5 Models)", fontsize=10)
+                    ax.set_title(title, fontsize=12)
+                    plt.colorbar(hb, ax=ax)
+
+                plt.suptitle(
+                    f"{cell_line} - {feature}: Actual PSI vs Local SHAP\nfor ALL rows where feature {'bound' if binding_value == 1 else 'not bound'} (aka. binding == {binding_value})",
+                    fontsize=18, y=0.99
+                )
+                plt.tight_layout(rect=[0, 0, 1, 0.96])
+                plt.show()
+
 
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
