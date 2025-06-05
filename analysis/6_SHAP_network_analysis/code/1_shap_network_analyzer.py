@@ -3315,6 +3315,168 @@ class ShapNetworkInvestigator:
                 plt.tight_layout(rect=[0, 0, 1, 0.96])
                 plt.show()
 
+    
+    def hacky_plot_bound_unbound_all_data_vs_unique_binding_global_SHAP(self): 
+        # Define output file path
+        output_file = "./unique_binding_bound_unbound_global_SHAP.pkl"
+        if os.path.exists(output_file):
+            # Load unique binding global SHAP (result)
+            with open(output_file, "rb") as f:
+                result = pickle.load(f)
+            logger.success(f"FROM CACHE: Loaded unique binding global SHAP from {output_file}")
+
+            # Load "All Data" bound and unbound global SHAP from cache
+            all_data_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)
+            all_data_unbound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)
+
+            # Prepare figure
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=200)
+            cell_lines = ["HepG2", "K562"]
+            conditions = ["bound", "unbound"]
+
+            for row_idx, cell_line in enumerate(cell_lines):
+                for col_idx, condition in enumerate(conditions):
+                    ax = axes[row_idx, col_idx]
+
+                    # Get unique binding and all data DataFrames for this cell line and condition
+                    unique_df = result[cell_line][condition]
+                    if condition == "bound":
+                        all_data_df = all_data_bound[cell_line]
+                    elif condition == "unbound":
+                        all_data_df = all_data_unbound[cell_line]
+
+                    # Melt to long format for merging
+                    unique_long = unique_df.reset_index().melt(id_vars=unique_df.index.name or "index", var_name="RBP", value_name="unique_val")
+                    unique_long = unique_long.rename(columns={unique_df.index.name or "index": "Position"})
+                    unique_long["Feature"] = unique_long["RBP"].astype(str) + "_" + unique_long["Position"].astype(str)
+                    all_data_long = all_data_df.reset_index().melt(id_vars=all_data_df.index.name or "index", var_name="RBP", value_name="all_data_val")
+                    all_data_long = all_data_long.rename(columns={all_data_df.index.name or "index": "Position"})
+                    all_data_long["Feature"] = all_data_long["RBP"].astype(str) + "_" + all_data_long["Position"].astype(str)
+
+                    # Assert that all unique values of Feature in all_data_long and unique_long are the same
+                    assert set(all_data_long["Feature"].unique()) == set(unique_long["Feature"].unique()), "Unique values of Feature do not match between all_data_long and unique_long"
+                    # Merge on Feature
+                    merged = pd.merge(all_data_long[["Feature", "all_data_val"]], unique_long[["Feature", "unique_val"]], on="Feature", how="inner", validate="1:1")
+
+                    # Assertions
+                    if condition == "unbound":
+                        assert not merged.isnull().values.any(), "Unbound: Null values found in merged table"
+                    elif condition == "bound":
+                        # For each row, either both columns are null or both are not null
+                        both_null = merged["all_data_val"].isnull() & merged["unique_val"].isnull()
+                        both_not_null = (~merged["all_data_val"].isnull()) & (~merged["unique_val"].isnull())
+                        assert (both_null | both_not_null).all(), "Bound: There are rows where only one column is null"
+
+                    # Remove rows where both are null (for plotting)
+                    merged = merged.dropna(subset=["all_data_val", "unique_val"], how="all")
+
+                    # Scatterplot
+                    x = merged["all_data_val"]
+                    y = merged["unique_val"]
+
+                    pearson_corr, _ = pearsonr(x, y)
+                    spearman_corr, _ = spearmanr(x, y)
+                
+                    num_points = len(merged)
+
+                    sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.7, s=10)
+                    ax.plot([x.min(), x.max()], [x.min(), x.max()], color="lightgreen", linestyle="--", linewidth=1, label="y=x")
+
+                    # Annotate top 10 points with the largest absolute difference between axes
+                    merged["abs_diff"] = (merged["all_data_val"] - merged["unique_val"]).abs()
+                    top_diff = merged.nlargest(10, "abs_diff")
+                    for _, row in top_diff.iterrows():
+                        ax.text(
+                            row["all_data_val"],
+                            row["unique_val"],
+                            row["Feature"],
+                            fontsize=6,
+                            color="red",
+                            alpha=0.8
+                        )
+
+                    ax.set_title(f"{cell_line} - {condition.capitalize()}", fontsize=14)
+                    ax.set_xlabel("All Data Global SHAP", fontsize=12)
+                    ax.set_ylabel("Unique Binding Global SHAP", fontsize=12)
+                    ax.text(
+                        0.98, 0.02,
+                        f"Pearson: {pearson_corr:.5f}\nSpearman: {spearman_corr:.5f}\nPoints: {num_points}",
+                        transform=ax.transAxes,
+                        fontsize=10,
+                        verticalalignment='bottom',
+                        horizontalalignment='right'
+                    )
+
+            plt.suptitle("Global SHAP: All Data vs Unique Binding Patterns\n(Columns: Bound/Unbound, Rows: HepG2/K562)", fontsize=16)
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            result = {}
+            for cell_line in self.cell_lines:
+                logger.info(f"Processing cell line: {cell_line}")
+                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+
+                unique_dfs = []
+                for lf in shap_lazyframes:
+                    schema = lf.collect_schema().names()
+                    binding_cols = [col for col in schema if col.endswith("_binding")]
+                    shap_cols = [col for col in schema if col.endswith("_shap")]
+                    # Get unique rows by binding pattern
+                    lf_unique = lf.unique(subset=binding_cols, maintain_order=True, keep="first")
+                    lf_selected = lf_unique.select(shap_cols + binding_cols + ["index"])
+                    df_collected = lf_selected.collect().sort("index")
+                    unique_dfs.append(df_collected)
+
+                assert all(df["index"].to_list() == unique_dfs[0]["index"].to_list() for df in unique_dfs), "All unique_dfs must have identical 'index' values in the same order"
+
+                # For each shap_col, compute abs mean for bound and unbound using pointwise metric function in parallel
+                feature_means = {"bound": {}, "unbound": {}}
+
+                def compute_abs_mean_for_shap_col_binding(shap_col, binding_value):
+                    binding_col = shap_col.replace("_shap", "_binding")
+                    filtered_dfs = [
+                        df.filter(pl.col(binding_col) == binding_value).select(["index", shap_col]).sort("index")
+                        for df in unique_dfs
+                    ]
+                    mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                        cell_line_shap=filtered_dfs,
+                        metric="mean"
+                    )
+                    abs_mean = mean_df[shap_col].abs().mean()
+                    return shap_col, binding_value, abs_mean
+
+                tasks = []
+                for shap_col in shap_cols:
+                    for binding_status, binding_value in [("bound", 1), ("unbound", 0)]:
+                        tasks.append((shap_col, binding_status, binding_value))
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
+                    futures = {
+                        executor.submit(compute_abs_mean_for_shap_col_binding, shap_col, binding_value): (shap_col, binding_status)
+                        for shap_col, binding_status, binding_value in tasks
+                    }
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc=f"{cell_line} shap_col"):
+                        shap_col, binding_value, abs_mean = future.result()
+                        _, binding_status = futures[future]
+                        feature_means[binding_status][shap_col] = abs_mean
+
+                # Convert to DataFrames and then to heatmaps
+                for binding_status in ["bound", "unbound"]:
+                    df = pd.DataFrame([feature_means[binding_status]])
+                    heatmap = self.convert_RBP_position_to_2d_heatmap(df)
+                    if cell_line not in result:
+                        result[cell_line] = {}
+                    result[cell_line][binding_status] = heatmap
+
+                del unique_dfs
+                gc.collect()
+
+            with open(output_file, "wb") as f:
+                pickle.dump(result, f)
+            logger.success(f"Saved unique binding bound/unbound global SHAP to {output_file}")
+            return result
+
 
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
@@ -3326,8 +3488,7 @@ class ShapNetworkInvestigator:
 
 
     def tmp(self): 
-
-        feature_binding_values = [("TBRG4_1_binding", 1), ("TBRG4_1_binding", 0), ("SUGP2_4_binding", 1), ("SUGP2_4_binding", 0), ("PRPF8_4_binding", 1), ("PRPF8_4_binding", 0)]
+        feature_binding_values = [("TBRG4_1_binding", 1), ("TBRG4_1_binding", 0), ("SUGP2_4_binding", 1), ("SUGP2_4_binding", 0), ("SUGP2_3_binding", 1), ("SUGP2_3_binding", 0)]
         shap_lazyframes = self.get_SHAP_data_as_lazyframe(self.cell_lines[0])
 
         has_rbp_kd_df = self.get_has_RBP_KD_results(
