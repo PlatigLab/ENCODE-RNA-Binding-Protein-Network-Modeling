@@ -25,6 +25,8 @@ class ShapNetworkInvestigator:
     FDR_THRESHOLD = 0.1
     DPSI_THRESHOLD = 0.1
 
+    LOCAL_SHAP_ZERO_CUTOFF = 1e-6
+
     CACHE_INFO = {
             "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
             # "SHAP_mp4": {
@@ -75,6 +77,10 @@ class ShapNetworkInvestigator:
                 "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
             },
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
+            "local_SHAP_percent_positive_negative": {
+                "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
+                "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
+            }
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -2973,6 +2979,185 @@ class ShapNetworkInvestigator:
             plt.suptitle(f"{cell_line}: 'NOT Bound Global SHAP' Pairwise Combinations for\n[1] CTRL, [2] RBP KD, and [3] RBP KD (Specific Position)", fontsize=8, y=1.0)
             plt.tight_layout()
             plt.show()
+
+
+    def calculate_percent_positive_and_negative_local_SHAP_per_feature(self, mode=None):
+        assert mode in ["NOT-Bound-Only", "Bound-Only"], "Mode must be 'NOT-Bound-Only' or 'Bound-Only' for this function"
+        OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_positive_negative"][mode]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: loading percent positive and negative local SHAP for mode {mode} from {OUTPUT_FILE}")
+            with open(OUTPUT_FILE, "rb") as f:
+                percent_positive_and_negative_local_SHAP = pickle.load(f)
+            return percent_positive_and_negative_local_SHAP
+        
+        else:
+            logger.info(f"Calculating percent positive and negative local SHAP for mode {mode}")
+
+            # Get local SHAP values for the entire dataset with the specified binding_value based on mode
+            if mode == "NOT-Bound-Only":
+                binding_value = 0
+            elif mode == "Bound-Only":
+                binding_value = 1
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+            
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=None)
+
+            percent_positive = {}
+            percent_negative = {}
+
+            for cell_line in self.cell_lines:
+                logger.info(f"Calculating percent positive and negative local SHAP for {cell_line}")
+
+                feature_dict = local_shap[cell_line]
+                pos_results = {}
+                neg_results = {}
+
+                for shap_col, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} features"):
+                    # Calculate percent positive and negative using polars Series directly
+                    total = len(series)
+                    if total == 0:
+                        percent_pos = float('nan')
+                        percent_neg = float('nan')
+                    else:
+                        percent_pos = (
+                            (len(series.filter(series > self.LOCAL_SHAP_ZERO_CUTOFF)) / total) * 100
+                        )
+                        percent_neg = (
+                            (len(series.filter(series < -self.LOCAL_SHAP_ZERO_CUTOFF)) / total) * 100
+                        )
+
+                    # Parse RBP and position
+                    rbp, pos = self.get_RBP_position(shap_col)
+                    pos_results.setdefault(pos, {})[rbp] = percent_pos
+                    neg_results.setdefault(pos, {})[rbp] = percent_neg
+
+                # Convert to DataFrame: index=position, columns=rbp, and sort index and columns
+                df_pos = pd.DataFrame.from_dict(pos_results, orient="index")
+                df_neg = pd.DataFrame.from_dict(neg_results, orient="index")
+                percent_positive[cell_line] = df_pos.sort_index().sort_index(axis=1)
+                percent_negative[cell_line] = df_neg.sort_index().sort_index(axis=1)
+
+            result = {
+                mode: {
+                    "positive": percent_positive,
+                    "negative": percent_negative
+                }
+            }
+
+            with open(OUTPUT_FILE, "wb") as f:
+                pickle.dump(result, f)
+
+            return result
+
+
+    def plot_percent_positive_and_negative_local_SHAP_per_feature(self, underlying_data=None): 
+        assert underlying_data in ["All-Data"], "Underlying data must be 'All-Data' for this function"
+
+        # Load the percent positive/negative local SHAP pickle files for Bound-Only and NOT-Bound-Only
+        bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="Bound-Only")["Bound-Only"]
+        not_bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="NOT-Bound-Only")["NOT-Bound-Only"]
+
+        # Check all NOT-Bound-Only dataframes for nulls and all dataframes for values in [0, 100] (ignoring NaNs)
+        for mode_data in [bound_data, not_bound_data]:
+            for sign in ["positive", "negative"]:
+                for cell_line, df in mode_data[sign].items():
+                    # Assert all NOT-Bound-Only dataframes have no nulls
+                    if mode_data is not_bound_data:
+                        assert not df.isnull().values.any(), f"Nulls found in NOT-Bound-Only {sign} for {cell_line}"
+                    # Assert all values are between 0 and 100 (ignoring NaNs)
+                    arr = df.values
+                    arr_no_nan = arr[~pd.isnull(arr)]
+                    assert ((arr_no_nan >= 0) & (arr_no_nan <= 100)).all(), f"Values out of range in {sign} for {cell_line}"
+
+        for cell_line in self.cell_lines:
+            # Prepare dataframes
+            df_bound_pos = bound_data["positive"][cell_line]
+            df_bound_neg = bound_data["negative"][cell_line]
+            df_not_bound_pos = not_bound_data["positive"][cell_line]
+            df_not_bound_neg = not_bound_data["negative"][cell_line]
+
+            # Cluster the Bound Only Positive heatmap (row 0, col 0)
+            linkage = sch.linkage(df_bound_pos.fillna(0).T, method="ward")
+            dendro = sch.dendrogram(linkage, no_plot=True)
+            ordered_cols = [df_bound_pos.columns[i] for i in dendro["leaves"]]
+
+            # Reorder all heatmaps to match this clustering order
+            df_bound_pos = df_bound_pos[ordered_cols]
+            df_bound_neg = df_bound_neg[ordered_cols]
+            df_not_bound_pos = df_not_bound_pos[ordered_cols]
+            df_not_bound_neg = df_not_bound_neg[ordered_cols]
+
+            # Set up figure and axes
+            fig, axes = plt.subplots(2, 2, figsize=(50, 20), dpi=300, sharex=True, sharey=True)
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # Single colorbar
+
+            heatmaps = [
+                (df_bound_pos, "Bound Only - % Positive", 0, 0),
+                (df_not_bound_pos, "NOT Bound Only - % Positive", 0, 1),
+                (df_bound_neg, "Bound Only - % Negative", 1, 0),
+                (df_not_bound_neg, "NOT Bound Only - % Negative", 1, 1),
+            ]
+
+            vmin, vmax = 0, 100
+
+            for idx, (data, title, row, col) in enumerate(heatmaps):
+                ax = axes[row, col]
+                sns.heatmap(
+                    data,
+                    ax=ax,
+                    cmap="Blues" if "Positive" in title else "Reds",
+                    vmin=vmin,
+                    vmax=vmax,
+                    cbar=(row == 0 and col == 0),
+                    cbar_ax=(cbar_ax if (row == 0 and col == 0) else None),
+                    linewidths=0.5,
+                    linecolor="gray",
+                    annot=True,
+                    fmt=".2f",
+                    annot_kws={"size": 14, "rotation": 90},
+                )
+                ax.set_title(title, fontsize=35, pad=20)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelsize=30)
+                ax.tick_params(axis='x', labelsize=10)
+
+                ax.set_facecolor("yellow")  # Set face color to black for all axes
+
+            cbar_ax.set_title("%", fontsize=40)
+            cbar_ax.tick_params(labelsize=30)
+            cbar_ax.set_box_aspect(20)
+
+            fig.supxlabel("RBP", fontsize=40, x=0.45, y=-0.01)
+            fig.supylabel("Position", fontsize=40, x=-0.01)
+            plt.suptitle(
+                f"{cell_line}: % Positive/Negative Local SHAP for Bound and NOT Bound Features\
+                \n\nNOTE 1: All heatmaps share RBP clustering order from 'Bound Only - % Positive'\
+                \nNOTE 2: Colorbar values comparable across all heatmaps\
+                \nNOTE 3: Null values indicated by yellow squares\
+                \nNOTE 4: Positive defined as Local SHAP > {self.LOCAL_SHAP_ZERO_CUTOFF} and Negative defined as Local SHAP < -({self.LOCAL_SHAP_ZERO_CUTOFF})\n",
+                fontsize=40, y=1.01
+            )
+            plt.tight_layout(rect=[0, 0, 0.91, 1])
+            plt.show()
+
+
+    def calculate_percent_zero_local_SHAP(self, mode=None):
+        assert mode in ["NOT-Bound-Only", "Bound-Only", "All-Data"], "Mode must be 'NOT-Bound-Only', 'Bound-Only', or 'All-Data' for this function"
+
+        ZERO_CUTOFFS = [1e-10, 1e-8, 1e-6, 1e-4]
+        OUTPUT_FILE = self.CACHE_INFO["percent_zero_local_SHAP"][mode]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: loading percent zero local SHAP for mode {mode} from {OUTPUT_FILE}")
+            with open(OUTPUT_FILE, "rb") as f:
+                percent_zero_local_SHAP = pickle.load(f)
+            return percent_zero_local_SHAP
+        
+        else:
+            logger.info(f"Calculating percent zero local SHAP for mode: {mode}")
 
 
     def hacky_not_bound_global_SHAP_by_number_binding(self): 
