@@ -156,6 +156,10 @@ class ShapNetworkInvestigator:
 
         # Ensure we have 5 dataframes
         assert len(cell_line_shap) == 5
+        # Ensure all columns except "index" end with "_shap"
+        for df in cell_line_shap:
+            non_shap_cols = [col for col in df.columns if col != "index" and not col.endswith("_shap")]
+            assert not non_shap_cols, f"Non-SHAP columns found: {non_shap_cols}"
 
         # Sort each DataFrame in cell_line_shap by the "index" column
         cell_line_shap = [df.sort("index") for df in cell_line_shap]
