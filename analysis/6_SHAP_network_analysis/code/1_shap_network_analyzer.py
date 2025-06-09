@@ -3914,35 +3914,42 @@ class ShapNetworkInvestigator:
 
 
     def tmp_parallel_helper(self, args):
-        feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df = args
+        feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices = args
         _, shap_series = self.parallel_helper_for_getting_local_SHAP_by_binding(
-            feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df
+            feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices
         )
         abs_mean = shap_series.abs().mean()
-        return (feature, binding_value, condition, abs_mean)
+        num_items = len(shap_series)
+        return (feature, binding_value, condition, abs_mean, num_items)
 
 
     def tmp(self): 
         feature_binding_values = [("TBRG4_1_binding", 1), ("TBRG4_1_binding", 0), ("SUGP2_4_binding", 1), ("SUGP2_4_binding", 0), ("SUGP2_3_binding", 1), ("SUGP2_3_binding", 0)]
         shap_lazyframes = self.get_SHAP_data_as_lazyframe(self.cell_lines[0])
 
-        has_rbp_kd_df = self.get_has_RBP_KD_results(
-                shap_lazyframes[0].clone(), 
-                self.cell_lines[0]
-            )
+        # Get unique binding pattern indices using the first shap lazyframe
+        schema = shap_lazyframes[0].collect_schema().names()
+        binding_cols = [col for col in schema if col.endswith("_binding")]
+        unique_binding_pattern_indices = set(
+            shap_lazyframes[0]
+            .unique(subset=binding_cols, maintain_order=True, keep="first")
+            .select('index')
+            .collect()
+            .sort('index')["index"].to_list()
+        )
         
-        conditions = [None, "CTRL", "RBP_KD", "RBP_KD_at_position"]
+        # Set has_rbp_kd_df and condition to None for all tasks
+        has_rbp_kd_df = None
+        condition = None
 
-        # Prepare all combinations of (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, self)
+        # Prepare all combinations of (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices)
         tasks = [
-            (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, )
+            (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices)
             for feature, binding_value in feature_binding_values
-            for condition in conditions
-            if not (binding_value == 1 and condition == "RBP_KD_at_position")
         ]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
             results = list(executor.map(self.tmp_parallel_helper, tasks))
             
-        for feature, binding_value, condition, abs_mean in results:
-            print(f"Feature: {feature}, Binding Value: {binding_value}, Condition: {condition}, Abs Mean: {abs_mean}")
+        for feature, binding_value, condition, abs_mean, num_items in results:
+            logger.info(f"Feature: {feature}, Binding Value: {binding_value}, Condition: {condition}, Abs Mean: {abs_mean}, Num Items: {num_items}")
