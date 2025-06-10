@@ -3687,14 +3687,15 @@ class ShapNetworkInvestigator:
         ]
 
         for config in violinplot_configs:
-            fig, axes = plt.subplots(2, 2, figsize=(20, 12), dpi=300, sharex=True, sharey=True)
+            fig, axes = plt.subplots(4, 1, figsize=(20, 24), dpi=300, sharex=True, sharey=True)
             modes = [("All-Data", all_data_df), ("Unique-Binding", unique_binding_df)]
             legend_handles = None
             legend_labels = None
 
-            for row_idx, cell_line in enumerate(self.cell_lines):
-                for col_idx, (mode_label, df) in enumerate(modes):
-                    ax = axes[row_idx, col_idx]
+            for cell_idx, cell_line in enumerate(self.cell_lines):
+                for mode_idx, (mode_label, df) in enumerate(modes):
+                    ax_idx = cell_idx * 2 + mode_idx
+                    ax = axes[ax_idx]
                     plot_df = df[df["Cell Line"] == cell_line].copy()
                     plot_df["Zero Cutoff"] = plot_df["Zero Cutoff"].astype(float).sort_values(ascending=True)
 
@@ -3711,7 +3712,7 @@ class ShapNetworkInvestigator:
                             density_norm="width"
                         )
                     else:
-                        vp = sns.violinplot(
+                        sns.violinplot(
                             data=plot_df,
                             x="Zero Cutoff",
                             y="% Non Zero",
@@ -3725,7 +3726,7 @@ class ShapNetworkInvestigator:
                             density_norm="width",
                             split=False,
                             inner="box",
-                            width=0.5
+                            width=0.7
                         )
                         # Only collect legend handles/labels from the first plot
                         if legend_handles is None and config["legend"]:
@@ -3735,19 +3736,19 @@ class ShapNetworkInvestigator:
                         if config["legend"]:
                             ax.get_legend().remove()
 
-                    ax.set_title(f"{cell_line} - {mode_label}", fontsize=22)
+                    ax.set_title(f"{cell_line} - {mode_label}", fontsize=30)
                     ax.set_xlabel("")
                     ax.set_ylabel("")
                     ax.set_ylim(-10, 110)
                     # ax.set_xscale("log")
-                    ax.tick_params(axis="x", labelrotation=45, labelsize=20)
+                    ax.tick_params(axis="x", labelrotation=45, labelsize=20, labelbottom=True)
                     ax.tick_params(axis="y", labelsize=18)
 
             # Add a single legend to the right if using hue
             if config["use_hue"]:
                 fig.legend(
                     legend_handles, legend_labels, title="Position",
-                    bbox_to_anchor=(1.02, 0.5), loc="center left", fontsize=16, title_fontsize=18
+                    bbox_to_anchor=(1.02, 0.5), loc="center left", fontsize=30, title_fontsize=30
                 )
 
             if config["hue"] == "Position":
@@ -3755,7 +3756,7 @@ class ShapNetworkInvestigator:
             else:
                 suffix = ""
 
-            fig.suptitle(f"% Local SHAP Non-Zero per Cutoff {suffix}", fontsize=30, y=1.02)
+            fig.suptitle(f"% Local SHAP Non-Zero per Cutoff {suffix}\nNOTE: x-axis is the exact same across all plots", fontsize=30, y=1.01)
             fig.supxlabel("Zero Cutoff", fontsize=28, y=-0.01)
             fig.supylabel("% Non Zero", fontsize=28, x=-0.01)
 
@@ -3814,17 +3815,19 @@ class ShapNetworkInvestigator:
             style="Data Mode",
             markers=True,
             dashes=True,
+            n_boot = 5000,
+            seed = 17
         )
         plt.xscale("log")
         plt.xlabel("Zero Cutoff", fontsize=10)
         plt.ylabel("% Non Zero", fontsize=10)
-        plt.title("% Local SHAP Non-Zero vs Zero Cutoff", fontsize=10)
+        plt.title("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: 'Confidence Interval' bands included around each line", fontsize=10)
         plt.legend(title="Cell Line / Data Mode", fontsize=8, loc="lower left")
 
         plt.show()
 
         # Fourth Figure: Line plot of % Non-Zero vs Zero Cutoff by Position and Data Mode, per cell line
-        fig, axes = plt.subplots(2, 1, figsize=(10, 10), dpi=300, sharex=True, sharey=True)
+        fig, axes = plt.subplots(2, 1, figsize=(10, 11), dpi=300, sharex=True, sharey=True)
 
         # Use a highly contrasting color palette for 6 positions
         palette = sns.color_palette("tab10", n_colors=6)
@@ -3845,6 +3848,7 @@ class ShapNetworkInvestigator:
                 style_order=data_mode_order,
                 palette=palette,
                 ax=ax,
+                errorbar=None,  
             )
             ax.set_xscale("log")
             ax.set_title(cell_line, fontsize=14)
@@ -3880,7 +3884,7 @@ class ShapNetworkInvestigator:
         legend2 = Legend(fig, style_handles, style_labels, title="Data Mode", loc="center left", bbox_to_anchor=(1.01, 0.39), fontsize=14, title_fontsize=16)
         fig.add_artist(legend2)
 
-        plt.suptitle("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: each line is a position and each marker is for a specific 'Data Mode'", fontsize=20, y=1.01, x= 0.6)
+        plt.suptitle("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: each line is a position and each marker is for a specific 'Data Mode'\nNOTE 2: Error around each line ('Confidence Interval') disabled for clarity ", fontsize=20, y=1.01, x= 0.6)
 
         fig.supxlabel("Zero Cutoff", fontsize=16, y=-0.01)
         fig.supylabel("% Non Zero", fontsize=16, x=-0.01)
