@@ -77,6 +77,10 @@ class ShapNetworkInvestigator:
                 "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
             },
             "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
+            "local_SHAP_percent_non_zero": {
+                "All-Data": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_all_data.tsv",
+                "Unique-Binding": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_unique_binding.tsv",
+            },
             "local_SHAP_percent_positive_negative": {
                 "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
                 "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
@@ -3578,20 +3582,74 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
-    def calculate_percent_zero_local_SHAP(self, mode=None):
-        assert mode in ["NOT-Bound-Only", "Bound-Only", "All-Data"], "Mode must be 'NOT-Bound-Only', 'Bound-Only', or 'All-Data' for this function"
+    def parallel_helper_local_SHAP_percent_non_zero(self, data, zero_cutoff): 
 
-        ZERO_CUTOFFS = [1e-10, 1e-8, 1e-6, 1e-4]
-        OUTPUT_FILE = self.CACHE_INFO["percent_zero_local_SHAP"][mode]
+        assert len(data) > 0, "Data must not be empty"
+        assert data.name.endswith("_shap"), "Data must be a local SHAP Series"
+        assert type(data) is pl.Series, "Data must be a polars Series"
+
+        return (
+            (data.abs() > zero_cutoff).sum() / len(data)
+        ) * 100
+    
+
+    def calculate_local_SHAP_percent_non_zero(self, mode=None):
+        VALID_MODES = ["All-Data", "Unique-Binding"]
+        assert mode in VALID_MODES, f"Mode must be one of {VALID_MODES} for this function"
+
+        ZERO_CUTOFFS = [1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1]
+        OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_non_zero"][mode]
 
         if os.path.exists(OUTPUT_FILE):
-            logger.success(f"FROM CACHE: loading percent zero local SHAP for mode {mode} from {OUTPUT_FILE}")
-            with open(OUTPUT_FILE, "rb") as f:
-                percent_zero_local_SHAP = pickle.load(f)
-            return percent_zero_local_SHAP
-        
+            logger.success(f"FROM CACHE: Loading percent non-zero local SHAP for mode {mode} from {OUTPUT_FILE}")
+            return pd.read_csv(OUTPUT_FILE, sep="\t")
+
         else:
-            logger.info(f"Calculating percent zero local SHAP for mode: {mode}")
+            logger.info(f"Calculating percent non-zero local SHAP for mode: {mode}")
+
+            all_results = []
+            for cell_line in self.cell_lines:
+
+                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
+                    cell_line_shap=self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=mode),
+                    metric='mean'
+                )
+
+                zero_cutoffs = ZERO_CUTOFFS  # for clarity
+
+                # Prepare arguments for parallel execution: (feature_series, zero_cutoff)
+                tasks = []
+                for feature in mean_df.columns:
+                    series = mean_df[feature]
+
+                    for zero_cutoff in zero_cutoffs:
+                        tasks.append((series, zero_cutoff, feature))
+
+                # Use ProcessPoolExecutor for parallel computation
+                with concurrent.futures.ProcessPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
+                    future_to_args = {
+                        executor.submit(self.parallel_helper_local_SHAP_percent_non_zero, series, zero_cutoff): (feature, zero_cutoff)
+                        for series, zero_cutoff, feature in tasks
+                    }
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(future_to_args), total=len(future_to_args), desc=f"{cell_line} percent non-zero"):
+                        feature, zero_cutoff = future_to_args[future]
+                        percent_zero = future.result()
+                        all_results.append({
+                            "Cell Line": cell_line,
+                            "Data Mode": mode,
+                            "Feature": feature,
+                            "Zero Cutoff": zero_cutoff,
+                            "% Non Zero": percent_zero
+                        })
+
+            # Convert all_results to DataFrame and save to output file
+            results_df = pd.DataFrame(all_results)
+            results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Saved percent non zero local SHAP for all cell lines in mode {mode} to {OUTPUT_FILE}")
+
+            return results_df
+    
+
 
 
     def hacky_not_bound_global_SHAP_by_number_binding(self): 
