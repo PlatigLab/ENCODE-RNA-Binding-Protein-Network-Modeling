@@ -2714,18 +2714,13 @@ class ShapNetworkInvestigator:
                 has_rbp_kd_df = None
 
             if binding_pattern_type == "Unique-Binding": 
-                # Collect all unique binding patterns, keeping the first row and maintaining order
-                unique_binding_pattern_indices = set(
-                    (
-                        shap_lazyframes[0]
-                        .unique(subset=binding_cols, maintain_order=True, keep="first")
-                        .select('index')
-                        .sort('index')
-                        .collect()["index"].to_list()
-                    )
-                )
-
-                return unique_binding_pattern_indices
+                # Retrieve the 5 SHAP tables per cell line using unique binding mode
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="Unique-Binding")
+                # Take the first DataFrame, extract 'index' as a set
+                unique_binding_pattern_indices = set(shap_dfs[0]["index"].to_list())
+                # Delete the object and garbage collect
+                del shap_dfs
+                gc.collect()
 
             elif binding_pattern_type == "All-Data":
                 unique_binding_pattern_indices = None
