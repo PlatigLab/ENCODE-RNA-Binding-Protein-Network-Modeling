@@ -26,8 +26,6 @@ class ShapNetworkInvestigator:
     FDR_THRESHOLD = 0.1
     DPSI_THRESHOLD = 0.1
 
-    LOCAL_SHAP_ZERO_CUTOFF = 1e-6
-
     CACHE_INFO = {
             "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
             # "SHAP_mp4": {
@@ -2730,7 +2728,6 @@ class ShapNetworkInvestigator:
             elif binding_pattern_type == "All-Data":
                 unique_binding_pattern_indices = None
 
-
             feature_dict = {}
             with concurrent.futures.ProcessPoolExecutor(max_workers = self.get_slurm_job_num_cpus()) as executor:
                 futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices): binding_col for binding_col in binding_cols}
@@ -3011,7 +3008,8 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
-    def calculate_percent_positive_and_negative_local_SHAP_per_feature(self, mode=None):
+    def calculate_percent_positive_and_negative_local_SHAP_per_feature(self, mode=None, underlying_data=None):
+        assert underlying_data in ["Unique-Binding"], "Underlying data must be 'Unique-Binding' for this function"
         assert mode in ["NOT-Bound-Only", "Bound-Only"], "Mode must be 'NOT-Bound-Only' or 'Bound-Only' for this function"
         OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_positive_negative"][mode]
 
@@ -3023,6 +3021,7 @@ class ShapNetworkInvestigator:
         
         else:
             logger.info(f"Calculating percent positive and negative local SHAP for mode {mode}")
+            POSITIVE_NEGATIVE_CUTOFFS = [1e-4, 1e-3, 1e-2, 1e-1, 0.5]
 
             # Get local SHAP values for the entire dataset with the specified binding_value based on mode
             if mode == "NOT-Bound-Only":
@@ -3032,54 +3031,53 @@ class ShapNetworkInvestigator:
             else:
                 raise ValueError(f"Unsupported mode: {mode}")
             
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=None)
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=None, binding_pattern_type=underlying_data)
 
-            percent_positive = {}
-            percent_negative = {}
+            results_by_cutoff = {}
 
-            for cell_line in self.cell_lines:
-                logger.info(f"Calculating percent positive and negative local SHAP for {cell_line}")
+            for cutoff in POSITIVE_NEGATIVE_CUTOFFS:
+                percent_positive = {}
+                percent_negative = {}
 
-                feature_dict = local_shap[cell_line]
-                pos_results = {}
-                neg_results = {}
+                for cell_line in self.cell_lines:
+                    logger.info(f"Calculating percent positive and negative local SHAP for {cell_line} at cutoff {cutoff}")
 
-                for shap_col, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} features"):
-                    # Calculate percent positive and negative using polars Series directly
-                    total = len(series)
-                    if total == 0:
-                        percent_pos = float('nan')
-                        percent_neg = float('nan')
-                    else:
-                        percent_pos = (
-                            (len(series.filter(series > self.LOCAL_SHAP_ZERO_CUTOFF)) / total) * 100
-                        )
-                        percent_neg = (
-                            (len(series.filter(series < -self.LOCAL_SHAP_ZERO_CUTOFF)) / total) * 100
-                        )
+                    feature_dict = local_shap[cell_line]
+                    pos_results = {}
+                    neg_results = {}
 
-                    # Parse RBP and position
-                    rbp, pos = self.get_RBP_position(shap_col)
-                    pos_results.setdefault(pos, {})[rbp] = percent_pos
-                    neg_results.setdefault(pos, {})[rbp] = percent_neg
+                    for shap_col, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} features (cutoff={cutoff})"):
+                        total = len(series)
 
-                # Convert to DataFrame: index=position, columns=rbp, and sort index and columns
-                df_pos = pd.DataFrame.from_dict(pos_results, orient="index")
-                df_neg = pd.DataFrame.from_dict(neg_results, orient="index")
-                percent_positive[cell_line] = df_pos.sort_index().sort_index(axis=1)
-                percent_negative[cell_line] = df_neg.sort_index().sort_index(axis=1)
+                        if total == 0:
+                            percent_pos = float('nan')
+                            percent_neg = float('nan')
+                        else:
+                            percent_pos = (
+                                (len(series.filter(series > cutoff)) / total) * 100
+                            )
+                            percent_neg = (
+                                (len(series.filter(series < (-cutoff))) / total) * 100
+                            )
 
-            result = {
-                mode: {
+                        rbp, pos = self.get_RBP_position(shap_col)
+                        pos_results.setdefault(pos, {})[rbp] = percent_pos
+                        neg_results.setdefault(pos, {})[rbp] = percent_neg
+
+                    df_pos = pd.DataFrame.from_dict(pos_results, orient="index")
+                    df_neg = pd.DataFrame.from_dict(neg_results, orient="index")
+                    percent_positive[cell_line] = df_pos.sort_index().sort_index(axis=1)
+                    percent_negative[cell_line] = df_neg.sort_index().sort_index(axis=1)
+
+                results_by_cutoff[cutoff] = {
                     "positive": percent_positive,
                     "negative": percent_negative
                 }
-            }
 
             with open(OUTPUT_FILE, "wb") as f:
-                pickle.dump(result, f)
+                pickle.dump(results_by_cutoff, f)
 
-            return result
+            return results_by_cutoff
 
 
     def plot_percent_positive_and_negative_local_SHAP_per_feature(self, underlying_data=None): 
