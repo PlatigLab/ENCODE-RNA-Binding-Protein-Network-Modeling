@@ -229,8 +229,9 @@ class ShapNetworkInvestigator:
         return shap_dfs
     
 
-    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line, binding_unique=None):
+    def retrieve_5_SHAP_tables_per_cell_line(self, cell_line, binding_unique=None, return_first_only=False):
         assert binding_unique in ["All-Data", "Unique-Binding"]
+        assert return_first_only in [True, False], "return_first_only should be either True or False"
         
         shap_dfs =  []
         for i, df in enumerate(self.get_SHAP_data_as_lazyframe(cell_line)):
@@ -248,7 +249,12 @@ class ShapNetworkInvestigator:
             df = df.select(shap_columns).sort('index').collect()
             
             logger.info(f"Loaded SHAP file for {cell_line}, iteration {i+1}, {binding_unique}, shape {df.shape}")
+
             shap_dfs.append(df)
+
+            if i == 0 and return_first_only:
+                # If we only want the first DataFrame, break after the first iteration
+                break
 
         return shap_dfs
     
@@ -2718,7 +2724,7 @@ class ShapNetworkInvestigator:
 
             if binding_pattern_type == "Unique-Binding": 
                 # Retrieve the 5 SHAP tables per cell line using unique binding mode
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="Unique-Binding")
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="Unique-Binding", return_first_only=True)
                 # Take the first DataFrame, extract 'index' as a set
                 unique_binding_pattern_indices = set(shap_dfs[0]["index"].to_list())
                 # Delete the object and garbage collect
