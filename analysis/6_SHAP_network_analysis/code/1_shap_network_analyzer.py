@@ -83,7 +83,11 @@ class ShapNetworkInvestigator:
             "local_SHAP_percent_positive_negative": {
                 "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
                 "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
-            }
+            },
+            "activator_repressor_behavior_score": {
+                "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
+                "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
+            },
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -3923,6 +3927,84 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def calculate_activator_repressor_behavior_score(self, binding_mode=None, underlying_data=None):
+        assert binding_mode in ["Bound-Only", "NOT-Bound-Only"], "binding_mode must be 'Bound-Only' or 'NOT-Bound-Only' for this function"
+        assert underlying_data in ["Unique-Binding"], "underlying_data must be 'Unique-Binding' for this function"
+
+        OUTPUT_FILE = self.CACHE_INFO["activator_repressor_behavior_score"][binding_mode]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: Activator/Repressor behavior score already exists for binding_mode={binding_mode}")
+            return pd.read_csv(OUTPUT_FILE, sep="\t")
+
+        else: 
+            ZERO_CUTOFF = [0, 1e-5, 1e-4, 5e-3, 1e-3]
+
+            logger.info(f"Calculating Activator/Repressor behavior score for binding_mode={binding_mode}")
+
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(
+                binding_value=1 if binding_mode == "Bound-Only" else 0,
+                condition=None,
+                binding_pattern_type=underlying_data
+            )
+
+            results = []
+            for cell_line in self.cell_lines:
+                feature_dict = local_shap[cell_line]
+                for feature, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} {binding_mode}"):
+                    # Convert to numpy array for fast computation
+                    arr = series.to_numpy()
+                    for zero_cutoff in ZERO_CUTOFF:
+                        pos_mask = arr > zero_cutoff
+                        neg_mask = arr < -(zero_cutoff)
+
+                        num_pos = np.sum(pos_mask)
+                        sum_pos = np.sum(arr[pos_mask]) if num_pos > 0 else 0.0
+                        num_neg = np.sum(neg_mask)
+                        sum_neg = np.sum(arr[neg_mask]) if num_neg > 0 else 0.0
+
+                        if all(x ==0 for x in [num_pos, num_neg, sum_pos, sum_neg]):
+                            
+                            arbs = np.nan
+                            narbs = np.nan
+                        else:
+                            # ARBS: not normalized metric
+                            arbs = (num_pos * sum_pos) + (num_neg * sum_neg)
+                            # NARBS: normalized metric
+                            denom = (num_pos * sum_pos) - (num_neg * sum_neg)
+                            narbs = arbs / denom if denom != 0 else np.nan
+
+                        num_non_zeros = np.sum(np.abs(arr) > zero_cutoff)
+                        percent_non_zeros = (num_non_zeros / len(arr)) * 100
+                        
+                        results.append({
+                            "Data Mode": "Unique Binding",
+                            "Binding Type": binding_mode.replace("-", " "),
+                            "Cell Line": cell_line,
+                            "Feature": feature.replace("_shap", ""),
+                            "Zero Cutoff": zero_cutoff,
+                            "# Non-Zeros": num_non_zeros,
+                            "% Non-Zeros": percent_non_zeros,
+                            "Num Positive": num_pos,
+                            "Sum Positive": sum_pos,
+                            "Num Negative": num_neg,
+                            "Sum Negative": sum_neg,
+                            "ARBS": arbs,
+                            "NARBS": narbs,
+                        })
+
+            df = pd.DataFrame(results)
+            df = df.sort_values(by=["Cell Line", "Feature", "Zero Cutoff"]).reset_index(drop=True)
+            df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+
+            logger.success(f"Saved Activator/Repressor behavior score for {binding_mode} to {OUTPUT_FILE}")
+
+            del local_shap, results, feature_dict, 
+            gc.collect()
+
+            return df.head()
+
+    
 
     def hacky_not_bound_global_SHAP_by_number_binding(self): 
         combos = [
