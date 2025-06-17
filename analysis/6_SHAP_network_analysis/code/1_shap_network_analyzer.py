@@ -3938,7 +3938,7 @@ class ShapNetworkInvestigator:
             return pd.read_csv(OUTPUT_FILE, sep="\t")
 
         else: 
-            ZERO_CUTOFF = [0, 1e-5, 1e-4, 5e-3, 1e-3]
+            ZERO_CUTOFF = [0, 1e-7, 1e-6, 1e-5, 1e-4, 5e-3, 1e-3, 1e-2,]
 
             logger.info(f"Calculating Activator/Repressor behavior score for binding_mode={binding_mode}")
 
