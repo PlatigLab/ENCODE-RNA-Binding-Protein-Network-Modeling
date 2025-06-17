@@ -3968,11 +3968,14 @@ class ShapNetworkInvestigator:
                             arbs = np.nan
                             narbs = np.nan
                         else:
+                            
+                            numerator = abs(sum_pos) - abs(sum_neg)
                             # ARBS: not normalized metric
-                            arbs = (num_pos * sum_pos) + (num_neg * sum_neg)
-                            # NARBS: normalized metric
-                            denom = (num_pos * sum_pos) - (num_neg * sum_neg)
-                            narbs = arbs / denom if denom != 0 else np.nan
+                            arbs = numerator
+                            
+                            # NARBS: normalized metric (|sum_pos| - |sum_neg|) / (|sum_pos| + |sum_neg|)
+                            denominator = abs(sum_pos) + abs(sum_neg)
+                            narbs = numerator / denominator if denominator != 0 else np.nan
 
                         num_non_zeros = np.sum(np.abs(arr) > zero_cutoff)
                         percent_non_zeros = (num_non_zeros / len(arr)) * 100
