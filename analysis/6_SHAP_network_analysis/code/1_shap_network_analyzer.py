@@ -4008,6 +4008,524 @@ class ShapNetworkInvestigator:
             return df.head()
 
     
+    def plot_activator_repressor_behavior_score(self, underlying_data=None):
+        assert underlying_data in ["Unique-Binding"], "underlying_data must be 'Unique-Binding' for this function"
+
+        # Load ARBS/NARBS scores for Bound-Only and NOT-Bound-Only from cache
+        bound_df = self.calculate_activator_repressor_behavior_score(binding_mode="Bound-Only", underlying_data=underlying_data)
+        not_bound_df = self.calculate_activator_repressor_behavior_score(binding_mode="NOT-Bound-Only", underlying_data=underlying_data)
+
+        # Assert that all real number values for "NARBS" are between -1 and 1 (inclusive)
+        for df in [bound_df, not_bound_df]:
+            narbs_real = df["NARBS"].dropna()
+            assert ((narbs_real >= -1) & (narbs_real <= 1)).all(), "NARBS values out of range [-1, 1]"
+
+        # Define log_modulus once for consistent use
+        def log_modulus(x):
+            return np.sign(x) * np.log10(np.abs(x)) if x != 0 else np.nan
+
+        for score_col in ["ARBS", "NARBS"]:
+            for zero_cutoff in sorted(bound_df["Zero Cutoff"].unique()):
+                for cell_line in self.cell_lines:
+                    # Subset to this cell line and cutoff
+                    bound_sub = bound_df[(bound_df["Cell Line"] == cell_line) & (bound_df["Zero Cutoff"] == zero_cutoff)].copy(deep=True)
+                    not_bound_sub = not_bound_df[(not_bound_df["Cell Line"] == cell_line) & (not_bound_df["Zero Cutoff"] == zero_cutoff)].copy(deep=True)
+
+                    # Split Feature into RBP and Position
+                    for df in [bound_sub, not_bound_sub]:
+                        df[["RBP", "Position"]] = df["Feature"].str.rsplit("_", n=1, expand=True)
+                        df["Position"] = df["Position"].astype(int)
+
+                        # Assert unique RBP/Position
+                        assert not df.duplicated(subset=["RBP", "Position"]).any(), "Duplicate RBP/Position found"
+
+                    # Pivot to heatmap
+                    bound_heatmap = bound_sub.pivot(index="Position", columns="RBP", values=score_col)
+                    not_bound_heatmap = not_bound_sub.pivot(index="Position", columns="RBP", values=score_col)
+
+                    # If ARBS, apply log-modulus transformation and set zeros to NaN
+                    if score_col == "ARBS":
+                        bound_heatmap = bound_heatmap.map(log_modulus)
+                        not_bound_heatmap = not_bound_heatmap.map(log_modulus)
+
+                    # Cluster columns of bound_heatmap using Ward
+                    linkage = sch.linkage(bound_heatmap.fillna(0).T, method="ward")
+                    dendro = sch.dendrogram(linkage, no_plot=True)
+                    ordered_cols = [bound_heatmap.columns[i] for i in dendro["leaves"]]
+
+                    # Reorder both heatmaps to match clustering
+                    bound_heatmap = bound_heatmap[ordered_cols]
+                    not_bound_heatmap = not_bound_heatmap[ordered_cols]
+
+                    # Set vmin/vmax for shared colorbar
+                    all_vals = pd.concat([bound_heatmap.stack(), not_bound_heatmap.stack()])
+                    vmin = np.nanmin(all_vals)
+                    vmax = np.nanmax(all_vals)
+
+                    # Plot
+                    fig, axes = plt.subplots(2, 1, figsize=(36, 20), dpi=300, sharex=True, sharey=True)
+                    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+
+                    for idx, (data, title) in enumerate([
+                        (bound_heatmap, "Bound Only (Ward clustered)"),
+                        (not_bound_heatmap, "NOT Bound Only (RBP order matches above)"),
+                    ]):
+                        ax = axes[idx]
+                        sns.heatmap(
+                            data,
+                            ax=ax,
+                            cmap="bwr",
+                            vmin=vmin,
+                            vmax=vmax,
+                            center=0,
+                            cbar=(idx == 0),
+                            cbar_ax=(cbar_ax if idx == 0 else None),
+                            linewidths=0.5,
+                            linecolor="gray",
+                            annot=True,
+                            fmt=".2f",
+                            annot_kws={"size": 14, "rotation": 90},
+                        )
+                        ax.set_title(title, fontsize=28, pad=15)
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
+                        ax.tick_params(axis='y', labelsize=22)
+                        ax.tick_params(axis='x', labelsize=14)
+                        ax.set_facecolor("lightyellow")
+
+                    cbar_ax.set_title(
+                        f"{score_col}\n(log-modulus)" if score_col == "ARBS" else score_col,
+                        fontsize=28, pad=20
+                    )
+                    cbar_ax.tick_params(labelsize=28)
+                    cbar_ax.set_box_aspect(20)
+
+                    # Reinstate original suptitle, supxlabel, and supylabel
+                    fig.supxlabel("RBP", fontsize=40, x=0.45)
+                    fig.supylabel("Position", fontsize=40, x=-0.01)
+                    plt.suptitle(
+                        f"{cell_line}: {score_col} Heatmaps (Zero Cutoff={zero_cutoff})\n\nNOTE 1: Bound Only clustered by Ward, NOT Bound Only matches RBP order\nNOTE 2: All metric values come from {underlying_data}\nNOTE 3: Null values shown in yellow squares\nNOTE 4: Heatmap values share a common colorbar"
+                        + ("\nNOTE 5: ARBS values are log-modulus transformed (zeros set to NaN)" if score_col == "ARBS" else ""),
+                        fontsize=40, y=1.01
+                    )
+                    plt.tight_layout(rect=[0, 0, 0.91, 1])
+                    plt.show()
+
+
+                    if score_col == "NARBS": 
+                        # Prepare data for scatterplot: compare Bound-Only vs NOT-Bound-Only for each feature
+                        # Merge bound_sub and not_bound_sub on Feature
+                        merged = pd.merge(
+                            bound_sub[["Feature", score_col]],
+                            not_bound_sub[["Feature", score_col]],
+                            on="Feature",
+                            suffixes=("_bound", "_not_bound")
+                        )
+                        
+                        # Drop rows where either value is NaN
+                        merged = merged.dropna(subset=[f"{score_col}_bound", f"{score_col}_not_bound"])
+
+                        x = merged[f"{score_col}_bound"]
+                        y = merged[f"{score_col}_not_bound"]
+
+                        # Calculate correlations and number of points
+                        pearson_corr, _ = pearsonr(x, y)
+                        spearman_corr, _ = spearmanr(x, y)
+                        num_points = len(merged)
+
+                        # Calculate category counts and percentages
+                        activator_mask = (x < -0.5) & (y > 0.5)
+                        repressor_mask = (x > 0.5) & (y < -0.5)
+                        unclear_mask = ~(activator_mask | repressor_mask)
+
+                        num_activator = activator_mask.sum()
+                        num_repressor = repressor_mask.sum()
+                        num_unclear = unclear_mask.sum()
+
+                        percent_activator = (num_activator / num_points) * 100 
+                        percent_repressor = (num_repressor / num_points) * 100 
+                        percent_unclear = (num_unclear / num_points) * 100
+
+                        # Scatterplot
+                        plt.figure(figsize=(5,6), dpi=300)
+                        ax = plt.gca()
+
+                        # Explicitly set axis limits to [-1.1, 1.1]
+                        x0, x1 = -1.05, 1.05
+                        y0, y1 = -1.05, 1.05
+
+                        # Fill the entire region from -1.1 to 1.1 on both axes with lightyellow (Unclear)
+                        ax.add_patch(plt.Rectangle(
+                            (x0, y0), x1 - x0, y1 - y0,
+                            facecolor="#fff9db", alpha=0.7, zorder=0
+                        ))
+
+                        # Repressor quadrant: x < -0.5, y > 0.5 (mediumblue, top left)
+                        ax.add_patch(plt.Rectangle(
+                            (x0, 0.5), -0.5 - x0, y1 - 0.5,
+                            facecolor="mediumblue", alpha=0.18, zorder=1, linewidth=0
+                        ))
+
+                        # Activator quadrant: x > 0.5, y < -0.5 (mediumred, bottom right)
+                        ax.add_patch(plt.Rectangle(
+                            (0.5, y0), x1 - 0.5, -0.5 - y0,
+                            facecolor="#cd2626", alpha=0.18, zorder=1, linewidth=0  # mediumred hex
+                        ))
+
+                        # Add gold negative diagonal from top left to bottom right
+                        ax.plot([x0, x1], [y1, y0], color="gold", linestyle="--", linewidth=1, zorder=1)
+
+                        # Scatterplot with lightgreen dots
+                        sns.scatterplot(x=x, y=y, color="lightgreen", edgecolor="black", alpha=0.6, s=10, ax=ax)
+
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
+
+                        # Add x and y labels using transAxes for precise placement
+                        ax.text(
+                            0.5, -0.06,  # x, y in axes fraction
+                            f"Bound {score_col}",
+                            fontsize=8,
+                            ha='center',
+                            va='top',
+                            transform=ax.transAxes
+                        )
+                        ax.text(
+                            -0.06, 0.5,
+                            f"NOT Bound {score_col}",
+                            fontsize=8,
+                            ha='right',
+                            va='center',
+                            rotation=90,
+                            transform=ax.transAxes
+                        )
+
+                        # Label all points that are not (x > 0.9 and y < -0.9) AND not (x < -0.9 and y > 0.9)
+                        for _, row in merged.iterrows():
+                            xval = row[f"{score_col}_bound"]
+                            yval = row[f"{score_col}_not_bound"]
+                            # Label if NOT in (x > 0.9 and y < -0.9) AND NOT in (x < -0.9 and y > 0.9)
+                            if not ((xval > 0.9 and yval < -0.9) or (xval < -0.9 and yval > 0.9)):
+                                ax.text(
+                                    xval-.03,
+                                    yval+.015,
+                                    row["Feature"],
+                                    fontsize=3,
+                                    color="navy",
+                                    alpha=0.7
+                                )
+
+                        # Set axis limits explicitly (expanded to make space for labels)
+                        ax.set_xlim(x0, x1)
+                        ax.set_ylim(y0, y1)
+
+                        # Add quadrant labels
+                        # Repressor (top left)
+                        ax.text(
+                            x0 + 0.05 * (x1 - x0),
+                            y1 + 0.01 * (y1 - y0),
+                            "Repressor",
+                            color="mediumblue",
+                            fontsize=10,
+                            fontweight="bold",
+                            ha="left",
+                            va="bottom",
+                            alpha=0.8
+                        )
+                        # Activator (bottom right)
+                        ax.text(
+                            x1 - 0.04 * (x1 - x0),
+                            y0 - 0.01 * (y1 - y0),
+                            "Activator",
+                            color="#cd2626",
+                            fontsize=10,
+                            fontweight="bold",
+                            ha="right",
+                            va="top",
+                            alpha=0.8
+                        )
+                        # Unclear (middle of negative x and negative y axes)
+                        ax.text(
+                            0.5 * (x0 + 0),
+                            0.5 * (y0 + 0),
+                            "Unclear",
+                            color="goldenrod",
+                            fontsize=10,
+                            fontweight="bold",
+                            ha="center",
+                            va="center",
+                            alpha=0.7
+                        )
+                        # Unclear (middle of positive x and positive y axes)
+                        ax.text(
+                            0.5 * (0 + x1),
+                            0.5 * (0 + y1),
+                            "Unclear",
+                            color="goldenrod",
+                            fontsize=10,
+                            fontweight="bold",
+                            ha="center",
+                            va="center",
+                            alpha=0.7
+                        )
+
+                        ax.text(
+                            0.98, 0.52,
+                            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\n\n# Points: {num_points}\n"
+                            f"Activator: {num_activator} ({percent_activator:.1f}%)\n"
+                            f"Repressor: {num_repressor} ({percent_repressor:.1f}%)\n"
+                            f"Unclear: {num_unclear} ({percent_unclear:.1f}%)",
+                            transform=ax.transAxes,
+                            fontsize=6,
+                            verticalalignment='bottom',
+                            horizontalalignment='right',
+                        )
+
+                        # Build the title string
+                        title = (
+                            f"{cell_line}: Bound vs NOT Bound {score_col} (Zero Cutoff={zero_cutoff})\n\n"
+                            f"NOTE 1: Values calculated from {underlying_data} data\n"
+                            f"NOTE 2: Features w/ null values for either axis were dropped\n"
+                        )
+                        if score_col == "ARBS":
+                            title += "NOTE 3: ARBS values are log-modulus transformed (zeros set to NaN)\n\n"
+                        ax.set_title(title, fontsize=8, y=1.02)
+
+                        # Move axes to the center
+                        ax.spines['left'].set_position('zero')
+                        ax.spines['bottom'].set_position('zero')
+                        ax.spines['right'].set_color('none')
+                        ax.spines['top'].set_color('none')
+                        ax.xaxis.set_ticks_position('bottom')
+                        ax.yaxis.set_ticks_position('left')
+                        ax.tick_params(axis="x", labelsize=6)
+                        ax.tick_params(axis="y", labelsize=6)
+
+                        plt.tight_layout()
+                        plt.show()
+
+
+            # Add Position column to both DataFrames
+            for df in [bound_df, not_bound_df]:
+                df["Position"] = df["Feature"].str.rsplit("_", n=1, expand=True)[1].astype(int)
+                df["RBP"] = df["Feature"].str.rsplit("_", n=1, expand=True)[0]
+
+            # Get all unique positions for style order
+            all_positions = sorted(
+                pd.concat([bound_df["Position"], not_bound_df["Position"]]).unique()
+            )
+
+            # If plotting ARBS, apply log modulus transformation and set zeros to NaN
+            plot_bound_df = bound_df.copy()
+            plot_not_bound_df = not_bound_df.copy()
+            if score_col == "ARBS":
+                plot_bound_df[score_col] = plot_bound_df[score_col].apply(log_modulus)
+                plot_not_bound_df[score_col] = plot_not_bound_df[score_col].apply(log_modulus)
+
+            # Prepare figure and axes
+            fig, axes = plt.subplots(2, 2, figsize=(14, 12), dpi=300, sharex=True, sharey=True)
+            cell_lines = self.cell_lines
+            bound_statuses = [("Bound-Only", plot_bound_df), ("NOT-Bound-Only", plot_not_bound_df)]
+
+            for row_idx, cell_line in enumerate(cell_lines):
+                for col_idx, (status_label, df) in enumerate(bound_statuses):
+                    ax = axes[row_idx, col_idx]
+                    plot_df = df[df["Cell Line"] == cell_line].copy()
+                    plot_df = plot_df.sort_values("Zero Cutoff")
+                    # Use seaborn lineplot: x=Zero Cutoff, y=score_col, hue=Feature, style=Position
+                    sns.lineplot(
+                        data=plot_df,
+                        x="Zero Cutoff",
+                        y=score_col,
+                        hue="Feature",
+                        hue_order=plot_df["Feature"].unique(),
+                        style="Position",
+                        style_order=all_positions,
+                        ax=ax,
+                        legend=False,
+                        markers=True,
+                        dashes=True,
+                        linewidth=0.5,
+                        markersize=5,
+                        alpha=0.5
+                    )
+                    ax.set_title(f"{cell_line} - {status_label}", fontsize=14)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    
+                    if score_col == 'NARBS': 
+                        # Set y-axis limits for NARBS
+                        ax.set_ylim(-1.05, 1.05)
+
+                    ax.set_xscale("log")
+                    ax.tick_params(axis="x", labelsize=14)
+                    ax.tick_params(axis="y", labelsize=14)
+
+            plt.suptitle(f"{score_col} vs Zero Cutoff per Feature\n", fontsize=18, y=1.01)
+            fig.supxlabel("Zero Cutoff", fontsize=16, y=-0.01)
+            fig.supylabel(score_col if score_col != "ARBS" else "log-modulus(ARBS)", fontsize=16, x=-0.01)
+            plt.tight_layout()
+            plt.show()
+
+
+            # For each cutoff (excluding 0), plot score_col at cutoff=0 (x) vs score_col at cutoff!=0 (y)
+            cutoffs = sorted(bound_df["Zero Cutoff"].unique())
+            cutoffs_nonzero = [c for c in cutoffs if c != 0]
+            for cutoff in cutoffs_nonzero:
+                fig, axes = plt.subplots(2, 2, figsize=(8, 7), dpi=300, sharex=True, sharey=True)
+                for row_idx, cell_line in enumerate(self.cell_lines):
+                    for col_idx, (status_label, df) in enumerate([("Bound-Only", bound_df.copy()), ("NOT-Bound-Only", not_bound_df.copy())]):
+                        ax = axes[row_idx, col_idx]
+                        # Subset to this cell line and cutoff=0 and cutoff!=0
+                        df0 = df[(df["Cell Line"] == cell_line) & (df["Zero Cutoff"] == 0)]
+                        dfc = df[(df["Cell Line"] == cell_line) & (df["Zero Cutoff"] == cutoff)]
+                        # Merge on Feature
+                        merged = pd.merge(
+                            df0[["Feature", score_col]],
+                            dfc[["Feature", score_col]],
+                            on="Feature",
+                            suffixes=("_0", f"_{cutoff}")
+                        )
+                        
+                        # Remove rows with nulls in either column
+                        merged = merged.dropna(subset=[f"{score_col}_0", f"{score_col}_{cutoff}"])
+                        x = merged[f"{score_col}_0"]
+                        y = merged[f"{score_col}_{cutoff}"]
+
+                        if score_col == "ARBS":
+                            # Apply log-modulus transformation and set zeros to NaN
+                            x = x.apply(log_modulus)
+                            y = y.apply(log_modulus)
+
+                        pearson_corr, _ = pearsonr(x, y)
+                        spearman_corr, _ = spearmanr(x, y)
+                        num_points = len(merged)
+
+                        sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.3, s=5)
+
+                        ax.plot([x.min(), x.max()],
+                                [x.min(), x.max()],
+                                color="red", linestyle="--", linewidth=1, label="y=x")
+                        ax.set_title(f"{cell_line} - {status_label}", fontsize=10)
+                        ax.text(
+                            0.5, 0.02,
+                            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                            transform=ax.transAxes,
+                            fontsize=9,
+                            verticalalignment='bottom',
+                            horizontalalignment='left'
+                        )
+
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
+
+                plt.suptitle(f"{score_col}: Absolute 0 Cutoff vs {cutoff}", fontsize=16)
+                fig.supylabel(f"Cutoff: {cutoff}", fontsize=14, x=-0.01)
+                fig.supxlabel("Absolute 0 Cutoff", fontsize=14, y=-0.01)
+                plt.tight_layout()
+                plt.show()
+    
+
+    def plot_activator_repressor_behavior_score_vs_percent_positive_and_negative(self, underlying_data=None): 
+        assert underlying_data in ["Unique-Binding"], "underlying_data must be 'Unique-Binding' for this function"
+
+        # Load ARBS/NARBS scores for Bound-Only and NOT-Bound-Only from cache
+        bound_df = self.calculate_activator_repressor_behavior_score(binding_mode="Bound-Only", underlying_data=underlying_data)
+        not_bound_df = self.calculate_activator_repressor_behavior_score(binding_mode="NOT-Bound-Only", underlying_data=underlying_data)
+
+        # Load percent positive/negative local SHAP for Bound-Only and NOT-Bound-Only
+        bound_percent = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="Bound-Only", underlying_data=underlying_data)
+        not_bound_percent = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="NOT-Bound-Only", underlying_data=underlying_data)
+
+        # Find shared zero cutoff values between ARBS/NARBS and percent positive/negative local SHAP
+        bound_zero_cutoffs = set(bound_df["Zero Cutoff"].unique())
+        not_bound_zero_cutoffs = set(not_bound_df["Zero Cutoff"].unique())
+        bound_percent_zero_cutoffs = set(bound_percent.keys())
+        not_bound_percent_zero_cutoffs = set(not_bound_percent.keys())
+        shared_cutoffs = sorted(
+            bound_zero_cutoffs & not_bound_zero_cutoffs & bound_percent_zero_cutoffs & not_bound_percent_zero_cutoffs
+        )
+
+        for cutoff in shared_cutoffs:
+            fig, axes = plt.subplots(2, 2, figsize=(14, 13), dpi=300, sharex=True, sharey=True)
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                for col_idx, (mode, df, percent_dict) in enumerate([
+                    ("Bound-Only", bound_df, bound_percent),
+                    ("NOT-Bound-Only", not_bound_df, not_bound_percent)
+                ]):
+                    # Subset ARBS/NARBS for this cell line and cutoff
+                    narbs_df = df[(df["Cell Line"] == cell_line) & (df["Zero Cutoff"] == cutoff)]
+                    # Get percent positive and negative DataFrames for this cell line and cutoff
+                    percent_pos_df = percent_dict[cutoff]["positive"][cell_line]
+                    percent_neg_df = percent_dict[cutoff]["negative"][cell_line]
+                    # Melt percent pos/neg to long form and merge
+                    pos_long = percent_pos_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Positive")
+                    neg_long = percent_neg_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Negative")
+                    percent_long = pd.merge(pos_long, neg_long, on=["index", "RBP"])
+                    percent_long["Feature"] = percent_long["RBP"].astype(str) + "_" + percent_long["index"].astype(str)
+                    # Merge with narbs_df on Feature
+                    merged = pd.merge(
+                        percent_long,
+                        narbs_df[["Feature", "NARBS"]],
+                        on="Feature",
+                        how="inner"
+                    )
+                    # Drop rows with nulls in either axis
+                    merged = merged.dropna(subset=["Percent_Positive", "Percent_Negative", "NARBS"])
+                    # Plot: x = Percent_Positive - Percent_Negative, y = NARBS
+                    x = merged["Percent_Positive"] - merged["Percent_Negative"]
+                    y = merged["NARBS"]
+                    ax = axes[row_idx, col_idx]
+                    
+                    sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.5, s=10)
+
+                    # Move axes to the center
+                    ax.spines['left'].set_position('zero')
+                    ax.spines['bottom'].set_position('zero')
+                    ax.spines['right'].set_color('none')
+                    ax.spines['top'].set_color('none')
+                    ax.xaxis.set_ticks_position('bottom')
+                    ax.yaxis.set_ticks_position('left')
+
+                    # Remove default axis labels
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+
+                    # Correlations
+                    pearson_corr, _ = pearsonr(x, y)
+                    spearman_corr, _ = spearmanr(x, y)
+                    num_points = len(merged)
+
+                    ax.set_title(f"{cell_line} - {mode}", fontsize=16, pad=20, color="green")
+                    ax.text(
+                        0.9, 0.2,
+                        f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                        transform=ax.transAxes,
+                        fontsize=12,
+                        verticalalignment='bottom',
+                        horizontalalignment='right'
+                    )
+
+            fig.supxlabel("% Positive - % Negative", fontsize=24, y=-0.02)
+            fig.supylabel("NARBS", fontsize=24, x=-0.02)
+            plt.suptitle(f"NARBS vs (% Positive - % Negative) Local SHAP\n\nZero Cutoff = {cutoff}\nNOTE 1: {underlying_data} data", fontsize =18, y=1.01)
+            plt.tight_layout()
+            plt.show()
+
+
+
+
+
+
+###############################################################
+###############################################################
+###############################################################
+###############################################################
+################ HACKY AND TEMPORARY FUNCTIONS ################
+###############################################################
+###############################################################
+###############################################################
+###############################################################
 
     def hacky_not_bound_global_SHAP_by_number_binding(self): 
         combos = [
