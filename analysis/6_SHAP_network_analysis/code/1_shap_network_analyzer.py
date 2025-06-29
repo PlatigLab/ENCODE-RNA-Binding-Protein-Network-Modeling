@@ -4580,6 +4580,124 @@ class ShapNetworkInvestigator:
                 gc.collect()
 
 
+    def plot_local_SHAP_vs_PSI(self, feature=None, data_mode=None):
+        assert feature.endswith("_shap"), "feature must end with '_shap'"
+        assert data_mode in ["All-Data", "Unique-Binding"], "data_mode must be 'All-Data' or 'Unique-Binding'"
+
+        if not hasattr(self, "final_SHAP_data"): 
+            self.load_final_SHAP_data(data_mode="All-Data")
+
+        # Determine RBPs and position from feature
+        rbp, position = self.get_RBP_position(feature)
+        binding_col = feature.replace("_shap", "_binding")
+        shap_col = feature
+        psi_col = "Target_PSI"
+        binding_sum_col = "Binding Sum"
+        has_rbp_kd_col = f"has_RBP_KD_{position}"
+
+        # Prepare memory-efficient DataFrames for plotting (vectorized)
+        psi_dfs = []
+        shap_dfs = []
+        for cell_line in self.cell_lines:
+            df = self.final_SHAP_data[cell_line]
+
+            # Define masks and labels
+            masks_labels = [
+                (df[binding_col] == 1, "Bound"),
+                (df[binding_col] == 0, "Not Bound"),
+                ((df[binding_col] == 1) & (df[binding_sum_col] == 1), "Solo Binding"),
+                ((df[binding_sum_col] == 0) & (df[has_rbp_kd_col] == True) & (df["RBP_KD_Target"] == rbp), "KD @ Pos"),
+            ]
+
+            for mask, label in masks_labels:
+                filtered = df.filter(mask)
+
+                if filtered.height == 0:
+                    continue
+
+                psi_df = pd.DataFrame({
+                    "Cell Line": cell_line,
+                    "Label": label,
+                    "PSI": filtered[psi_col].to_numpy()
+                })
+                shap_df = pd.DataFrame({
+                    "Cell Line": cell_line,
+                    "Label": label,
+                    "SHAP": filtered[shap_col].to_numpy()
+                })
+                psi_dfs.append(psi_df)
+                shap_dfs.append(shap_df)
+
+        psi_df = pd.concat(psi_dfs, ignore_index=True)
+        shap_df = pd.concat(shap_dfs, ignore_index=True)
+
+        # Plotting
+        ncols = len(psi_df["Cell Line"].unique())
+        nrows = 2
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 8), dpi=200, sharex=True, sharey='row')
+        if ncols == 1:
+            axes = np.array(axes).reshape(2, 1)
+
+        for col_idx, cell_line in enumerate(sorted(psi_df["Cell Line"].unique())):
+            # Top: Target_PSI
+            ax_psi = axes[0, col_idx]
+            plot_psi = psi_df[psi_df["Cell Line"] == cell_line]
+            # Violinplot with light blue
+            sns.violinplot(
+                data=plot_psi, x="Label", y="PSI", ax=ax_psi, inner=None,
+                color="#ADD8E6", cut=0, density_norm='width'
+            )
+            # Boxplot with small outlier points
+            sns.boxplot(
+                data=plot_psi, x="Label", y="PSI", ax=ax_psi, width=0.2, showcaps=True,
+                showfliers=True, boxprops={"facecolor": "none"}, meanline=True, showmeans=True,
+                meanprops={"color": "red"}, flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "gray", "alpha": 0.5}
+            )
+            ax_psi.set_title(f"{cell_line} - PSI", fontsize=14)
+            ax_psi.set_ylabel("Target_PSI", fontsize=12)
+            ax_psi.set_xlabel("")
+            ax_psi.set_xticklabels([])  # Remove individual x-axis labels
+            # Set y-limit to 1.2 and annotate counts above each violin
+            ax_psi.set_ylim(0, 1.2)
+            for tick, label in enumerate(ax_psi.get_xticklabels()):
+                cat = label.get_text()
+                n_points = plot_psi[plot_psi["Label"] == cat].shape[0]
+                ax_psi.text(
+                    tick, 1.12, f"n={n_points}", ha="center", va="bottom",
+                    fontsize=10, color="green"
+                )
+
+            # Bottom: Local SHAP
+            ax_shap = axes[1, col_idx]
+            plot_shap = shap_df[shap_df["Cell Line"] == cell_line]
+            # Violinplot with light orange
+            sns.violinplot(
+                data=plot_shap, x="Label", y="SHAP", ax=ax_shap, inner=None,
+                color="#FFD580", cut=0, density_norm='width'
+            )
+            # Boxplot with small outlier points
+            sns.boxplot(
+                data=plot_shap, x="Label", y="SHAP", ax=ax_shap, width=0.2, showcaps=True,
+                showfliers=True, boxprops={"facecolor": "none"}, meanline=True, showmeans=True,
+                meanprops={"color": "red"}, flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "gray", "alpha": 0.5}
+            )
+            ax_shap.set_title(f"{cell_line} - Local SHAP", fontsize=14)
+            ax_shap.set_ylabel("Local SHAP", fontsize=12)
+            ax_shap.set_xlabel("")
+            ax_shap.set_xticklabels([])  # Remove individual x-axis labels
+            # Add gold line at y=0
+            ax_shap.axhline(0, color="gold", linestyle="--", linewidth=1.5, zorder=0)
+
+        fig.suptitle(
+            f"Local SHAP and PSI Distributions for {feature}\nNOTE 1: {data_mode} shown here.",
+            fontsize=16
+        )
+        fig.supxlabel("Category", fontsize=13)
+        plt.tight_layout()
+        plt.show()
+
+
 
 
 
