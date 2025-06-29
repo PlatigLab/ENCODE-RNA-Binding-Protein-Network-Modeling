@@ -88,6 +88,12 @@ class ShapNetworkInvestigator:
                 "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
                 "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
             },
+            "final_SHAP_cache": {
+                "All-Data": {
+                    "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
+                    "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
+                }, 
+            }
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -4511,6 +4517,67 @@ class ShapNetworkInvestigator:
             plt.suptitle(f"NARBS vs (% Positive - % Negative) Local SHAP\n\nZero Cutoff = {cutoff}\nNOTE 1: {underlying_data} data", fontsize =18, y=1.01)
             plt.tight_layout()
             plt.show()
+
+    
+    def load_final_SHAP_data(self, data_mode=None):
+        assert data_mode in ["All-Data",]
+
+        k562_output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode]["K562"]
+        hepg2_output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode]["HepG2"]
+        
+        if os.path.exists(k562_output_file) and os.path.exists(hepg2_output_file):
+            logger.success("FROM CACHE: Final SHAP data already exists for both cell lines.")
+
+            self.final_SHAP_data = {
+                "K562": pl.scan_ipc(k562_output_file).collect(),
+                "HepG2": pl.scan_ipc(hepg2_output_file).collect()
+            }
+
+        else: 
+            
+            for cell_line in self.cell_lines: 
+                output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode][cell_line]
+
+                # Step 1: Retrieve 5 SHAP tables and compute mean
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=data_mode)
+                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=shap_dfs, metric='mean')
+
+                # Step 2: Get the first lazyframe and collect non-SHAP columns
+                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+                schema = shap_lazyframes[0].collect_schema().names()
+                non_shap_cols = [col for col in schema if not col.endswith("_shap")]
+                base_df = shap_lazyframes[0].select(non_shap_cols).sort("index").collect()
+
+                # Step 3: Remove 'has_RBP_KD' column
+                base_df = base_df.drop("has_RBP_KD")
+
+                # Step 4: Join with corrected has_RBP_KD results
+                joined_df = self.get_has_RBP_KD_results(base_df, cell_line)
+                assert joined_df.shape[0] == base_df.shape[0], "Row count changed after join"
+
+                joined_df = joined_df.sort("index")
+
+                # Step 5: Add mean SHAP columns (order matches by sorted index)
+                for col in mean_df.columns:
+                    assert col.endswith("_shap"), f"Column {col} is not a SHAP column"
+                    assert len(mean_df[col]) == len(joined_df), f"Length mismatch for column {col}"
+                    joined_df = joined_df.with_columns(pl.Series(col, mean_df[col]))
+
+                # Step 5.5: Assert that there are no missing or null values in the joined DataFrame
+                assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the final joined DataFrame"
+                
+                # Step 6: Add "Binding Sum" column as the horizontal sum of all binding columns per row
+                binding_cols = [col for col in joined_df.columns if col.endswith("_binding")]
+                joined_df = joined_df.with_columns(
+                    pl.sum_horizontal([pl.col(col) for col in binding_cols]).alias("Binding Sum")
+                )
+
+                # Step 7: Write to LZ4-compressed feather file
+                joined_df.sort('index').write_ipc(output_file, compression="lz4")
+                logger.success(f"Saved final SHAP cache for {cell_line} to {output_file}")
+
+                del shap_dfs, mean_df, shap_lazyframes, base_df, joined_df
+                gc.collect()
 
 
 
