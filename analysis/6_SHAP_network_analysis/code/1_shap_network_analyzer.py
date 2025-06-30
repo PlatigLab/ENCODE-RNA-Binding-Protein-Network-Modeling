@@ -11,6 +11,8 @@ from matplotlib.colors import LogNorm
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 from itertools import combinations
 from matplotlib.legend import Legend
+import matplotlib.gridspec as gridspec
+from sklearn.metrics import r2_score
 
 
 @dataclass
@@ -18,6 +20,7 @@ class ShapNetworkInvestigator:
     PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
     MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/pickled_models/"
     CORRECTED_HAS_RBP_KD_DIR = "../../1_create_RBP_ML_input/4_create_num_peaks_ML_input/corrected_has_RBP_KD_output/"
+    PRED_DIR = "../../4_run_final_models_and_SHAP/outputs/predictions/"
 
     SHAP_MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
     SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
@@ -93,7 +96,8 @@ class ShapNetworkInvestigator:
                     "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
                     "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
                 }, 
-            }
+            },
+            "predicted_vs_actual_PSI_plot": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot.png"
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -4698,7 +4702,112 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def plot_actual_vs_predicted_for_best_models(self): 
+        xgboost_best_model_hahes = {
+            "HepG2": "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd",
+            "K562": "8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db"
+        }
 
+        # Prepare data for all cell lines
+        dfs = {}
+        r2_scores = {}
+        for cell_line, model_hash in xgboost_best_model_hahes.items():
+            pred_file = os.path.join(self.PRED_DIR, "XGBRegressor", f"{model_hash}.feather")
+            assert os.path.exists(pred_file), f"Prediction file not found: {pred_file}"
+
+            # Load all columns needed for partitioning and plotting
+            preds = pl.scan_ipc(pred_file).filter(pl.col("Partition") == "Test").select(["Predictions", "Target_PSI", "Partition"]).collect()
+
+            y_true = preds["Target_PSI"].to_numpy()
+            y_pred = preds["Predictions"].to_numpy()
+            dfs[cell_line] = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
+
+            # Calculate R2 score only for the "Test" partition
+            r2_scores[cell_line] = r2_score(y_true, y_pred)
+
+            del preds
+            gc.collect()
+
+        # Set up a single figure with subplots for each cell line
+        n = len(dfs)
+        fig = plt.figure(figsize=(7 * n, 7), dpi=300)
+        gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.25)
+
+        hexbin_objs = []
+        for idx, (cell_line, df) in enumerate(dfs.items()):
+            # Main scatter/hexbin plot
+            ax_joint = fig.add_subplot(gs[1, idx])
+            hb = ax_joint.hexbin(
+                df["y_true"], df["y_pred"],
+                gridsize=100, cmap="Blues", norm=LogNorm(), mincnt=1
+            )
+            hexbin_objs.append(hb)
+
+            # Annotate R2 score and number of points at the center top (Test partition only)
+            ax_joint.text(
+                0.5, 0.97,
+                f"$R^2$: {r2_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
+                transform=ax_joint.transAxes,
+                fontsize=14, color="red",
+                ha="center", va="top"
+            )
+
+            # Add line from (0,1) to (0,1)
+            ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
+
+            # ax_joint.set_ylabel("Predicted PSI", fontsize=12)
+            ax_joint.set_title(f"{cell_line}", fontsize=18)
+            # ax_joint.legend(fontsize=10, loc="upper left")
+
+            # Marginal histogram for x (top)
+            ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
+            ax_histx.hist(df["y_true"], bins=50, color="#4682B4", alpha=0.7, density=True, edgecolor="black")
+            sns.kdeplot(df["y_true"], color="orange", lw=1, ax=ax_histx)
+            ax_histx.set_xlim(0, 1)
+            ax_histx.axis("off")
+            # Move the axis slightly down
+            pos = ax_histx.get_position()
+            ax_histx.set_position([pos.x0, pos.y0 - 0.03, pos.width, pos.height])
+
+            # Marginal histogram for y (right)
+            ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
+            ax_histy.hist(df["y_pred"], bins=50, color="#4682B4", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
+            sns.kdeplot(df["y_pred"], color="orange", lw=1, ax=ax_histy, vertical=True)
+            ax_histy.set_ylim(0, 1)
+            ax_histy.axis("off")
+
+        # Add a separate horizontal colorbar below each joint subplot
+        for idx in range(n):
+            ax_joint = fig.axes[2 * idx + 1]  # axes are [histx0, joint0, histx1, joint1, ...]
+            # Get the position of the joint axes in figure coordinates
+            pos = ax_joint.get_position()
+            # Manually specify the colorbar axes below the joint plot
+            cbar_height = 0.03
+            cbar_pad = 0.65
+            cbar_ax = fig.add_axes([
+                pos.x0,
+                pos.y0 - cbar_height - cbar_pad,  # ensure it's below the subplot
+                pos.width,
+                cbar_height
+            ])
+
+            fig.colorbar(
+                hexbin_objs[idx],  # Use the PolyCollection from hexbin
+                cax=cbar_ax,
+                orientation='horizontal'
+            )
+            cbar_ax.set_xlabel('Counts (log scale)', fontsize=12)
+
+        fig.suptitle("Test Partition: Actual vs Predicted PSI\nNOTE: showing top model per cell line based on outer holdout $R^2$", fontsize=22, y=0.98)
+        fig.supxlabel("Actual PSI", fontsize=20, y=-0.07)
+        fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
+        plt.tight_layout()
+
+        plt.savefig(self.CACHE_INFO["predicted_vs_actual_PSI_plot"], dpi=300, bbox_inches='tight')
+        plt.show()
+
+        del dfs 
+        gc.collect()
 
 
 
