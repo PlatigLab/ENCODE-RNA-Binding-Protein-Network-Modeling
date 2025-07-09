@@ -59,6 +59,7 @@ class ShapNetworkInvestigator:
                 "Bound-Only": 
                     {
                         None: "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
+                        "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
                     },
                 "NOT-Bound-Only": 
                     {
@@ -481,9 +482,9 @@ class ShapNetworkInvestigator:
             
             if mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
                 assert binding_unique == "All-Data"
-                global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None)
+                global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None, underlying_data = binding_unique)
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
-                global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1])
+                global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1], underlying_data = binding_unique)
 
         if mode == '5_dfs':
 
@@ -2768,10 +2769,11 @@ class ShapNetworkInvestigator:
         return result
 
     
-    def calculate_specialized_global_SHAP(self, mode=None, condition=None): 
+    def calculate_specialized_global_SHAP(self, mode=None, condition=None, underlying_data=None): 
         VALID_MODES = ["Bound-Only", "NOT-Bound-Only"]
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
         assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position'], "Condition must be None, 'CTRL', 'RBP_KD', or 'RBP_KD_at_position'"
+        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
 
         OUTPUT_FILE = self.CACHE_INFO["specialized_global_SHAP"][mode][condition]
 
@@ -2792,7 +2794,7 @@ class ShapNetworkInvestigator:
                 binding_value = 0
 
             # Use the simplified function to get mean SHAP values for each feature at the given binding value
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=condition)
+            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=condition, binding_pattern_type=underlying_data)
 
             for cell_line in self.cell_lines:
                 # local_shap[cell_line] is a dict: {shap_col: mean_series}
