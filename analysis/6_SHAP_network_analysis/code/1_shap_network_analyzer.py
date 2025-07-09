@@ -97,7 +97,11 @@ class ShapNetworkInvestigator:
                     "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
                 }, 
             },
-            "predicted_vs_actual_PSI_plot": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot.png"
+            "predicted_vs_actual_PSI_plot": {
+                "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
+                "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
+            }
+            
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -4702,7 +4706,10 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def plot_actual_vs_predicted_for_best_models(self): 
+    def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
+
+        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
+
         xgboost_best_model_hahes = {
             "HepG2": "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd",
             "K562": "8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db"
@@ -4716,7 +4723,20 @@ class ShapNetworkInvestigator:
             assert os.path.exists(pred_file), f"Prediction file not found: {pred_file}"
 
             # Load all columns needed for partitioning and plotting
-            preds = pl.scan_ipc(pred_file).filter(pl.col("Partition") == "Test").select(["Predictions", "Target_PSI", "Partition"]).collect()
+            preds = pl.scan_ipc(pred_file).filter(pl.col("Partition") == "Test")
+
+            if underlying_data == "Unique-Binding":
+                # Get all columns ending with "_binding"
+                binding_cols = [col for col in preds.collect_schema().names() if col.endswith("_binding")]
+                # Group by all binding columns and aggregate mean of Target_PSI and Predictions
+                preds = preds.group_by(binding_cols).agg(
+                    [
+                        pl.col("Target_PSI").mean().alias("Target_PSI"),
+                        pl.col("Predictions").mean().alias("Predictions"),
+                    ]
+                )
+
+            preds = preds.select(["Predictions", "Target_PSI"]).collect()
 
             y_true = preds["Target_PSI"].to_numpy()
             y_pred = preds["Predictions"].to_numpy()
@@ -4730,7 +4750,7 @@ class ShapNetworkInvestigator:
 
         # Set up a single figure with subplots for each cell line
         n = len(dfs)
-        fig = plt.figure(figsize=(7 * n, 7), dpi=300)
+        fig = plt.figure(figsize=(7 * n, 7), dpi=100)
         gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.25)
 
         hexbin_objs = []
@@ -4798,12 +4818,12 @@ class ShapNetworkInvestigator:
             )
             cbar_ax.set_xlabel('Counts (log scale)', fontsize=12)
 
-        fig.suptitle("Test Partition: Actual vs Predicted PSI\nNOTE: showing top model per cell line based on outer holdout $R^2$", fontsize=22, y=0.98)
+        fig.suptitle(f"Test Partition: Actual vs Predicted PSI\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
         fig.supxlabel("Actual PSI", fontsize=20, y=-0.07)
         fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
         plt.tight_layout()
 
-        plt.savefig(self.CACHE_INFO["predicted_vs_actual_PSI_plot"], dpi=300, bbox_inches='tight')
+        plt.savefig(self.CACHE_INFO["predicted_vs_actual_PSI_plot"][underlying_data], dpi=300, bbox_inches='tight')
         plt.show()
 
         del dfs 
