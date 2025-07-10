@@ -35,7 +35,10 @@ class ShapNetworkInvestigator:
             #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
             #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
             # },
-            "SHAP_CV": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
+            "SHAP_CV": {
+                "All-Data": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
+                "Unique-Binding": "../outputs/SHAP_cv/local_SHAP_cv_unique_binding.pkl.gz",
+            },
             'SHAP_cv_mp4': {
                 "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
                 "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
@@ -966,7 +969,8 @@ class ShapNetworkInvestigator:
             plt.show()
 
 
-    def calculate_SHAP_CV(self):
+    def calculate_SHAP_CV(self, binding_unique=None):
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
 
         output_file = self.CACHE_INFO["SHAP_CV"]
         # Check if the output file exists
@@ -976,10 +980,10 @@ class ShapNetworkInvestigator:
             
             # Convert each DataFrame in SHAP_cv from pandas to polars
             self.SHAP_cv = {cell_line: pl.from_pandas(df) for cell_line, df in SHAP_cv.items()}
-            logger.success(f"FROM CACHE: loaded SHAP CV file")   
+            logger.success(f"FROM CACHE: loaded SHAP CV file for {binding_unique}")  
 
         else:
-            logger.info(f"SHAP CV file does not exist. Calculating...")
+            logger.info(f"SHAP CV file does not exist. Calculating for {binding_unique}...")
 
             # Initialize an empty dictionary to store SHAP CV results
             SHAP_CV = {}
@@ -988,7 +992,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Calculating SHAP CV for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=binding_unique)
                 # Calculate the coefficient of variation using the pointwise metric function
                 cv_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
                     cell_line_shap=shap_dfs, 
@@ -1004,10 +1008,11 @@ class ShapNetworkInvestigator:
             logger.success(f"Saved SHAP CV file to {output_file}")
 
     
-    def plot_SHAP_CV(self):
+    def plot_SHAP_CV(self, binding_unique=None):
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
         if not hasattr(self, 'SHAP_cv'):
-            self.calculate_SHAP_CV()
+            self.calculate_SHAP_CV(binding_unique = binding_unique)
 
         for cell_line, cv_df in self.SHAP_cv.items():
             logger.info(f"Plotting SHAP CV for cell line {cell_line}")
