@@ -897,6 +897,80 @@ class ShapNetworkInvestigator:
             return return_results
 
 
+    def plot_global_SHAP_coefficient_of_variation(self, mode=None, binding_unique=None):
+        assert mode == '5_dfs', "mode should be '5_dfs'"
+        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
+
+        global_SHAP = self.calculate_global_SHAP(mode=mode, binding_unique=binding_unique)
+
+        # Assert that all 5 heatmaps per cell line have the same shape, columns, and index order
+        for cell_line, heatmaps in global_SHAP.items():
+            assert all(h.shape == heatmaps[0].shape for h in heatmaps), f"Heatmaps for {cell_line} have inconsistent shapes"
+            assert all(h.columns.equals(heatmaps[0].columns) for h in heatmaps), f"Column order mismatch for {cell_line}"
+            assert all(h.index.equals(heatmaps[0].index) for h in heatmaps), f"Index order mismatch for {cell_line}"
+    
+        # Compute coefficient of variation and mean for each cell line
+        cv_results = []
+        for cell_line, heatmaps in global_SHAP.items():
+            # Stack into 3D array: (5, n_rows, n_cols)
+            stacked = np.stack([h.values for h in heatmaps], axis=0)
+            mean = np.mean(stacked, axis=0)
+            std = np.std(stacked, axis=0)
+            cv = std / mean
+
+            # Flatten and collect results
+            mean_flat = mean.flatten()
+            cv_flat = cv.flatten()
+            for m, v in zip(mean_flat, cv_flat):
+                if np.isfinite(m) and np.isfinite(v):
+                    cv_results.append({"Cell Line": cell_line, "Mean": m, "CV": v})
+
+        cv_df = pd.DataFrame(cv_results)
+        cv_df = cv_df.sort_values("Cell Line")
+
+        plt.figure(figsize=(6, 4), dpi=400)
+        sns.scatterplot(
+            data=cv_df,
+            x="Mean",
+            y="CV",
+            hue="Cell Line",
+            palette="Set2",
+            alpha=0.5,
+            edgecolor="black",
+            s=1
+        )
+        plt.title("Mean vs Coefficient of Variation of Global SHAP Across 5 Models per Cell Line")
+        plt.ylabel("Coefficient of Variation")
+        plt.xlabel("Mean Global SHAP")
+        plt.legend(title="Cell Line")
+        plt.tight_layout()
+        plt.show()
+
+        # Swarmplot of coefficient of variation per cell line
+        plt.figure(figsize=(6, 4), dpi=400)
+        sns.swarmplot(
+            data=cv_df,
+            x="Cell Line",
+            y="CV",
+            palette="Set2",
+            alpha=0.7,
+            edgecolor="black",
+            size=2
+        )
+        plt.title("Coefficient of Variation of Global SHAP Across 5 Models per Cell Line", fontsize=12)
+        plt.ylabel("Coefficient of Variation")
+        plt.xlabel("Cell Line")
+
+        # Annotate number of points above each cell line
+        for idx, cell_line in enumerate(cv_df["Cell Line"].unique()):
+            n_points = (cv_df["Cell Line"] == cell_line).sum()
+            plt.text(idx, cv_df[cv_df["Cell Line"] == cell_line]["CV"].max() + 0.02, f"n={n_points}", 
+                     ha="center", va="bottom", fontsize=10, color="black")
+
+        plt.tight_layout()
+        plt.show()
+
+
     def plot_global_SHAP_between_unique_binding_and_all_data(self): 
         # Get global SHAP for both modes
         global_shap_all = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")
