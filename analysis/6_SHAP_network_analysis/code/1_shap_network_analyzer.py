@@ -61,15 +61,19 @@ class ShapNetworkInvestigator:
             "specialized_global_SHAP": {
                 "Bound-Only": 
                     {
-                        None: "../outputs/specialized_global_SHAP/bound_only_global_SHAP.pkl",
-                        "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
+                        None: 
+                            {
+                                "All-Data": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_all_data.pkl",
+                                "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
+                            }
                     },
                 "NOT-Bound-Only": 
                     {
-                        None: "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP.pkl",
-                        "CTRL": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-CTRL.pkl",
-                        "RBP_KD": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-RBP_KD.pkl",
-                        "RBP_KD_at_position": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP-RBP_KD_at_position.pkl",
+                        None: 
+                            {
+                                "All-Data": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_all_data.pkl",
+                                "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
+                            }
                     },
             },
             "local_SHAP_mean_vs_variance": {
@@ -437,7 +441,7 @@ class ShapNetworkInvestigator:
             return global_SHAP
         
         else:
-            logger.info(f"Global SHAP file for mode {mode} does not exist. Calculating...")
+            logger.info(f"Global SHAP file for mode {mode} and {binding_unique} does not exist. Calculating...")
             global_heatmaps = {}
 
             dfs_global_SHAP = {
@@ -470,7 +474,7 @@ class ShapNetworkInvestigator:
             with open(output_file, 'wb') as f:
                 pickle.dump(global_heatmaps, f)
 
-            logger.success(f"Saved global SHAP file for mode {mode} to {output_file}")
+            logger.success(f"Saved global SHAP file for mode {mode} and {binding_unique} to {output_file}")
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
@@ -928,7 +932,7 @@ class ShapNetworkInvestigator:
         cv_df = pd.DataFrame(cv_results)
         cv_df = cv_df.sort_values("Cell Line")
 
-        plt.figure(figsize=(6, 4), dpi=400)
+        plt.figure(figsize=(6, 4), dpi=200)
         sns.scatterplot(
             data=cv_df,
             x="Mean",
@@ -947,7 +951,7 @@ class ShapNetworkInvestigator:
         plt.show()
 
         # Swarmplot of coefficient of variation per cell line
-        plt.figure(figsize=(6, 4), dpi=400)
+        plt.figure(figsize=(6, 4), dpi=200)
         sns.swarmplot(
             data=cv_df,
             x="Cell Line",
@@ -2854,17 +2858,17 @@ class ShapNetworkInvestigator:
         assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position'], "Condition must be None, 'CTRL', 'RBP_KD', or 'RBP_KD_at_position'"
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
 
-        OUTPUT_FILE = self.CACHE_INFO["specialized_global_SHAP"][mode][condition]
+        OUTPUT_FILE = self.CACHE_INFO["specialized_global_SHAP"][mode][condition][underlying_data]
 
         if os.path.exists(OUTPUT_FILE):
-            logger.success(f"FROM CACHE: loading specialized global SHAP for mode {mode} and condition {condition} from {OUTPUT_FILE}")
+            logger.success(f"FROM CACHE: loading specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data} from {OUTPUT_FILE}")
             with open(OUTPUT_FILE, "rb") as f:
                 specialized_global_SHAP = pickle.load(f)
             return specialized_global_SHAP
         
         else: 
 
-            logger.info(f"Calculating specialized global SHAP for mode {mode} and condition {condition}")
+            logger.info(f"Calculating specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data}.")
             specialized_global_SHAP = {}
 
             if mode == "Bound-Only":
@@ -2887,7 +2891,7 @@ class ShapNetworkInvestigator:
             with open(OUTPUT_FILE, "wb") as f:
                 pickle.dump(specialized_global_SHAP, f)
             
-            logger.info(f"Specialized global SHAP for mode {mode} and condition {condition} saved to cache: {OUTPUT_FILE}")
+            logger.success(f"Specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data} saved to {OUTPUT_FILE}")
             return specialized_global_SHAP
 
 
