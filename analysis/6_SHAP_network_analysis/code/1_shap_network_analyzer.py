@@ -819,9 +819,19 @@ class ShapNetworkInvestigator:
             if mode == 'Bound-Only':
                 n_largest = 30
                 fontsize= 4
-            else:
+                x_offset = 0.05
+                y_offset = 0.04
+
+            else: 
                 n_largest = 10
                 fontsize= 5
+
+                if mode == "5_dfs_average":
+                    x_offset = 0.01
+                    y_offset = 0.006
+                elif mode == "NOT-Bound-Only":
+                    x_offset = 0.004
+                    y_offset = 0.002
 
             top_hepg2_features = combined_df.nlargest(n_largest, "HepG2")
             top_k562_features = combined_df.nlargest(n_largest, "K562")
@@ -866,8 +876,8 @@ class ShapNetworkInvestigator:
                 if i == 0:
                     for _, row in top_features.iterrows():
                         ax.text(
-                            row["HepG2"] - 0.01,
-                            row["K562"] + 0.006,
+                            row["HepG2"] - x_offset,
+                            row["K562"] + y_offset,
                             row["Feature"],
                             fontsize=fontsize,
                             color="green",
@@ -878,7 +888,7 @@ class ShapNetworkInvestigator:
                 min_val = min(x.min(), y.min())
                 max_val = max(x.max(), y.max())
                 ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1, label="y=x")
-                ax.legend(loc = "lower right", fontsize=8)
+                ax.legend(loc = "upper center", fontsize=10)
 
                 if xscale:
                     ax.set_xscale(xscale)
@@ -889,7 +899,7 @@ class ShapNetworkInvestigator:
                 ax.set_xlabel("")
                 ax.set_ylabel("")
                 ax.text(
-                    0.02, 0.97,
+                    0.02, 0.95,
                     f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(x)}",
                     transform=ax.transAxes,
                     fontsize=10,
