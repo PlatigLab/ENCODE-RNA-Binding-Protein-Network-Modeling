@@ -528,10 +528,8 @@ class ShapNetworkInvestigator:
         if mode == '5_dfs' or mode == '5_dfs_average':
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
         else: 
-            assert binding_unique == "All-Data"
-            
+
             if mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
-                assert binding_unique == "All-Data"
                 global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None, underlying_data = binding_unique)
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1], underlying_data = binding_unique)
@@ -579,7 +577,12 @@ class ShapNetworkInvestigator:
 
             # Calculate the combined range of all heatmaps to define consistent bins
             all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
-            all_values = all_values[~np.isnan(all_values)]  # Remove NaN values
+            
+            if mode == "Bound-Only":
+                all_values = all_values[~np.isnan(all_values)]  # Remove NaN values
+            else: 
+                assert not np.isnan(all_values).any(), "NaN values found in all_values"         
+
             bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
 
             # Create a figure with 2 columns: left for histograms, right for boxplots
@@ -643,8 +646,80 @@ class ShapNetworkInvestigator:
             plt.tight_layout()
             plt.show()
 
+            # Prepare data for violinplot: melt global_SHAP into long format
+            violin_data = []
+            for cell_line, heatmap in global_SHAP.items():
+                for pos in heatmap.index:
+                    for rbp in heatmap.columns:
+                        value = heatmap.at[pos, rbp]
+                        violin_data.append({"Cell Line": cell_line, "Global SHAP": value})
+            violin_df = pd.DataFrame(violin_data)
+
+            plt.figure(figsize=(5,3), dpi=300)
+            ax = plt.gca()
+
+            # Violinplot with boxplot inside, grouped by cell line
+            # Use light orange for HepG2 and light blue for K562
+            palette = {"HepG2": "#FFD580", "K562": "#ADD8E6"}
+            sns.violinplot(
+                data=violin_df,
+                x="Cell Line",
+                y="Global SHAP",
+                inner=None,
+                palette=palette,
+                cut=0,
+                linewidth=1,
+                edgecolor="black",
+                density_norm="width",
+                ax=ax
+            )
+            
+            sns.boxplot(
+                data=violin_df,
+                x="Cell Line",
+                y="Global SHAP",
+                width=0.2,
+                showcaps=True,
+                showfliers=True,
+                boxprops={"facecolor": "none", "edgecolor": "black", "zorder": 2},
+                meanline=True,
+                showmeans=True,
+                meanprops={"color": "red", "linestyle": "--", "linewidth": 1.5},
+                flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "gray", "alpha": 0.5},
+                ax=ax
+            )
+
+            # Set y-axis limit to be 0 to 20% larger than the current max
+            _, ymax = ax.get_ylim()
+            ax.set_ylim(-0.02, ymax * 1.25)
+
+            # Draw dashed line for the mean per cell line
+            for i, cell_line in enumerate(sorted(violin_df["Cell Line"].unique())):
+                vals = violin_df[violin_df["Cell Line"] == cell_line]["Global SHAP"].dropna()
+                # mean_val = vals.mean()
+                # ax.hlines(mean_val, i - 0.3, i + 0.3, colors="red", linestyles="--", linewidth=2, zorder=3)
+                n_points = len(vals)
+                median_val = np.median(vals)
+                pct_zero = (vals == 0).mean() * 100
+                # Place annotation inside the plot area, just below the top y-limit
+                ax.text(
+                    i, ax.get_ylim()[1] - 0.04 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+                    f"# Values: {n_points}\nMedian: {median_val:.3g}\n% Zero: {pct_zero:.1f}",
+                    ha="center", va="top", fontsize=7, color="black"
+                )
+
+            ax.set_title(f"{binding_unique} - {mode}: Global SHAP Value Distribution per Cell Line", fontsize=6, y=1.05)
+            ax.set_xlabel("Cell Line", fontsize=10)
+            ax.set_ylabel(self.latex_symbols[binding_unique][mode], fontsize=14)
+            ax.tick_params(axis='x', labelsize=8)
+            ax.tick_params(axis='y', labelsize=8)
+
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["global_SHAP_distribution"][mode], dpi=300, bbox_inches='tight')
+            plt.show()
+
             for iteration, log_scale in enumerate([False, True]):
-                fig, axes = plt.subplots(2, 1, figsize=(35, 16), dpi=200, sharey=True)
+                fig, axes = plt.subplots(2, 1, figsize=(35, 17), dpi=200, sharey=True)
 
                 for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
                     # Perform hierarchical clustering on the columns
@@ -685,11 +760,12 @@ class ShapNetworkInvestigator:
                         ax.set_facecolor("black")
 
                     cbar = ax.collections[0].colorbar
-                    cbar.ax.tick_params(labelsize=20)  # Make colorbar tick labels larger
-                    ax.set_title(f"{cell_line}", fontsize=30)
+                    cbar.ax.tick_params(labelsize=26)  # Make colorbar tick labels larger
+                    ax.set_title(f"{cell_line}", fontsize=35, pad=15)
                     ax.set_xlabel("")
                     ax.set_ylabel("")
-                    ax.tick_params(axis='y', labelsize=25)  # Make y-axis tick labels larger
+                    ax.tick_params(axis='y', labelsize=30)  # Make y-axis tick labels larger
+                    ax.tick_params(axis='x', labelsize=13)
 
                 # Add a caption for the log scale iteration
                 caption = ""
@@ -701,9 +777,13 @@ class ShapNetworkInvestigator:
                     f"NOTE: after averaging all local SHAP values across 5 models per cell line{caption}",
                     fontsize=40, y=1.01, x=0.45
                 )
-                fig.supxlabel("RBP", fontsize=30)
-                fig.supylabel("Position", fontsize=30, x=-0.01)
+                fig.supxlabel("RBP", fontsize=40, x=0.43)
+                fig.supylabel("Position", fontsize=40, x=-0.005)
                 plt.tight_layout()
+
+                if not log_scale: 
+                    plt.savefig(self.FIGURES["global_SHAP_heatmap"][mode], dpi=300, bbox_inches='tight')
+
                 plt.show()
 
             # Convert global_SHAP data into pandas DataFrames
@@ -738,8 +818,8 @@ class ShapNetworkInvestigator:
                 n_largest = 30
                 fontsize= 4
             else:
-                n_largest = 5
-                fontsize= 6
+                n_largest = 10
+                fontsize= 5
 
             top_hepg2_features = combined_df.nlargest(n_largest, "HepG2")
             top_k562_features = combined_df.nlargest(n_largest, "K562")
@@ -785,10 +865,10 @@ class ShapNetworkInvestigator:
                     for _, row in top_features.iterrows():
                         ax.text(
                             row["HepG2"] - 0.01,
-                            row["K562"] + 0.005,
+                            row["K562"] + 0.006,
                             row["Feature"],
                             fontsize=fontsize,
-                            color="black",
+                            color="green",
                             alpha=0.8
                         )
 
@@ -796,6 +876,7 @@ class ShapNetworkInvestigator:
                 min_val = min(x.min(), y.min())
                 max_val = max(x.max(), y.max())
                 ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1, label="y=x")
+                ax.legend(loc = "lower right", fontsize=8)
 
                 if xscale:
                     ax.set_xscale(xscale)
@@ -815,9 +896,12 @@ class ShapNetworkInvestigator:
                 )
 
             plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=14, y=1.02)
-            fig.supxlabel("HepG2 Global SHAP", fontsize=14)
-            fig.supylabel("K562 Global SHAP", fontsize=14)
+            fig.supxlabel(f"HepG2 {self.latex_symbols[binding_unique][mode]}", fontsize=14) 
+            fig.supylabel(f"K562 {self.latex_symbols[binding_unique][mode]}", fontsize=14)
+            
             plt.tight_layout()
+
+            plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=300, bbox_inches='tight')
             plt.show()
 
     
