@@ -105,10 +105,6 @@ class ShapNetworkInvestigator:
                     "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
                 }, 
             },
-            "predicted_vs_actual_PSI_plot": {
-                "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
-                "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
-            }
             
         }
 
@@ -130,6 +126,53 @@ class ShapNetworkInvestigator:
         "Binding Norm. Ratio Diff Events": "RBP-specific",
         "Binding Norm. Ratio Diff Events + Binding (Any Pos.)": "RBP-specific",
         "Binding Norm. Ratio Diff Events + Binding (Specific Pos.)": "Feature-specific",
+    }
+
+    latex_symbols = {
+        "Unique-Binding": 
+            {
+                "5_dfs_average": r"$\Phi_{i}$", 
+                "Bound-Only": r"$\Phi_{i}[{i}=1]$", 
+                "NOT-Bound-Only": r"$\Phi_{i}[{i}=0]$",
+            },
+        "ElasticNet Coefficients": {
+            "Absolute Value": r"$|\beta_{i}|$",
+            "Signed": r"$\beta_{i}$",
+        }, 
+    }
+
+    FIGURES = {
+        "predicted_vs_actual_PSI_plot": {
+            "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
+            "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
+        }, 
+        "global_SHAP_distribution": {
+            "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
+            "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_distribution_unique_binding.png",
+            "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_distribution_unique_binding.png",
+        }, 
+        "global_SHAP_heatmap": {
+            "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_heatmap_unique_binding.png",
+            "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_heatmap_unique_binding.png",
+            "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_heatmap_unique_binding.png",
+        },
+        "global_shap_matching_features_scatter": {
+            "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_matching_features_scatter_unique_binding.png",
+            "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_matching_features_scatter_unique_binding.png",
+            "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_matching_features_scatter_unique_binding.png",
+        },
+        "position_3_4_global_shap_beta_coeff_violinplot": {
+            "grouped_positions": {
+                "5_dfs_average": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_GROUPED_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+                "Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_GROUPED_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+                "NOT-Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_GROUPED_NOT_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+            },
+            "separated_positions": {
+                "5_dfs_average": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+                "Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+                "NOT-Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_NOT_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
+            }, 
+        }
     }
 
     def __post_init__(self):
