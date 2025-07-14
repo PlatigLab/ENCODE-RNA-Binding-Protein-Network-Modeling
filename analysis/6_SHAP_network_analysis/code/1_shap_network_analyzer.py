@@ -5050,7 +5050,7 @@ class ShapNetworkInvestigator:
         fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
         plt.tight_layout()
 
-        plt.savefig(self.CACHE_INFO["predicted_vs_actual_PSI_plot"][underlying_data], dpi=300, bbox_inches='tight')
+        plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=300, bbox_inches='tight')
         plt.show()
 
         del dfs 
