@@ -1735,14 +1735,14 @@ class ShapNetworkInvestigator:
             
         # Loop over all SHAP types and plot for each
         shap_types = [
-            ("5_dfs_average", '"Normal" Global SHAP', self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")),
-            ("Bound-Only", "Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)),
-            ("NOT-Bound-Only", "NOT-Bound-Only Global SHAP", self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)),
+            ("5_dfs_average", f'{self.latex_symbols["Unique-Binding"]["5_dfs_average"]}', self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="Unique-Binding")),
+            ("Bound-Only", f"{self.latex_symbols['Unique-Binding']['Bound-Only']}", self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data="Unique-Binding")),
+            ("NOT-Bound-Only", f"{self.latex_symbols['Unique-Binding']['NOT-Bound-Only']}", self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None, underlying_data="Unique-Binding")),
         ]
 
         for shap_key, shap_label, global_shap in shap_types:
 
-            fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300, sharex=True, sharey=False)
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=300, sharex=True, sharey=False)
             model_names = ["Abs(ElasticNet Coef.)", "Global SHAP"]
             cell_lines = self.cell_lines
 
@@ -1783,9 +1783,10 @@ class ShapNetworkInvestigator:
                         ax=ax,
                         inner=None,
                         density_norm="width",
-                        color="cornflowerblue",  # steelblue, a bit darker
+                        color="cornflowerblue",
                         linewidth=1,
-                        alpha=0.4  # less shading
+                        alpha=0.4,
+                        cut=0  # Prevent KDE from extending beyond the data range (no negative values)
                     )
                     sns.boxplot(
                         data=plot_df,
@@ -1819,25 +1820,30 @@ class ShapNetworkInvestigator:
 
                     # Always center annotation at x=0.5; combine asterisk and p-value if significant
                     annotation = f"* p={p_val:.2e}" if p_val < 0.05 else f"p={p_val:.2e}"
-                    ax.text(0.5, y_text, annotation, ha='center', va='bottom', fontsize=10, color="black")
+                    ax.text(0.5, y_text, annotation, ha='center', va='bottom', fontsize=14, color="black")
 
                     # Extend ylim to make more room for annotation
                     current_ylim = ax.get_ylim()
-                    new_ylim = (current_ylim[0], y_text + 0.1 * y_range)
+                    new_ylim = (current_ylim[0], y_text + 0.15 * y_range)
                     ax.set_ylim(new_ylim)
 
-                    ax.set_title(f"{cell_line} - {model}", fontsize=14, pad=10)
                     ax.set_xlabel("")
+
                     # Set y-axis label based on model
                     if model == "Global SHAP":
-                        ax.set_ylabel("Global SHAP", fontsize=12)
+                        y_label = shap_label
                     elif model == "Abs(ElasticNet Coef.)":
-                        ax.set_ylabel("Abs(ElasticNet Coef.)", fontsize=12)
+                        y_label = self.latex_symbols["ElasticNet Coefficients"]["Absolute Value"]
+                    ax.set_ylabel(y_label, fontsize=20)
+
+                    ax.set_title(f"{cell_line} - {y_label}", fontsize=18, pad=10)
+
 
             for ax in axes.flat:
-                ax.tick_params(axis='x', labelsize=12)
+                ax.tick_params(axis='x', labelsize=16)
+                ax.tick_params(axis='y', labelsize=13)
 
-            fig.supxlabel("Positions", fontsize=14, y=0)
+            fig.supxlabel("Positions", fontsize=20, y=0.02)
             plt.suptitle(
                 f"{shap_label}/Abs(ElasticNet Coef.): Positions 3 & 4 vs. All Other Positions\n\n"
                 "NOTE 1: Absolute value used for ElasticNet coef.\n"
@@ -1845,6 +1851,8 @@ class ShapNetworkInvestigator:
                 f"NOTE 3: Using {shap_label}",
                 fontsize=16, y=1.02)
             plt.tight_layout()
+
+            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["grouped_positions"][shap_key], dpi=300, bbox_inches='tight')
             plt.show()
 
             # New figure: violinplot and boxplot for each position (1-6) per cell line and model
@@ -1874,7 +1882,8 @@ class ShapNetworkInvestigator:
                         density_norm="width",
                         color="cornflowerblue",
                         linewidth=1,
-                        alpha=0.4
+                        alpha=0.4, 
+                        cut=0  # Prevent KDE from extending beyond the data range 
                     )
                     sns.boxplot(
                         data=plot_df,
@@ -1890,17 +1899,21 @@ class ShapNetworkInvestigator:
                         meanline=True,
                         meanprops={"color": "gold", "linewidth": 2}
                     )
-                    ax.set_title(f"{cell_line} - {model}", fontsize=14, pad=10)
-                    ax.set_xlabel("")
+
+                    # Set y-axis label based on model
                     if model == "Global SHAP":
-                        ax.set_ylabel("Global SHAP", fontsize=12)
+                        y_label = shap_label
                     elif model == "Abs(ElasticNet Coef.)":
-                        ax.set_ylabel("Abs(ElasticNet Coef.)", fontsize=12)
+                        y_label = self.latex_symbols["ElasticNet Coefficients"]["Absolute Value"]
+                    ax.set_ylabel(y_label, fontsize=20)
 
-                    ax.tick_params(axis='x', labelsize=12)
-                    ax.tick_params(axis='y', labelsize=12)
+                    ax.set_title(f"{cell_line} - {y_label}", fontsize=18, pad=10)
+                    ax.set_xlabel("")
 
-            fig.supxlabel("Position", fontsize=18, y=0)
+                    ax.tick_params(axis='x', labelsize=20)
+                    ax.tick_params(axis='y', labelsize=14)
+
+            fig.supxlabel("Position", fontsize=22, y=0.01)
             plt.suptitle(
                 f"{shap_label}/Abs(ElasticNet Coefficient) by Position\n"
                 "NOTE: Absolute value used for ElasticNet coefficients.\n"
@@ -1908,6 +1921,8 @@ class ShapNetworkInvestigator:
                 fontsize=16, y=1.01
             )
             plt.tight_layout()
+
+            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["separated_positions"][shap_key], dpi=300, bbox_inches='tight')
             plt.show()
         
 
