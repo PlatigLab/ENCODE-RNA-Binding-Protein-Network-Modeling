@@ -13,6 +13,7 @@ from itertools import combinations
 from matplotlib.legend import Legend
 import matplotlib.gridspec as gridspec
 from sklearn.metrics import r2_score
+from statannotations.Annotator import Annotator
 
 
 @dataclass
@@ -150,6 +151,7 @@ class ShapNetworkInvestigator:
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_distribution_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_distribution_unique_binding.png",
+            "All Together": "../outputs/publication_figures/global_shap/ALL_TOGETHER_global_SHAP_distribution_unique_binding.png",
         }, 
         "global_SHAP_heatmap": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_heatmap_unique_binding.png",
@@ -172,7 +174,7 @@ class ShapNetworkInvestigator:
                 "Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
                 "NOT-Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_NOT_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
             }, 
-        }
+        },
     }
 
     def __post_init__(self):
@@ -5055,6 +5057,131 @@ class ShapNetworkInvestigator:
 
         del dfs 
         gc.collect()
+
+
+    def plot_global_SHAP_distributions_across_binding_modes(self): 
+        # Load global SHAP values for 5_dfs_average, Bound-Only, and NOT-Bound-Only (all with Unique-Binding)
+        global_shap_5dfs = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="Unique-Binding")
+        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data="Unique-Binding")
+        global_shap_unbound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None, underlying_data="Unique-Binding")
+
+        # Combine all into a long table: columns = cell line, feature, global shap, type
+        long_data = []
+        for shap_type, shap_dict in [
+            ("5_dfs_average", global_shap_5dfs),
+            ("unbound", global_shap_unbound),
+            ("bound", global_shap_bound),
+        ]:
+            for cell_line, heatmap in shap_dict.items():
+                for pos in heatmap.index:
+                    for rbp in heatmap.columns:
+                        feature = f"{rbp}_{pos}"
+                        value = heatmap.at[pos, rbp]
+                        long_data.append({
+                            "Cell Line": cell_line,
+                            "Feature": feature,
+                            "Global SHAP": value,
+                            "Type": shap_type,
+                        })
+        df_long = pd.DataFrame(long_data)
+        # Drop rows with null values in "Global SHAP"
+        df_long = df_long.dropna(subset=["Global SHAP"])
+
+        # Set categorical order for Type and Cell Line
+        type_order = ["5_dfs_average", "unbound", "bound"]
+        type_labels = {"5_dfs_average": "All", "unbound": "Unbound", "bound": "Bound"}
+        df_long["Type"] = pd.Categorical(df_long["Type"], categories=type_order, ordered=True)
+        df_long["Binding Mode"] = df_long["Type"].map(type_labels)
+        cell_line_order = ["HepG2", "K562"]
+        df_long["Cell Line"] = pd.Categorical(df_long["Cell Line"], categories=cell_line_order, ordered=True)
+
+        # Prepare colors
+        palette = {"HepG2": "#FFD580", "K562": "#ADD8E6"}
+
+        plt.figure(figsize=(9, 5), dpi=300)
+        ax = plt.gca()
+
+        # Violinplot with boxplot inside, grouped by Type and split by Cell Line
+        sns.violinplot(
+            data=df_long,
+            x="Binding Mode",
+            y="Global SHAP",
+            hue="Cell Line",
+            order=[type_labels[t] for t in type_order],
+            hue_order=cell_line_order,
+            palette=palette,
+            cut=0,
+            linewidth=1,
+            density_norm="width",
+            ax=ax,
+            split=False,
+            inner="point",
+            inner_kws={"marker": "o", "alpha": 0.9, "color": "lightgreen",},
+        )
+
+        annot = Annotator(
+            ax, 
+            pairs = [
+                (("All", "HepG2"), ("Bound", "HepG2")),
+                (("All", "K562"), ("Bound", "K562")),
+                (("Unbound", "HepG2"), ("Bound", "HepG2")),
+                (("Unbound", "K562"), ("Bound", "K562")),
+            ], 
+            data = df_long,
+            x = "Binding Mode",
+            y = "Global SHAP",
+            hue = "Cell Line",
+            order = [type_labels[t] for t in type_order],
+            hue_order = cell_line_order,
+        )
+        annot.configure(
+            test="Mann-Whitney-ls", 
+            text_format="star", 
+            color='salmon',
+            loc="inside", 
+            verbose=2, 
+            comparisons_correction='fdr_bh',
+            text_offset = 1, 
+            line_height = 0.05
+        )
+        annot.apply_test().annotate(
+            line_offset_to_group = 0.3
+        )
+        
+        # Remove duplicate legends
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles[:2], labels[:2], title="Cell Line", loc="center left", fontsize=10, title_fontsize=12)
+
+        # Annotate number of points, median, and percent zero above each violin
+        for i, type_label in enumerate([type_labels[t] for t in type_order]):
+            for j, cell_line in enumerate(cell_line_order):
+                vals = df_long[(df_long["Binding Mode"] == type_label) & (df_long["Cell Line"] == cell_line)]["Global SHAP"].dropna()
+                n_points = len(vals)
+                median_val = np.median(vals)
+                pct_zero = (vals == 0).mean() * 100
+                x_pos = i - 0.2 + j * 0.4  # violinplot offset
+                y_pos = vals.max() + 0.1
+                ax.text(
+                    x_pos, y_pos,
+                    f"#: {n_points}\nMedian: {median_val:.1e}\n% Zero: {pct_zero:.0f}",
+                    ha="center", va="bottom", fontsize=8, color="black"
+                )
+        
+        shap_symbol = r"$\Phi$"
+        ax.set_title(f"{shap_symbol} Distribution by Binding Mode and Cell Line\nNOTE 1: Using 'Unique Binding'\nNOTE 2: Mann-Whitney U test checks 'Bound' is greater than other distribution", fontsize=8, y=1.05)
+        ax.set_xlabel("Binding Mode", fontsize=16)
+        ax.set_ylabel(shap_symbol, fontsize=20)
+
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+
+        # Remove top and right spines for a cleaner look
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        plt.tight_layout()
+        plt.savefig(self.FIGURES["global_SHAP_distribution"]["All Together"], dpi=300, bbox_inches='tight')
+        plt.show()
 
 
 
