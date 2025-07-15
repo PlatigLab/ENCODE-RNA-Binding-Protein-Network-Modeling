@@ -2,6 +2,7 @@ import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, conc
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 import scipy.cluster.hierarchy as sch
+import matplotlib.gridspec as gridspec
 
 from dataclasses import dataclass
 from IPython.display import display, Video
@@ -11,7 +12,6 @@ from matplotlib.colors import LogNorm
 from scipy.stats import pearsonr, spearmanr, mannwhitneyu
 from itertools import combinations
 from matplotlib.legend import Legend
-import matplotlib.gridspec as gridspec
 from sklearn.metrics import r2_score
 from statannotations.Annotator import Annotator
 
@@ -5219,6 +5219,81 @@ class ShapNetworkInvestigator:
         plt.tight_layout()
         plt.savefig(self.FIGURES["global_SHAP_distribution"]["All Together"], dpi=300, bbox_inches='tight')
         plt.show()
+
+
+    def plot_global_SHAP_examples_as_stem_plot(self, mode=None, underlying_data=None):
+        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
+        assert mode in ["5_dfs_average", "Bound-Only", "NOT-Bound-Only"], "mode must be '5_dfs_average', 'Bound-Only', or 'NOT-Bound-Only'"
+
+        hand_selected_rbps = {
+            "DDX3X": [3, 5],
+            "DDX55": [2, 4],
+            "FTO": [5],
+            "RPS3": [3,4],
+            "LIN28B": [3,4],
+            "SND1": [3, 4],
+            "IGF2BP1": [3,4],
+            "GRWD1": [3,4],
+            "HNRNPM": [3,4],
+        }
+
+        # Load the appropriate global SHAP data based on mode and underlying_data
+        if mode == "5_dfs_average":
+            global_shap = self.calculate_global_SHAP(mode=mode, binding_unique=underlying_data)
+        else:
+            global_shap = self.calculate_specialized_global_SHAP(
+                mode=mode, condition=None, underlying_data=underlying_data
+            )
+
+        for rbp in hand_selected_rbps:
+            fig, axes = plt.subplots(2, 1, figsize=(4,4.5), dpi=150, sharex=True)
+            for idx, cell_line in enumerate(self.cell_lines):
+                heatmap = global_shap[cell_line]
+                ax = axes[idx]
+                y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
+                x = np.arange(1, 7)
+                # Plot the main stem plot for all positions
+                markerline, stemlines, baseline = ax.stem(
+                    x, y, basefmt=" ", markerfmt="o",
+                )
+                plt.setp(markerline, markersize=5, color="#7570b3")
+                plt.setp(stemlines, color="#7570b3", linestyle=":")  # Make the stem lines dotted
+
+                # Plot a second stem plot for highlighted positions using color #1b9e77
+                highlight_positions = hand_selected_rbps[rbp]
+                highlight_x = np.array(highlight_positions)
+                highlight_y = [heatmap.at[pos, rbp] for pos in highlight_x]
+                markerline2, stemlines2, baseline2 = ax.stem(
+                    highlight_x, highlight_y, basefmt=" ", markerfmt="o",
+                )
+                plt.setp(markerline2, markersize=7, color="#00ffb3")
+                plt.setp(stemlines2, color="#00ffb3", linestyle=":")  # Make the stem lines dotted
+
+                for xi, yi in zip(x, y):
+                    ax.text(
+                        xi, yi + 0.08 * np.nanmax(y),
+                        f"{yi:.2f}", ha="center", va="bottom", fontsize=8, color ="#fc6f03"
+
+                    )
+
+                ax.set_title(
+                    cell_line,
+                    fontsize=10
+                )
+                ymin, ymax = ax.get_ylim()
+                ax.set_ylim(0- (0.1*(ymax-ymin)), ymax + 0.25 * (ymax - ymin))
+
+            fig.supxlabel("Position", fontsize=12, x=0.6, y=0.05)
+            fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=14, x=0.07)
+            fig.suptitle(
+                f"{rbp}: {self.latex_symbols[underlying_data][mode]} Across Positions\nNOTE 1: {underlying_data} data\nNOTE 2: hand-selected positions highlighted in green",
+                fontsize=8, y=0.97
+            )
+
+            plt.tight_layout()
+            plt.show()
+        
+
 
 
 
