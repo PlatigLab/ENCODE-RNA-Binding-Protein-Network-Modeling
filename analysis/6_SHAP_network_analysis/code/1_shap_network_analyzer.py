@@ -1839,6 +1839,14 @@ class ShapNetworkInvestigator:
                     new_ylim = (current_ylim[0], y_text + 0.15 * y_range)
                     ax.set_ylim(new_ylim)
 
+                    # Annotate the difference of medians between "3, 4" and "1, 2, 5, 6" at (x=0.5, y=0.6) in green
+                    median_difference = plot_df[plot_df['Position']=='3, 4']['Value'].median() - plot_df[plot_df['Position']=='1, 2, 5, 6']['Value'].median()
+                    ax.text(
+                        0.5, 0.6,
+                        f"Δ Median =\n{median_difference:.2f}",
+                        ha="center", va="center", fontsize=16, color="green", transform=ax.transAxes
+                    )
+
                     ax.set_xlabel("")
 
                     # Set y-axis label based on model
@@ -1860,8 +1868,9 @@ class ShapNetworkInvestigator:
                 f"{shap_label}/Abs(ElasticNet Coef.): Positions 3 & 4 vs. All Other Positions\n\n"
                 "NOTE 1: Absolute value used for ElasticNet coef.\n"
                 f"NOTE 2: MWU test checks '3 and 4' greater than others (one-sided)\n"
-                f"NOTE 3: Using {shap_label}",
-                fontsize=16, y=1.02)
+                f"NOTE 3: Using {shap_label}\n"
+                "NOTE 4: Δ Median is Med('3, 4') - Med('1, 2, 5, 6')",
+                fontsize=16, y=1.025)
             plt.tight_layout()
 
             plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["grouped_positions"][shap_key], dpi=300, bbox_inches='tight')
