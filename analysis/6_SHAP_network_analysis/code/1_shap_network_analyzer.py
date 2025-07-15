@@ -5293,6 +5293,56 @@ class ShapNetworkInvestigator:
             plt.tight_layout()
             plt.show()
         
+        # New figure: compact barplots for all RBPs with [3, 4] in hand_selected_rbps
+        rbps_3_4 = sorted([rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list == [3, 4]])
+        nrows = len(rbps_3_4)
+        ncols = 2  # One for each cell line
+
+        fig, axes = plt.subplots(
+            nrows=nrows, ncols=ncols, figsize=(1.8* ncols, 1* nrows),
+            sharex=True, sharey=True, squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=300
+        )
+
+        for row_idx, rbp in enumerate(rbps_3_4):
+            for col_idx, cell_line in enumerate(self.cell_lines):
+                ax = axes[row_idx, col_idx]
+                heatmap = global_shap[cell_line]
+                y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
+                x = np.arange(1, 7)
+                colors = ["#7570b3" if pos in [1, 2, 5, 6] else "#00ffb3" for pos in x]
+
+                ax.bar(x, y, color=colors, width=0.5)
+                # Make y-axis tick labels smaller
+                ax.tick_params(axis='y', labelsize=10, color='red')
+
+                if col_idx == 0:
+                    ax.set_ylabel(rbp, fontsize=12, rotation=0, labelpad=10, va='center', y=0.3, ha='right')
+                else:
+                    ax.set_ylabel("")
+                ax.set_xlabel("")
+
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+
+        # Set shared x-axis label only on the bottom row
+        for col_idx in range(ncols):
+            axes[-1, col_idx].set_xticks(np.arange(1, 7))
+            axes[-1, col_idx].set_xticklabels([str(i) for i in range(1, 7)], fontsize=7)
+    
+        fig.supxlabel("Position", fontsize=14, y=0.01)
+        fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=18, x=-0.28)
+        for ax in axes.flat:
+            ax.tick_params(axis='x', labelsize=10)
+
+        # Add cell line labels as column titles
+        for col_idx, cell_line in enumerate(self.cell_lines):
+            axes[0, col_idx].set_title(cell_line, fontsize=13, pad=2)
+
+        plt.tight_layout(pad=2)
+        plt.show()
+
 
 
 
