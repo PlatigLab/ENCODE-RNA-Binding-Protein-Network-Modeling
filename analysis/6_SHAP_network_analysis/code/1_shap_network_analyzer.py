@@ -5177,12 +5177,11 @@ class ShapNetworkInvestigator:
                     ha="center", va="bottom", fontsize=8, color="black"
                 )
         
-        shap_symbol = r"$\Phi$"
-        ax.set_title(f"{shap_symbol} Distribution by Binding Mode and Cell Line\nNOTE 1: Using 'Unique Binding'\nNOTE 2: Mann-Whitney U test checks 'Bound' is greater than other distribution", fontsize=8, y=1.05)
-        ax.set_xlabel("Binding Mode", fontsize=16)
-        ax.set_ylabel(shap_symbol, fontsize=20)
+        ax.set_title(f"{self.latex_symbols['Unique-Binding']['5_dfs_average']} Distribution by Binding Mode and Cell Line\nNOTE 1: Using 'Unique Binding'\nNOTE 2: Mann-Whitney U test checks 'Bound' is greater than other distribution", fontsize=8, y=1.05)
+        ax.set_xlabel("Binding Mode", fontsize=14, y=-0.05)
+        ax.set_ylabel(self.latex_symbols["Unique-Binding"]["5_dfs_average"], fontsize=20)
 
-        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='x', labelsize=13)
         ax.tick_params(axis='y', labelsize=14)
 
         # Remove top and right spines for a cleaner look
