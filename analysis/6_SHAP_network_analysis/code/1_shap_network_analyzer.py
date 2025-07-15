@@ -788,6 +788,25 @@ class ShapNetworkInvestigator:
 
                 plt.show()
 
+            # Plot dendrograms for hierarchical clustering of rows (positions) using Ward linkage, all in one figure
+            n_cell_lines = len(global_SHAP)
+            fig, axes = plt.subplots(1, n_cell_lines, figsize=(4* n_cell_lines, 3), dpi=300, squeeze=False)
+            for idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
+                # Perform hierarchical clustering on the rows (positions)
+                linkage_rows = sch.linkage(heatmap.fillna(0), method="ward")
+                ax = axes[0, idx]
+                sch.dendrogram(linkage_rows, labels=heatmap.index, orientation="top", color_threshold=None, ax=ax)
+                ax.set_title(f"{cell_line}", fontsize=14)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+            
+            plt.suptitle(f"{prefix} {binding_unique}: Ward Clustering of Positions\nNOTE 1: Null values replaced with 0 for clustering", fontsize=12, y=1.1) 
+            fig.supxlabel("Position", fontsize=12)
+            fig.supylabel("Distance", fontsize=12)
+            
+            plt.tight_layout()
+            plt.show()
+
             # Convert global_SHAP data into pandas DataFrames
             hepg2_df = global_SHAP["HepG2"].copy()
             k562_df = global_SHAP["K562"].copy()
