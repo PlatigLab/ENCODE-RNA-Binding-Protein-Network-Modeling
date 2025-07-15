@@ -133,8 +133,8 @@ class ShapNetworkInvestigator:
         "Unique-Binding": 
             {
                 "5_dfs_average": r"$\Phi_{i}$", 
-                "Bound-Only": r"$\Phi_{i}[{i}=1]$", 
-                "NOT-Bound-Only": r"$\Phi_{i}[{i}=0]$",
+                "Bound-Only": r"$\Phi_{i}[{b}=1]$", 
+                "NOT-Bound-Only": r"$\Phi_{i}[{b}=0]$",
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
