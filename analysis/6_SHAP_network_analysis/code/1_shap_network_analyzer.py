@@ -175,6 +175,11 @@ class ShapNetworkInvestigator:
                 "NOT-Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_NOT_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
             }, 
         },
+        "global_shap_position_highlighting_bar_plots": {
+            "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
+            "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
+
+        }
     }
 
     def __post_init__(self):
@@ -5329,8 +5334,8 @@ class ShapNetworkInvestigator:
 
         # Prepare plotting data for both groups
         rbp_groups = [
-            {"rbps": rbps_other, "sharey": False, "type": "pos_other_highlight", 'supylabel_y_position': -0.08},
-            {"rbps": rbps_3_4, "sharey": True, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015},
+            {"rbps": rbps_other, "type": "pos_other_highlight", 'supylabel_y_position': -0.08},
+            {"rbps": rbps_3_4, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015},
         ]
 
         for group in rbp_groups:
@@ -5341,7 +5346,7 @@ class ShapNetworkInvestigator:
 
             fig, axes = plt.subplots(
                 nrows=nrows, ncols=ncols, figsize=(1.8 * ncols, 1 * nrows),
-                sharex=True, sharey=group['sharey'], squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=300
+                sharex=True, sharey=True, squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=150
             )
 
             for row_idx, rbp in enumerate(rbps):
@@ -5360,7 +5365,7 @@ class ShapNetworkInvestigator:
                     ax.set_yticklabels([f"{tick:.1f}" for tick in ax.get_yticks()], fontsize=8, )
 
                     if col_idx == 0:
-                        ax.set_ylabel(rbp, fontsize=12, rotation=0, labelpad=10, va='center', y=0.3, ha='right')
+                        ax.set_ylabel(f"$\\bf{{{rbp}}}$", fontsize=12, rotation=0, labelpad=10, va='center', y=0.3, ha='right')
                     else:
                         ax.set_ylabel("")
                     ax.set_xlabel("")
@@ -5368,7 +5373,6 @@ class ShapNetworkInvestigator:
                     ax.spines['top'].set_visible(False)
                     ax.spines['right'].set_visible(False)
                     ax.spines['left'].set_visible(False)
-                    ax.spines['bottom'].set_visible(False)
 
             # Set shared x-axis label only on the bottom row
             for col_idx in range(ncols):
@@ -5385,6 +5389,8 @@ class ShapNetworkInvestigator:
                 axes[0, col_idx].set_title(cell_line, fontsize=13, pad=2)
 
             plt.tight_layout(pad=2)
+
+            plt.savefig(self.FIGURES["global_shap_position_highlighting_bar_plots"][group["type"]], dpi=300, bbox_inches='tight')
             plt.show()
 
 
