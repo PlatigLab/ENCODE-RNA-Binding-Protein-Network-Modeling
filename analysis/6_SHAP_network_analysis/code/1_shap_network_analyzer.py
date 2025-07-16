@@ -5221,7 +5221,7 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def plot_global_SHAP_examples_as_stem_plot(self, mode=None, underlying_data=None):
+    def plot_global_SHAP_examples_as_bar_plots(self, mode=None, underlying_data=None):
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
         assert mode in ["5_dfs_average", "Bound-Only", "NOT-Bound-Only"], "mode must be '5_dfs_average', 'Bound-Only', or 'NOT-Bound-Only'"
 
