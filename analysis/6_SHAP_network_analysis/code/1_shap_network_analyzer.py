@@ -4794,27 +4794,57 @@ class ShapNetworkInvestigator:
             plt.show()
 
     
-    def load_final_SHAP_data(self, data_mode=None):
-        assert data_mode in ["All-Data",]
+    def load_final_SHAP_data(self, underlying_data=None, as_lazyframe=False):
+        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
+        assert as_lazyframe in [True, False], "as_lazyframe must be True or False"
 
-        k562_output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode]["K562"]
-        hepg2_output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode]["HepG2"]
+        if underlying_data == "Unique-Binding":
+            logger.warning(f"REMINDER: 'All-Data' is used to create cache and {underlying_data} must be created each time from 'All-Data' cache.")
+
+
+        k562_output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"]["K562"]
+        hepg2_output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"]["HepG2"]
         
         if os.path.exists(k562_output_file) and os.path.exists(hepg2_output_file):
-            logger.success("FROM CACHE: Final SHAP data already exists for both cell lines.")
+            logger.info("FROM CACHE: Final SHAP data already exists for both cell lines.")
 
-            self.final_SHAP_data = {
-                "K562": pl.scan_ipc(k562_output_file).collect(),
-                "HepG2": pl.scan_ipc(hepg2_output_file).collect()
+            final_shap_data = {
+                "K562": pl.scan_ipc(k562_output_file),
+                "HepG2": pl.scan_ipc(hepg2_output_file)
             }
+
+            if underlying_data == "Unique-Binding":
+                for key in final_shap_data:
+                    schema = final_shap_data[key].collect_schema().names()
+                    binding_cols = [col for col in schema if col.endswith("_binding")]
+                    final_shap_data[key] = final_shap_data[key].unique(subset=binding_cols, maintain_order=True, keep="first")
+
+            for key in final_shap_data:
+                final_shap_data[key] = final_shap_data[key].sort('index')
+            
+            if as_lazyframe: 
+                return final_shap_data
+            
+            elif not as_lazyframe:
+
+                for key in final_shap_data:
+                    final_shap_data[key] = final_shap_data[key].collect()
+
+                if underlying_data == "Unique-Binding":
+                    self.final_unique_binding_SHAP_data = final_shap_data
+                elif underlying_data == "All-Data":
+                    self.final_all_data_SHAP_data = final_shap_data
+
+                logger.success(f"Loaded final SHAP data from cache for {underlying_data} mode.")
+
 
         else: 
             
             for cell_line in self.cell_lines: 
-                output_file = self.CACHE_INFO["final_SHAP_cache"][data_mode][cell_line]
+                output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"][cell_line]
 
                 # Step 1: Retrieve 5 SHAP tables and compute mean
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=data_mode)
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
                 mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=shap_dfs, metric='mean')
 
                 # Step 2: Get the first lazyframe and collect non-SHAP columns
