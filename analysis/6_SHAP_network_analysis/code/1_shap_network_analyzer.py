@@ -4885,12 +4885,12 @@ class ShapNetworkInvestigator:
                 gc.collect()
 
 
-    def plot_local_SHAP_vs_PSI(self, feature=None, data_mode=None):
+    def plot_local_SHAP_vs_PSI(self, feature=None, underlying_data=None):
         assert feature.endswith("_shap"), "feature must end with '_shap'"
-        assert data_mode in ["All-Data", "Unique-Binding"], "data_mode must be 'All-Data' or 'Unique-Binding'"
+        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
 
-        if not hasattr(self, "final_SHAP_data"): 
-            self.load_final_SHAP_data(data_mode="All-Data")
+        if not hasattr(self, "final_all_data_SHAP_data"): 
+            self.load_final_SHAP_data(data_mode="All-Data", as_lazyframe=False)
 
         # Determine RBPs and position from feature
         rbp, position = self.get_RBP_position(feature)
@@ -4995,7 +4995,7 @@ class ShapNetworkInvestigator:
             ax_shap.axhline(0, color="gold", linestyle="--", linewidth=1.5, zorder=0)
 
         fig.suptitle(
-            f"Local SHAP and PSI Distributions for {feature}\nNOTE 1: {data_mode} shown here.",
+            f"Local SHAP and PSI Distributions for {feature}\nNOTE 1: {underlying_data} shown here.",
             fontsize=16
         )
         fig.supxlabel("Category", fontsize=13)
@@ -5386,6 +5386,45 @@ class ShapNetworkInvestigator:
 
             plt.tight_layout(pad=2)
             plt.show()
+
+
+    def plot_binding_sum_distribution(self):
+
+        if not hasattr(self, "final_unique_binding_SHAP_data"):
+            self.load_final_SHAP_data(data_mode="Unique-Binding", as_lazyframe=False)
+
+        # Prepare a DataFrame for violinplot (percentage)
+        plot_data = []
+        for cell_line in self.cell_lines:
+            df = self.final_unique_binding_SHAP_data[cell_line]
+            binding_sum = df["Binding Sum"].to_numpy()
+            # Count number of columns ending with "_binding"
+            num_binding_cols = len([col for col in df.columns if col.endswith("_binding")])
+            binding_sum_pct = (binding_sum / num_binding_cols) * 100
+            plot_data.append(pd.DataFrame({
+                "Cell Line": cell_line,
+                "Binding Sum (%)": binding_sum_pct
+            }))
+        plot_df = pd.concat(plot_data, ignore_index=True)
+
+        plt.figure(figsize=(8, 5), dpi=150)
+        sns.violinplot(
+            data=plot_df,
+            x="Cell Line",
+            y="Binding Sum (%)",
+            inner="box",
+            cut=0,
+            scale="width",
+            palette="pastel"
+        )
+        plt.xlabel("Cell Line", fontsize=14)
+        plt.ylabel("% Bound Features", fontsize=14)
+        plt.title("Bound Percentage Across Cell Lines (Unique-Binding)", fontsize=16)
+        plt.tight_layout()
+        plt.show()
+
+        
+
 
 
 
