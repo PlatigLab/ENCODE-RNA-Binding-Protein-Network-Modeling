@@ -184,7 +184,19 @@ class ShapNetworkInvestigator:
             "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
             "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
         }, 
-        "per_row_num_bound_vs_percent_greater_than_cutoff": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/per_row_num_bound_vs_percent_greater_than_cutoff.png",
+        "per_row_num_bound_vs_percent_greater_than_cutoff": {
+            "num_bound_vs_num_bound_gt_cutoff": {
+                'feature': {
+                    "log": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/FEATURE_per_row_num_bound_vs_percent_greater_than_cutoff_LOG.png",
+                    "linear": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/FEATURE_per_row_num_bound_vs_percent_greater_than_cutoff_LINEAR.png",
+                }, 
+                'rbp': {
+                    "log": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/RBP_per_row_num_bound_vs_percent_greater_than_cutoff_LOG.png",
+                    "linear": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/RBP_per_row_num_bound_vs_percent_greater_than_cutoff_LINEAR.png",
+
+                },
+            },
+        }
     }
 
     def __post_init__(self):
@@ -5465,10 +5477,16 @@ class ShapNetworkInvestigator:
                 shap_cols = [col.replace("_binding", "_shap") for col in binding_cols]
 
                 # Prepare output columns
-                output_cols = ["index", "num_bound"]
+                output_cols = [
+                    "index", "feature_num_bound", "rbp_num_bound"
+                ]
                 for cutoff in cutoffs:
-                    output_cols.append(f"num_shap_gt_{cutoff}")
-                    output_cols.append(f"pct_shap_gt_{cutoff}")
+                    output_cols.extend([
+                        f"feature_num_shap_gt_{cutoff}",
+                        f"feature_pct_shap_gt_{cutoff}",
+                        f"rbp_num_shap_gt_{cutoff}",
+                        f"rbp_pct_shap_gt_{cutoff}"
+                    ])
 
                 # Prepare lists to collect results
                 results = []
@@ -5479,22 +5497,46 @@ class ShapNetworkInvestigator:
                 indices = df["index"].to_numpy()
                 binding_sum_arr = df["Binding Sum"].to_numpy()
 
+                # Precompute RBP and position for each feature column
+                feature_rbps = [self.get_RBP_position(col)[0] for col in binding_cols]
+
                 for i in range(binding_arr.shape[0]):
                     bound_mask = binding_arr[i] == 1
                     num_bound = bound_mask.sum()
                     # Assert num_bound matches Binding Sum
                     assert num_bound == binding_sum_arr[i], f"Row {indices[i]}: num_bound {num_bound} != Binding Sum {binding_sum_arr[i]}"
-                    row_result = [indices[i], num_bound]
-                    shap_vals = shap_arr[i][bound_mask]
                     
+                    # Get RBPs for bound features
+                    rbp_num_bound = len(
+                        set(
+                            [feature_rbps[j] for j, is_bound in enumerate(bound_mask) if is_bound]
+                        )
+                    )
+
+                    row_result = [indices[i], num_bound, rbp_num_bound]
+                    # For each cutoff, calculate feature-based and RBP-based stats
                     for cutoff in cutoffs:
-                        if num_bound ==0: 
-                            row_result.extend([float('nan'), float('nan')])
-                        else: 
-                            num_gt = float((shap_vals > cutoff).sum())
+                        if num_bound == 0:
+                            row_result.extend([float('nan'), float('nan'), float('nan'), float('nan')])
+                        else:
+                            # Find indices of bound features
+                            bound_indices = np.where(bound_mask)[0]
+
+                            # Find indices among bound features where SHAP > cutoff
+                            gt_indices = [j for j in bound_indices if shap_arr[i][j] > cutoff]
+                            num_gt = float(len(gt_indices))
                             pct_gt = float((num_gt / num_bound) * 100)
                             row_result.extend([num_gt, pct_gt])
-                            
+
+                            # RBP-based: count unique RBPs with at least one feature's SHAP > cutoff
+                            if rbp_num_bound == 0:
+                                row_result.extend([float('nan'), float('nan')])
+                            else:
+                                rbps_with_shap_gt = set(feature_rbps[j] for j in gt_indices)
+                                rbp_num_gt = float(len(rbps_with_shap_gt))
+                                rbp_pct_gt = float((rbp_num_gt / rbp_num_bound) * 100)
+                                row_result.extend([rbp_num_gt, rbp_pct_gt])
+
                     results.append(row_result)
 
                 # Create polars DataFrame and save
@@ -5509,173 +5551,198 @@ class ShapNetworkInvestigator:
         # # Load the cached data
         data = self.calculate_num_and_percent_bound_local_shap_greater_than_cutoff()
 
-        # Prepare data for seaborn catplot
-        plot_rows = []
-        for cell_line, df in data.items():
-            for col in df.columns:
-                if col.startswith("num_shap_gt_") or col.startswith("pct_shap_gt_"):
-                    # Extract cutoff value from column name
-                    cutoff = float(col.split("_")[-1])
-                    # Determine type: "#" or "%"
-                    value_type = "#" if col.startswith("num_") else "%"
-                    # For each row, add to plot_rows
-                    for val in df[col].to_numpy():
-                        plot_rows.append({
-                            "Cell Line": cell_line,
-                            "Type": value_type,
-                            "Cutoff": cutoff,
-                            "Value": val
-                        })
-        plot_df = pd.DataFrame(plot_rows)
+        # # Prepare data for violin plot
+        # plot_rows = []
+        # for cell_line, df in data.items():
+        #     for col in df.columns:
+        #         if col.startswith("num_shap_gt_") or col.startswith("pct_shap_gt_"):
+        #             # Extract cutoff value from column name
+        #             cutoff = float(col.split("_")[-1])
+        #             # Determine type: "#" or "%"
+        #             value_type = "#" if col.startswith("num_") else "%"
+        #             # For each row, add to plot_rows
+        #             for val in df[col].to_numpy():
+        #                 plot_rows.append({
+        #                     "Cell Line": cell_line,
+        #                     "Type": value_type,
+        #                     "Cutoff": cutoff,
+        #                     "Value": val
+        #                 })
+        # plot_df = pd.DataFrame(plot_rows)
 
-        # Prepare cutoff order for hue
-        cutoff_order = sorted(plot_df["Cutoff"].unique())
+        # # Prepare cutoff order for hue
+        # cutoff_order = sorted(plot_df["Cutoff"].unique())
 
-        fig, axes = plt.subplots(2, 1, figsize=(6, 6), dpi=300, sharex=True)
-        palette = ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
-        handles_labels = None
-        for i, value_type in enumerate(["%", "#"]):
-            ax = axes[i]
+        # fig, axes = plt.subplots(2, 1, figsize=(6, 6), dpi=100, sharex=True)
+        # palette = ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+        # handles_labels = None
+        # for i, value_type in enumerate(["%", "#"]):
+        #     ax = axes[i]
 
-            violin = sns.violinplot(
-                data=plot_df[plot_df["Type"] == value_type],
-                x="Cell Line",
-                y="Value",
-                hue="Cutoff",
-                hue_order=cutoff_order,
-                palette=palette,
-                ax=ax,
-                cut=0,
-                linewidth=1,
-                density_norm="width",
-                split=False,
-                inner="box",
-            )
-            ax.set_title(f"{value_type}", fontsize=18)
-            ax.set_ylabel(f"{value_type} Bound > Cutoff", fontsize=14)
-            ax.set_xlabel("Cell Line", fontsize=14)
-            ax.tick_params(axis="x", labelsize=11)
-            ax.tick_params(axis="y", labelsize=11)
-            if handles_labels is None:
-                handles_labels = ax.get_legend_handles_labels()
-            ax.get_legend().remove()
+        #     violin = sns.violinplot(
+        #         data=plot_df[plot_df["Type"] == value_type],
+        #         x="Cell Line",
+        #         y="Value",
+        #         hue="Cutoff",
+        #         hue_order=cutoff_order,
+        #         palette=palette,
+        #         ax=ax,
+        #         cut=0,
+        #         linewidth=1,
+        #         density_norm="width",
+        #         split=False,
+        #         inner="box",
+        #     )
+        #     ax.set_title(f"{value_type}", fontsize=18)
+        #     ax.set_ylabel(f"{value_type} Bound > Cutoff", fontsize=14)
+        #     ax.set_xlabel("Cell Line", fontsize=14)
+        #     ax.tick_params(axis="x", labelsize=11)
+        #     ax.tick_params(axis="y", labelsize=11)
+        #     if handles_labels is None:
+        #         handles_labels = ax.get_legend_handles_labels()
+        #     ax.get_legend().remove()
 
-        # Add a single legend to the right middle outside the plots
-        if handles_labels is not None:
-            handles, labels = handles_labels
-            fig.legend(
-                handles, labels, title="Cutoff",
-                bbox_to_anchor=(0.99, 0.5), loc="center left", fontsize=10, title_fontsize=12
-            )
+        # # Add a single legend to the right middle outside the plots
+        # if handles_labels is not None:
+        #     handles, labels = handles_labels
+        #     fig.legend(
+        #         handles, labels, title="Cutoff",
+        #         bbox_to_anchor=(0.99, 0.5), loc="center left", fontsize=10, title_fontsize=12
+        #     )
 
-        plt.suptitle("Distribution of # / % Bound Features' Local SHAP > Cutoff", fontsize=10, y=1.01)
-        
-        plt.tight_layout()
-        plt.show()
+        # plt.suptitle("Distribution of # / % Bound Features' Local SHAP > Cutoff", fontsize=10, y=1.01)
+        # plt.tight_layout()
+        # plt.show()
 
         cutoff_order = sorted(
             {
-                float(col.split("_")[-1]) for col in data["K562"].columns if col.startswith("num_shap_gt_")
+                float(col.split("_")[-1]) for col in data["K562"].columns if col.startswith("feature_num_shap_gt_")
             }
         )
 
         nrows = len(self.cell_lines)
         ncols = len(cutoff_order)
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), dpi=300, sharex="row", sharey="row")
-        for row_idx, cell_line in enumerate(self.cell_lines):
-            df = data[cell_line].to_pandas()
-            
-            max_num_bound = int(df["num_bound"].max())
-            min_num_bound = int(df["num_bound"].min())
-            # Ensure bins start at 1 or the minimum value, and step by 2
-            bin_start = max(1, min_num_bound)
-            bin_edges = np.arange(bin_start, max_num_bound + 2, 2)  # +2 to include the last bin
+        for col_type in ['feature', 'rbp']:
+            for log_norm in [False, True]:
+                fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), dpi=100, sharex="row", sharey="row")
+                for row_idx, cell_line in enumerate(self.cell_lines):
+                    df = data[cell_line].to_pandas()
+                    num_bound_col = f"{col_type}_num_bound"
 
-            # First, determine the maximum count (vmax) for this row across all cutoffs
-            hist2d_counts = []
-            for col_idx, cutoff in enumerate(cutoff_order):
-                if cutoff == 1.0:
-                    cutoff = 1
-                x = df["num_bound"]
-                y = df[f"num_shap_gt_{cutoff}"]
-                # Compute the histogram counts only, using the custom bin_edges
-                counts, _, _ = np.histogram2d(
-                    x, y, bins=[bin_edges, bin_edges]
+                    max_num_bound = int(df[num_bound_col].max())
+                    min_num_bound = int(df[num_bound_col].min())
+                    # Ensure bins start at 1 or the minimum value, and step by 2
+                    bin_start = max(1, min_num_bound)
+                    bin_edges = np.arange(bin_start, max_num_bound + 2, 2)  # +2 to include the last bin
+
+                    # First, determine the maximum count (vmax) for this row across all cutoffs
+                    hist2d_counts = []
+                    for col_idx, cutoff in enumerate(cutoff_order):
+                        if cutoff == 1.0:
+                            cutoff = 1
+                        x = df[num_bound_col]
+                        y = df[f"{col_type}_num_shap_gt_{cutoff}"]
+                        # Compute the histogram counts only, using the custom bin_edges
+                        counts, _, _ = np.histogram2d(
+                            x, y, bins=[bin_edges, bin_edges]
+                        )
+                        hist2d_counts.append(counts)
+                    row_vmax = max(np.max(c) for c in hist2d_counts if c.size > 0)
+
+                    for col_idx, cutoff in enumerate(cutoff_order):
+                        if cutoff == 1.0:
+                            cutoff = 1
+
+                        ax = axes[row_idx, col_idx]
+
+                        x = df[num_bound_col]
+                        y = df[f"{col_type}_num_shap_gt_{cutoff}"]
+
+                        # Hexbin plot with logarithmic color scale, shared vmax within row, and thin black borders
+                        h = ax.hexbin(
+                            x, y, gridsize=[len(bin_edges)-1, len(bin_edges)-1],
+                            cmap="Oranges",
+                            extent=[bin_edges[0], bin_edges[-1], bin_edges[0], bin_edges[-1]],
+                            norm=LogNorm(vmin=1, vmax=row_vmax) if log_norm else None,
+                            edgecolors='black',
+                            linewidths=0.05,
+                            mincnt=1
+                        )
+
+                        # # Line of best fit
+                        # mask = (~np.isnan(x)) & (~np.isnan(y))
+                        # slope, intercept = np.polyfit(x[mask], y[mask], 1)
+
+                        # x_fit = np.linspace(bin_edges[0], bin_edges[-1], 100)
+                        # y_fit = slope * x_fit + intercept
+                        # ax.plot(x_fit, y_fit, color="blue", linewidth=2, label="Best Fit")
+
+                        # # Correlation
+                        # pearson_corr, _ = pearsonr(x[mask], y[mask])
+                        # spearman_corr, _ = spearmanr(x[mask], y[mask])
+                        # ax.text(
+                        #     0.5, 0.94,
+                        #     f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}",
+                        #     color="blue", fontsize=14, ha="center", va="top", transform=ax.transAxes
+                        # )
+
+                        # Plot the actual y=x line in blue color
+                        ax.plot(
+                            [bin_start, max_num_bound],
+                            [bin_start, max_num_bound],
+                            color="blue",
+                            linestyle="--",
+                            linewidth=2,
+                            label="y=x"
+                        )
+
+                        # Set x and y tick label size larger
+                        ax.tick_params(axis='x', labelsize=13)
+                        ax.tick_params(axis='y', labelsize=13)
+
+                        # Add cell line as y-axis label (bold, non-rotated) to the left of first column
+                        if col_idx == 0:
+                            ax.set_ylabel(f"{cell_line}", fontsize=20, fontweight="bold", rotation=0, labelpad=10, va='center', ha='right')
+                        else:
+                            ax.set_ylabel("")
+
+                        # Add cutoff as column title (bold)
+                        if row_idx == 0:
+                            ax.set_title(f"{cutoff}", fontsize=22, fontweight="bold", pad=10)
+
+                        # Only add colorbar to the right of the last subplot in the row
+                        if col_idx == ncols - 1:
+                            cbar = fig.colorbar(h, ax=ax, orientation="vertical", fraction=0.05, pad=0.04)
+                            if row_idx == 0:
+                                cbar.ax.set_title("Log\nCounts" if log_norm else "Counts", fontsize=12, pad=10)
+                            cbar.ax.tick_params(labelsize=13)
+
+                col_type_text = "Features" if col_type == "feature" else "RBPs"
+
+                # Add meta x and y axis labels
+                fig.supxlabel(f"# Bound {col_type_text}", fontsize=18)
+                fig.supylabel(f"# Bound {col_type_text} w/ {self.latex_symbols['local_SHAP']} > Cutoff", fontsize=17, x=0.01, y=0.42)
+                fig.suptitle(
+                    f"# Bound {col_type_text} vs # Bound {col_type_text} w/ {self.latex_symbols['local_SHAP']} > Cutoff\n\nNOTE: using 'Unique Binding'\nNOTE 2: bins start at 1 and step by 2 for each x axis\nNOTE 3: colorbar is {'Logarithmic' if log_norm else 'Linear'} and shared across each row",
+                    fontsize=12, y=1.02, 
                 )
-                hist2d_counts.append(counts)
-            row_vmax = max(np.max(c) for c in hist2d_counts if c.size > 0)
 
-            for col_idx, cutoff in enumerate(cutoff_order):
-                if cutoff == 1.0:
-                    cutoff = 1
-
-                ax = axes[row_idx, col_idx]
-
-                x = df["num_bound"]
-                y = df[f"num_shap_gt_{cutoff}"]
-
-                # Hexbin plot with logarithmic color scale, shared vmax within row, and thin black borders
-                h = ax.hexbin(
-                    x, y, gridsize=[len(bin_edges)-1, len(bin_edges)-1],
-                    cmap="Oranges",
-                    extent=[bin_edges[0], bin_edges[-1], bin_edges[0], bin_edges[-1]],
-                    norm=LogNorm(vmin=1, vmax=row_vmax),
-                    edgecolors='black',
-                    linewidths=0.05,
-                    mincnt=1
+                # Add a single y=x legend to the plot at x=0.1 and y=0.45 by pulling the handle from the first subplot
+                handles, labels = axes[0, 0].get_legend_handles_labels()
+                idx = labels.index("y=x")
+                fig.legend(
+                    handles=[handles[idx]],
+                    labels=["y=x"],
+                    loc="center",
+                    bbox_to_anchor=(0.08, 0.41),
+                    fontsize=14,
+                    frameon=True
                 )
 
-                # Line of best fit
-                mask = (~np.isnan(x)) & (~np.isnan(y))
-                slope, intercept = np.polyfit(x[mask], y[mask], 1)
-
-                x_fit = np.linspace(bin_edges[0], bin_edges[-1], 100)
-                y_fit = slope * x_fit + intercept
-                ax.plot(x_fit, y_fit, color="blue", linewidth=2, label="Best Fit")
-
-                # Correlation
-                pearson_corr, _ = pearsonr(x[mask], y[mask])
-                spearman_corr, _ = spearmanr(x[mask], y[mask])
-                ax.text(
-                    0.5, 0.94,
-                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}",
-                    color="blue", fontsize=14, ha="center", va="top", transform=ax.transAxes
-                )
-
-                # Set x and y tick label size larger
-                ax.tick_params(axis='x', labelsize=13)
-                ax.tick_params(axis='y', labelsize=13)
-
-                # Add cell line as y-axis label (bold, non-rotated) to the left of first column
-                if col_idx == 0:
-                    ax.set_ylabel(f"{cell_line}", fontsize=20, fontweight="bold", rotation=0, labelpad=10, va='center', ha='right')
-                else:
-                    ax.set_ylabel("")
-
-                # Add cutoff as column title (bold)
-                if row_idx == 0:
-                    ax.set_title(f"{cutoff}", fontsize=22, fontweight="bold", pad=10)
-
-                # Only add colorbar to the right of the last subplot in the row
-                if col_idx == ncols - 1:
-                    cbar = fig.colorbar(h, ax=ax, orientation="vertical", fraction=0.05, pad=0.04)
-                    cbar.set_label("Log Counts", fontsize=14)
-                    cbar.ax.tick_params(labelsize=13)
-
-        # Add meta x and y axis labels
-        fig.supxlabel("# Bound Featues", fontsize=18)
-        fig.supylabel(f"# Bound Features w/ {self.latex_symbols['local_SHAP']} > Cutoff", fontsize=18, x=0.01, y=0.45)
-        fig.suptitle(
-            f"# Bound vs # Bound Features w/ {self.latex_symbols['local_SHAP']} > Cutoff\n\nNOTE: using 'Unique Binding'\nNOTE 2: line of best fit shown as blue line\nNOTE 3: bins start at 1 and step by 2 for each x axis\nNOTE 4: colorbar is logarithmic and shared across each row",
-            fontsize=12, y=1.02
-        )
-
-        plt.tight_layout()
-        plt.savefig(self.FIGURES["per_row_num_bound_vs_percent_greater_than_cutoff"], dpi=300, bbox_inches='tight')
-        plt.show()
-
-
+                plt.tight_layout()
+                plt.savefig(self.FIGURES["per_row_num_bound_vs_percent_greater_than_cutoff"]["num_bound_vs_num_bound_gt_cutoff"][col_type][f"{'log' if log_norm else 'linear'}"], dpi=300, bbox_inches='tight')
+                plt.show()
 
 
 
