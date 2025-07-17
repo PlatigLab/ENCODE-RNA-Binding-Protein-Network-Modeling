@@ -14,6 +14,7 @@ from itertools import combinations
 from matplotlib.legend import Legend
 from sklearn.metrics import r2_score
 from statannotations.Annotator import Annotator
+from math import floor
 
 
 @dataclass
@@ -106,7 +107,10 @@ class ShapNetworkInvestigator:
                     "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
                 }, 
             },
-            
+            "per_row_num_and_percent_greater_than_cutoff": {
+                "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
+                "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
+            }
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -179,7 +183,7 @@ class ShapNetworkInvestigator:
             "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
             "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
 
-        }
+        }, 
     }
 
     def __post_init__(self):
@@ -5429,7 +5433,198 @@ class ShapNetworkInvestigator:
         plt.tight_layout()
         plt.show()
 
+
+    def calculate_num_and_percent_bound_local_shap_greater_than_cutoff(self): 
+
+        if os.path.exists(self.CACHE_INFO["per_row_num_and_percent_greater_than_cutoff"]["HepG2"]) and os.path.exists(self.CACHE_INFO["per_row_num_and_percent_greater_than_cutoff"]["K562"]):
+            logger.success("FROM CACHE: loading...")
+
+            return {
+                    "HepG2": pl.read_csv(self.CACHE_INFO["per_row_num_and_percent_greater_than_cutoff"]["HepG2"], separator="\t"),
+                    "K562": pl.read_csv(self.CACHE_INFO["per_row_num_and_percent_greater_than_cutoff"]["K562"], separator="\t")
+            }
+            
+        else: 
+            logger.info("No cache found. Calculating...")
+            lazyframe = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
+
+            data = {}
+            for key in lazyframe.keys():
+                schema = lazyframe[key].collect_schema().names()
+                binding_cols = [col for col in schema if col.endswith("_binding")]
+
+                select_cols = ["index", "Binding Sum"] + binding_cols + [f"{col.replace('_binding', '_shap')}" for col in binding_cols]
+                data[key] = lazyframe[key].select(select_cols).collect()
+
+            cutoffs = [0.01, .1, .5, 1]
+
+            for cell_line, df in data.items():
+                # Prepare binding and shap columns
+                binding_cols = [col for col in df.columns if col.endswith("_binding")]
+                shap_cols = [col.replace("_binding", "_shap") for col in binding_cols]
+
+                # Prepare output columns
+                output_cols = ["index", "num_bound"]
+                for cutoff in cutoffs:
+                    output_cols.append(f"num_shap_gt_{cutoff}")
+                    output_cols.append(f"pct_shap_gt_{cutoff}")
+
+                # Prepare lists to collect results
+                results = []
+
+                # Convert to numpy for speed
+                binding_arr = df.select(binding_cols).to_numpy()
+                shap_arr = np.abs(df.select(shap_cols).to_numpy())
+                indices = df["index"].to_numpy()
+                binding_sum_arr = df["Binding Sum"].to_numpy()
+
+                for i in range(binding_arr.shape[0]):
+                    bound_mask = binding_arr[i] == 1
+                    num_bound = bound_mask.sum()
+                    # Assert num_bound matches Binding Sum
+                    assert num_bound == binding_sum_arr[i], f"Row {indices[i]}: num_bound {num_bound} != Binding Sum {binding_sum_arr[i]}"
+                    row_result = [indices[i], num_bound]
+                    shap_vals = shap_arr[i][bound_mask]
+                    
+                    for cutoff in cutoffs:
+                        if num_bound ==0: 
+                            row_result.extend([float('nan'), float('nan')])
+                        else: 
+                            num_gt = float((shap_vals > cutoff).sum())
+                            pct_gt = float((num_gt / num_bound) * 100)
+                            row_result.extend([num_gt, pct_gt])
+                            
+                    results.append(row_result)
+
+                # Create polars DataFrame and save
+                out_df = pl.DataFrame(results, schema=output_cols, orient="row")
+                # Convert to pandas and write as gzipped TSV
+                out_df.to_pandas().to_csv(self.CACHE_INFO["per_row_num_and_percent_greater_than_cutoff"][cell_line], sep="\t", index=False, compression="gzip")
+
+                logger.success(f"Saved {cell_line} per-row num and percent greater than cutoff to {self.CACHE_INFO['per_row_num_and_percent_greater_than_cutoff'][cell_line]}")
+
+
+    def plot_num_and_percent_bound_local_shap_greater_than_cutoff(self): 
+        # # Load the cached data
+        data = self.calculate_num_and_percent_bound_local_shap_greater_than_cutoff()
+
+        # # Prepare data for seaborn catplot
+        # plot_rows = []
+        # for cell_line, df in data.items():
+        #     for col in df.columns:
+        #         if col.startswith("num_shap_gt_") or col.startswith("pct_shap_gt_"):
+        #             # Extract cutoff value from column name
+        #             cutoff = float(col.split("_")[-1])
+        #             # Determine type: "#" or "%"
+        #             value_type = "#" if col.startswith("num_") else "%"
+        #             # For each row, add to plot_rows
+        #             for val in df[col].to_numpy():
+        #                 plot_rows.append({
+        #                     "Cell Line": cell_line,
+        #                     "Type": value_type,
+        #                     "Cutoff": cutoff,
+        #                     "Value": val
+        #                 })
+        # plot_df = pd.DataFrame(plot_rows)
+
+        # # Prepare cutoff order for hue
+        # cutoff_order = sorted(plot_df["Cutoff"].unique())
+
+        # fig, axes = plt.subplots(2, 1, figsize=(6, 6), dpi=300, sharex=True)
+        # palette = ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+        # handles_labels = None
+        # for i, value_type in enumerate(["%", "#"]):
+        #     ax = axes[i]
+        #     data = plot_df[plot_df["Type"] == value_type]
+        #     violin = sns.violinplot(
+        #         data=data,
+        #         x="Cell Line",
+        #         y="Value",
+        #         hue="Cutoff",
+        #         hue_order=cutoff_order,
+        #         palette=palette,
+        #         ax=ax,
+        #         cut=0,
+        #         linewidth=1,
+        #         density_norm="width",
+        #         split=False,
+        #         inner="box",
+        #     )
+        #     ax.set_title(f"{value_type}", fontsize=22)
+        #     ax.set_ylabel(f"{value_type} Bound > Cutoff", fontsize=16)
+        #     ax.set_xlabel("Cell Line", fontsize=16)
+        #     ax.tick_params(axis="x", labelsize=12)
+        #     ax.tick_params(axis="y", labelsize=12)
+        #     if handles_labels is None:
+        #         handles_labels = ax.get_legend_handles_labels()
+        #     ax.get_legend().remove()
+
+        # # Add a single legend to the right middle outside the plots
+        # if handles_labels is not None:
+        #     handles, labels = handles_labels
+        #     fig.legend(
+        #         handles, labels, title="Cutoff",
+        #         bbox_to_anchor=(0.99, 0.5), loc="center left", fontsize=10, title_fontsize=12
+        #     )
+
+        # plt.suptitle("Distribution of # / % Bound Features' Local SHAP > Cutoff", fontsize=10, y=1.01)
         
+        # plt.tight_layout()
+        # plt.show()
+
+        cutoff_order = sorted(
+            {
+                float(col.split("_")[-1]) for col in data["K562"].columns if col.startswith("num_shap_gt_")
+            }
+        )
+        nrows = len(self.cell_lines)
+        ncols = len(cutoff_order)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows), dpi=100, sharex="row", sharey="row")
+        for row_idx, cell_line in enumerate(self.cell_lines):
+            df = data[cell_line].to_pandas()
+            max_num_bound = df["num_bound"].max()
+
+            for col_idx, cutoff in enumerate(cutoff_order):
+                if cutoff == 1.0: 
+                    cutoff = 1
+
+                ax = axes[row_idx, col_idx]
+
+                x = df["num_bound"]
+                y = df[f"num_shap_gt_{cutoff}"]
+
+                # 2D histogram
+                h = ax.hist2d(
+                    x, y, bins=floor(max_num_bound *.3),
+                    cmap="Oranges", range=[[0, floor(max_num_bound *.3)], [0, floor(max_num_bound *.3)]],
+                )
+
+                # Line of best fit
+                mask = (~np.isnan(x)) & (~np.isnan(y))
+                slope, intercept = np.polyfit(x[mask], y[mask], 1)
+
+                x_fit = np.linspace(0, floor(max_num_bound *.3), 100)
+                y_fit = slope * x_fit + intercept
+                ax.plot(x_fit, y_fit, color="blue", linewidth=2, label="Best Fit")
+
+                # Correlation
+                pearson_corr, _ = pearsonr(x[mask], y[mask])
+                spearman_corr, _ = spearmanr(x[mask], y[mask])
+                ax.text(
+                    0.5, 0.92,
+                    f"Pearson r={pearson_corr:.2f}\nSpearman r={spearman_corr:.2f}",
+                    color="blue", fontsize=12, ha="center", va="top", transform=ax.transAxes
+                )
+                ax.set_xlabel("num_bound", fontsize=10)
+                ax.set_ylabel(f"num_shap_gt_{cutoff}", fontsize=10)
+                ax.set_title(f"{cell_line} | Cutoff={cutoff}", fontsize=11)
+                # Only add colorbar to the right of the last subplot in the row
+                if col_idx == ncols - 1:
+                    cbar = fig.colorbar(h[3], ax=ax, orientation="vertical", fraction=0.05, pad=0.04)
+                    cbar.set_label("Counts", fontsize=10)
+        plt.tight_layout()
+        plt.show()
 
 
 
