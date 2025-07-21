@@ -139,12 +139,15 @@ class ShapNetworkInvestigator:
                 "5_dfs_average": r"$\Phi_{i}$", 
                 "Bound-Only": r"$\Phi_{i}[{b}=1]$", 
                 "NOT-Bound-Only": r"$\Phi_{i}[{b}=0]$",
+                "local_SHAP":  r"$\varphi_{i,j}$",
+                "local_SHAP_bound": r"$\varphi_{i,j}[{b}=1]$",
+
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
             "Signed": r"$\beta_{i}$",
         },
-        "local_SHAP":  r"$\varphi_{i,j}$"
+
     }
 
     FIGURES = {
@@ -184,7 +187,8 @@ class ShapNetworkInvestigator:
             "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
             "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
         }, 
-        "per_row_num_bound_vs_percent_greater_than_cutoff": {
+        "per_row_num_bound_and_percent_greater_than_cutoff": {
+            "num_and_percentage_bound_local_SHAP_greater_than_0.1": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/per_row_bound_local_SHAP_num_bound_and_percent_greater_than_0.1.png",
             "num_bound_vs_num_bound_gt_cutoff": {
                 'feature': {
                     "log": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/FEATURE_per_row_num_bound_vs_percent_greater_than_cutoff_LOG.png",
@@ -5414,7 +5418,7 @@ class ShapNetworkInvestigator:
     def plot_binding_sum_distribution(self):
 
         if not hasattr(self, "final_unique_binding_SHAP_data"):
-            self.load_final_SHAP_data(data_mode="Unique-Binding", as_lazyframe=False)
+            self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=False)
 
         # Prepare a DataFrame for violinplot (percentage)
         plot_data = []
@@ -5426,25 +5430,27 @@ class ShapNetworkInvestigator:
             binding_sum_pct = (binding_sum / num_binding_cols) * 100
             plot_data.append(pd.DataFrame({
                 "Cell Line": cell_line,
-                "Binding Sum (%)": binding_sum_pct
+                "Binding Sum (%)": binding_sum_pct,
+                "Binding Sum": binding_sum
             }))
         plot_df = pd.concat(plot_data, ignore_index=True)
 
-        plt.figure(figsize=(8, 5), dpi=150)
-        sns.violinplot(
-            data=plot_df,
-            x="Cell Line",
-            y="Binding Sum (%)",
-            inner="box",
-            cut=0,
-            scale="width",
-            palette="pastel"
-        )
-        plt.xlabel("Cell Line", fontsize=14)
-        plt.ylabel("% Bound Features", fontsize=14)
-        plt.title("Bound Percentage Across Cell Lines (Unique-Binding)", fontsize=16)
-        plt.tight_layout()
-        plt.show()
+        for col in ["Binding Sum", "Binding Sum (%)"]:
+            plt.figure(figsize=(8, 5), dpi=150)
+            sns.violinplot(
+                data=plot_df,
+                x="Cell Line",
+                y=col,
+                inner="box",
+                cut=0,
+                scale="width",
+                palette="pastel"
+            )
+            plt.xlabel("Cell Line", fontsize=14)
+            plt.ylabel(col, fontsize=14)
+            plt.title(f"{col} Across Cell Lines (Unique-Binding)", fontsize=16)
+            plt.tight_layout()
+            plt.show()
 
 
     def calculate_num_and_percent_bound_local_shap_greater_than_cutoff(self): 
@@ -5551,81 +5557,98 @@ class ShapNetworkInvestigator:
         # # Load the cached data
         data = self.calculate_num_and_percent_bound_local_shap_greater_than_cutoff()
 
-        # # Prepare data for violin plot
-        # plot_rows = []
-        # for cell_line, df in data.items():
-        #     for col in df.columns:
-        #         if col.startswith("num_shap_gt_") or col.startswith("pct_shap_gt_"):
-        #             # Extract cutoff value from column name
-        #             cutoff = float(col.split("_")[-1])
-        #             # Determine type: "#" or "%"
-        #             value_type = "#" if col.startswith("num_") else "%"
-        #             # For each row, add to plot_rows
-        #             for val in df[col].to_numpy():
-        #                 plot_rows.append({
-        #                     "Cell Line": cell_line,
-        #                     "Type": value_type,
-        #                     "Cutoff": cutoff,
-        #                     "Value": val
-        #                 })
-        # plot_df = pd.DataFrame(plot_rows)
-
-        # # Prepare cutoff order for hue
-        # cutoff_order = sorted(plot_df["Cutoff"].unique())
-
-        # fig, axes = plt.subplots(2, 1, figsize=(6, 6), dpi=100, sharex=True)
-        # palette = ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
-        # handles_labels = None
-        # for i, value_type in enumerate(["%", "#"]):
-        #     ax = axes[i]
-
-        #     violin = sns.violinplot(
-        #         data=plot_df[plot_df["Type"] == value_type],
-        #         x="Cell Line",
-        #         y="Value",
-        #         hue="Cutoff",
-        #         hue_order=cutoff_order,
-        #         palette=palette,
-        #         ax=ax,
-        #         cut=0,
-        #         linewidth=1,
-        #         density_norm="width",
-        #         split=False,
-        #         inner="box",
-        #     )
-        #     ax.set_title(f"{value_type}", fontsize=18)
-        #     ax.set_ylabel(f"{value_type} Bound > Cutoff", fontsize=14)
-        #     ax.set_xlabel("Cell Line", fontsize=14)
-        #     ax.tick_params(axis="x", labelsize=11)
-        #     ax.tick_params(axis="y", labelsize=11)
-        #     if handles_labels is None:
-        #         handles_labels = ax.get_legend_handles_labels()
-        #     ax.get_legend().remove()
-
-        # # Add a single legend to the right middle outside the plots
-        # if handles_labels is not None:
-        #     handles, labels = handles_labels
-        #     fig.legend(
-        #         handles, labels, title="Cutoff",
-        #         bbox_to_anchor=(0.99, 0.5), loc="center left", fontsize=10, title_fontsize=12
-        #     )
-
-        # plt.suptitle("Distribution of # / % Bound Features' Local SHAP > Cutoff", fontsize=10, y=1.01)
-        # plt.tight_layout()
-        # plt.show()
-
         cutoff_order = sorted(
             {
                 float(col.split("_")[-1]) for col in data["K562"].columns if col.startswith("feature_num_shap_gt_")
             }
         )
 
+        # Prepare data for violin plot
+        plot_rows = []
+        for cell_line, df in data.items():
+            for col in df.columns:
+                if "num_shap_gt_" in col or "pct_shap_gt_" in col: 
+                    # Extract cutoff value from column name
+                    cutoff = float(col.split("_")[-1])
+                    # Determine type: "#" or "%"
+                    value_type = "#" if "_num_" in col else "%"
+                    unit = "Features" if col.startswith("feature_") else "RBPs"
+
+                    # For each row, add to plot_rows
+                    for val in df[col].to_numpy():
+                        plot_rows.append({
+                            "Cell Line": cell_line,
+                            "Type": value_type,
+                            "Cutoff": cutoff,
+                            "Unit": unit,
+                            "Value": val
+                        })
+        plot_df = pd.DataFrame(plot_rows)
+
+        for cutoff in cutoff_order:
+            for (x_axis, hue, x_order, hue_order) in [
+                ("Unit", "Cell Line", ["Features", "RBPs"], self.cell_lines),
+                ("Cell Line", "Unit", self.cell_lines, ["Features", "RBPs"])
+            ]:
+                fig, axes = plt.subplots(1, 2, figsize=(8, 4), dpi=300, sharey=False, sharex=True)
+                for col_idx, value_type in enumerate(["#", "%"]):
+                    ax = axes[col_idx]
+                    plot_subset = plot_df[
+                        (plot_df["Cutoff"] == cutoff) &
+                        (plot_df["Type"] == value_type)
+                    ]
+                    sns.violinplot(
+                        data=plot_subset,
+                        x=x_axis,
+                        y="Value",
+                        hue=hue,
+                        order=x_order,
+                        hue_order=hue_order,
+                        cut=0,
+                        scale="width",
+                        inner="box",
+                        ax=ax
+                    )
+
+                    ax.set_title(f"{value_type}", fontsize=18)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    
+                    ax.tick_params(axis='x', labelsize=11)
+                    ax.tick_params(axis='y', labelsize=11)
+
+                    ax.grid(True, axis='y', linestyle='--', alpha=0.5)
+                    ax.minorticks_on()
+                    ax.grid(True, which='minor', axis='y', linestyle=':', alpha=0.3)
+
+                    # Remove individual legends; we'll add a single legend for the whole figure after plotting
+                    ax.get_legend().remove()
+                        
+                plt.suptitle(
+                    f"{self.latex_symbols['Unique-Binding']['local_SHAP']} > {cutoff}", 
+                    fontsize=16, y=0.92
+                )
+                fig.supxlabel(x_axis, fontsize=16, x=0.5, y=0.02)
+                fig.supylabel(f"# or % > {cutoff}", fontsize=16, y=0.5)
+                # Add a single legend to the right of the figure
+                handles, labels = axes[0].get_legend_handles_labels()
+                fig.legend(
+                    handles, labels, title=hue,
+                    bbox_to_anchor=(.98, 0.5), loc="center left", fontsize=12, title_fontsize=13
+                )
+
+                plt.tight_layout()
+                if cutoff == .1 and x_axis == "Cell Line" and hue == "Unit":
+                    plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_and_percentage_bound_local_SHAP_greater_than_0.1"], dpi=300, bbox_inches='tight')
+                plt.show()
+
+
         nrows = len(self.cell_lines)
         ncols = len(cutoff_order)
 
         for col_type in ['feature', 'rbp']:
             for log_norm in [False, True]:
-                fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), dpi=100, sharex="row", sharey="row")
+                fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), dpi=300, sharex="row", sharey="row")
                 for row_idx, cell_line in enumerate(self.cell_lines):
                     df = data[cell_line].to_pandas()
                     num_bound_col = f"{col_type}_num_bound"
@@ -5722,9 +5745,9 @@ class ShapNetworkInvestigator:
 
                 # Add meta x and y axis labels
                 fig.supxlabel(f"# Bound {col_type_text}", fontsize=18)
-                fig.supylabel(f"# Bound {col_type_text} w/ {self.latex_symbols['local_SHAP']} > Cutoff", fontsize=17, x=0.01, y=0.42)
+                fig.supylabel(f"# Bound {col_type_text} w/ {self.latex_symbols['Unique-Binding']['local_SHAP']} > Cutoff", fontsize=17, x=0.01, y=0.42)
                 fig.suptitle(
-                    f"# Bound {col_type_text} vs # Bound {col_type_text} w/ {self.latex_symbols['local_SHAP']} > Cutoff\n\nNOTE: using 'Unique Binding'\nNOTE 2: bins start at 1 and step by 2 for each x axis\nNOTE 3: colorbar is {'Logarithmic' if log_norm else 'Linear'} and shared across each row",
+                    f"# Bound {col_type_text} vs # Bound {col_type_text} w/ {self.latex_symbols['Unique-Binding']['local_SHAP']} > Cutoff\n\nNOTE: using 'Unique Binding'\nNOTE 2: bins start at 1 and step by 2 for each x axis\nNOTE 3: colorbar is {'Logarithmic' if log_norm else 'Linear'} and shared across each row",
                     fontsize=12, y=1.02, 
                 )
 
@@ -5741,7 +5764,7 @@ class ShapNetworkInvestigator:
                 )
 
                 plt.tight_layout()
-                plt.savefig(self.FIGURES["per_row_num_bound_vs_percent_greater_than_cutoff"]["num_bound_vs_num_bound_gt_cutoff"][col_type][f"{'log' if log_norm else 'linear'}"], dpi=300, bbox_inches='tight')
+                plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_bound_vs_num_bound_gt_cutoff"][col_type][f"{'log' if log_norm else 'linear'}"], dpi=300, bbox_inches='tight')
                 plt.show()
 
 
