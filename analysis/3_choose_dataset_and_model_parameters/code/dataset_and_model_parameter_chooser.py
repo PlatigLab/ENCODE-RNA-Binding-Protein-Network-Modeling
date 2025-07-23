@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from loguru import logger
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.lines import Line2D
+
 
 @dataclass
 class DatasetAndModelParameterAnalyzer:
@@ -12,7 +14,8 @@ class DatasetAndModelParameterAnalyzer:
     sweep_projects = {
         'dataset': 'yogi-dataset-sweep-feb-2025', 
         'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025',
-        'linear_models': 'yogi-RBP-ML-linear-models-april-2025'
+        'linear_models': 'yogi-RBP-ML-linear-models-april-2025', 
+        'variations_of_model': "yogi-wild-west-model-variation-rapid-testing-v1" 
     }
 
     dataset_sweep_covariates= {
@@ -34,8 +37,8 @@ class DatasetAndModelParameterAnalyzer:
         self.sweep_results = {}
     
         output_folder = Path("../output/wandb_summary_tables/")
-        if len(list(output_folder.glob('*'))) == 3: 
-            
+        if len(list(output_folder.glob('*'))) == len(self.sweep_projects):
+
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
 
             logger.warning("REMINDER: removing early_stopping_rounds outside of 100")
@@ -45,6 +48,10 @@ class DatasetAndModelParameterAnalyzer:
 
             for key, df in self.sweep_results.items():
                 logger.info(f"{key} summary table contains {df.shape[0]} rows")
+
+                if key == 'variations': 
+                    if "data_file" in df.columns:
+                        df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
 
             logger.success("FROM CACHE: Retrieved WandB summary tables")
 
@@ -102,7 +109,11 @@ class DatasetAndModelParameterAnalyzer:
             table = self.sweep_results[key].copy(deep=True)
 
             assert table['run_id'].is_unique, "run_id column contains duplicated values"
-            assert (table['state'] == 'finished').all(), "Not all runs are finished"
+
+            if key != 'variations':
+                assert (table['state'] == 'finished').all(), "Not all runs are finished"
+            else: 
+                logger.warning("REMINDER: 'variations' sweep has failed runs, so we are not checking for 'finished' state")
 
             for col in table.columns:
                 if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
@@ -326,38 +337,38 @@ class DatasetAndModelParameterAnalyzer:
     def plot_r2_distributions(self): 
 
         for type in self.sweep_results:
+            if type != 'variations':  # variations sweep is not plotted
+                data = self.sweep_results[type]
 
-            data = self.sweep_results[type]
+                plt.figure(figsize=(8, 3), dpi=200)
 
-            plt.figure(figsize=(8, 3), dpi=200)
+                if type == 'dataset':
+                    y_variable = 'val_r2_score'
+                    y_label = 'Validation $R^2$ Score'
+                    size=5
+                    linewidth=1
+                elif type == 'model' or type == 'linear':
+                    y_variable = 'holdout_r2_score'
+                    y_label = 'Holdout $R^2$ Score'
+                    size=1
+                    linewidth=0.1
 
-            if type == 'dataset':
-                y_variable = 'val_r2_score'
-                y_label = 'Validation $R^2$ Score'
-                size=5
-                linewidth=1
-            elif type == 'model' or type == 'linear':
-                y_variable = 'holdout_r2_score'
-                y_label = 'Holdout $R^2$ Score'
-                size=1
-                linewidth=0.1
+                if type != 'linear': 
+                    sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
+                    sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+                elif type == 'linear': 
+                    sns.violinplot(
+                        x='dataset.cell_line', y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
+                    )
 
-            if type != 'linear': 
-                sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
-                sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
-            elif type == 'linear': 
-                sns.violinplot(
-                    x='dataset.cell_line', y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
-                )
+                plt.title(f'{type.capitalize()} Sweep: $R^2$ Score Distribution', y=1.03)
+                plt.xlabel('Cell Line')
+                plt.ylabel(y_label)
 
-            plt.title(f'{type.capitalize()} Sweep: $R^2$ Score Distribution', y=1.03)
-            plt.xlabel('Cell Line')
-            plt.ylabel(y_label)
-
-            plt.savefig(f"../output/plots/summary/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-            
+                plt.savefig(f"../output/plots/summary/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+                plt.show()
+                plt.close()
+                
 
     def plot_dataset_r2_per_covariate(self): 
 
@@ -983,6 +994,170 @@ class DatasetAndModelParameterAnalyzer:
         plt.show()
         plt.close()
 
+
+    def visualize_model_variation_results(self): 
+        variations_df = self.sweep_results['variations'].copy(deep=True)
+
+        # Columns to plot (also used as hue)
+        plot_columns = ['seed', 'distance', 'data_type']
+
+        fig, axes = plt.subplots(3, 1, figsize=(12, 8), dpi=100, sharex=True, sharey=True)
+        for idx, col in enumerate(plot_columns):
+            ax = axes[idx]
+            hue_order = sorted(variations_df[col].unique())
+            
+            sns.violinplot(
+                x='cell_line',
+                y='test_r2',
+                hue=col,
+                data=variations_df,
+                ax=ax,
+                hue_order=hue_order,
+                palette='Set2',
+                inner='box'
+            )
+            
+            ax.set_title('')
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+            # Place a legend for each subplot on the outside center right
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles, labels,
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.5),
+                title=col,
+                fontsize=11,
+                title_fontsize=12
+            )
+
+            # Add horizontal red dotted line at y=0.28
+            ax.axhline(0.28, color='red', linestyle=':', linewidth=2, label='SOTA (Yogi) ~= 0.28')
+
+            ax.tick_params(axis='x', labelsize=18)
+            ax.tick_params(axis='y', labelsize=12)
+
+        fig.suptitle('Effect of covariates on "Test $R^2$" Score per Cell Line', fontsize=20, y=1, x=0.4)
+        fig.supxlabel('Cell Line', fontsize=20, x=0.38)
+        fig.supylabel('Test $R^2$ Score', fontsize=20)
+
+        # Add a single legend for the SOTA line at the top right
+        custom_legend = [Line2D([0], [0], color='red', linestyle=':', linewidth=4, label='SOTA (Yogi)\n~= 0.28')]
+        fig.legend(
+            handles=custom_legend,
+            bbox_to_anchor=(0.95, 0.99),
+            fontsize=16,
+            title=None,
+            markerscale=3,
+            handlelength=3,
+            handleheight=2
+        )
+
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        # plt.savefig("../output/plots/summary/variations_violinplots.png", dpi=200, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+        # Wide violinplot for "type" vs test_r2, hue=cell_line, sorted by median test_r2 per type
+        type_medians = variations_df.groupby("type")["test_r2"].median().sort_values()
+        type_order = type_medians.index.tolist()
+        cell_line_order = sorted(variations_df["cell_line"].unique())
+
+        # Colorblind-friendly palette: blue and orange for cell lines, green for SOTA line
+        palette = {"K562": "#0072B2", "HepG2": "#E69F00"}  # blue, orange
+        sota_color = "#009E73"  # green
+
+        plt.figure(figsize=(1.5 * len(type_order), 16), dpi=300)
+        ax = sns.violinplot(
+            x="type",
+            y="test_r2",
+            hue="cell_line",
+            data=variations_df,
+            order=type_order,
+            hue_order=cell_line_order,
+            palette=palette,
+            inner=None,
+            cut=0
+        )
+        sns.boxplot(
+            x="type",
+            y="test_r2",
+            hue="cell_line",
+            data=variations_df,
+            order=type_order,
+            hue_order=cell_line_order,
+            palette=palette,
+            showcaps=True,
+            boxprops={'facecolor':'None', 'edgecolor':'gray'},
+            whiskerprops={'color':'gray', 'linewidth':2},
+            medianprops={'color':'black'},
+            showfliers=True,
+            dodge=True
+        )
+
+        # Remove duplicate legends from boxplot
+        handles, labels = ax.get_legend_handles_labels()
+        n = len(cell_line_order)
+        handles = handles[:n]
+        labels = labels[:n]
+
+        # Add SOTA line
+        ax.axhline(0.28, color=sota_color, linestyle=":", linewidth=4, label="SOTA (Yogi) ~= 0.28")
+
+        # Annotate the highest value above each violin/boxplot in color #cc79a7
+        for i, exp_type in enumerate(type_order):
+            for j, cell_line in enumerate(cell_line_order):
+                subset = variations_df[(variations_df["type"] == exp_type) & (variations_df["cell_line"] == cell_line)]
+                if not subset.empty:
+                    max_val = subset["test_r2"].max()
+                    # Calculate the x position for the annotation
+                    # Violin/boxplot with dodge: x + offset for each hue
+                    n_hue = len(cell_line_order)
+                    offset = (j - (n_hue - 1) / 2) * 0.4 
+                    ax.annotate(
+                        f"{max_val:.2f}",
+                        xy=(i + offset, max_val),
+                        xytext=(0, 5),
+                        textcoords="offset points",
+                        ha="center",
+                        va="bottom",
+                        color="#cc79a7",
+                        fontsize=14,
+                        fontweight="bold"
+                    )
+
+        # Add legend (cell lines + SOTA) at top center left
+        custom_lines = [
+            Line2D([0], [0], color=palette[cell_line_order[0]], lw=6, label=cell_line_order[0]),
+            Line2D([0], [0], color=palette[cell_line_order[1]], lw=6, label=cell_line_order[1]),
+            Line2D([0], [0], color=sota_color, lw=6, linestyle=":", label="SOTA (Yogi) ~= 0.28"),
+        ]
+        ax.legend(
+            handles=custom_lines,
+            loc="upper left",
+            bbox_to_anchor=(0.005, 0.995),
+            fontsize=24,
+            title=None,
+            frameon=True,
+            markerscale=10,  # Increase handle size
+            handlelength=3, # Make handles longer
+            handleheight=1.5  # Make handles thicker
+        )
+
+        ax.set_xlabel("Experiment Type", fontsize=24)
+        ax.set_ylabel("Test $R^2$ Score", fontsize=30)
+        ax.set_title('Test $R^2$ by Model Variation Experiment per Cell Line\n\nNOTE: Not all runs were completed for each experiment type.', fontsize=30, y=1.05)
+        plt.xticks(rotation=90, ha="right", fontsize=24)
+        plt.yticks(fontsize=12)
+
+        ax.set_ylim(None, variations_df["test_r2"].max() * 1.20)  # Set y-axis limit to 10% higher than the highest test_r2 value in the entire dataframe
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+        
+    
 
 
 if __name__ == "__main__":
