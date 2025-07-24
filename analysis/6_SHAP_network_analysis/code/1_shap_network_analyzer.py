@@ -6252,6 +6252,158 @@ class ShapNetworkInvestigator:
             return result
 
 
+    def hacky_explore_SHAP_in_PSI_units(self): 
+        TMP_SHAP_PSI_UNITS_DIR = "~/july_21_SHAP_in_PSI_units/"
+
+        chosen_models = {
+            "K562": "1a5a622d0e4fb1bc7aeedf84cc41f73cd02c52b204046c305a4746fe7101c069", 
+            "HepG2": "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd"
+        }
+        
+        for cell_line, hash in chosen_models.items(): 
+            feather_file = f"{TMP_SHAP_PSI_UNITS_DIR}/SHAP/regular/normal/shap_values/{hash}.feather"
+
+            df = pl.scan_ipc(feather_file)
+            
+            # Subset to unique binding patterns using columns ending in "_binding"
+            schema = df.collect_schema().names()
+            binding_cols = [col for col in schema if col.endswith("_binding")]
+            shap_cols = [col for col in schema if col.endswith("_shap")]
+
+            unique_df = df.unique(subset=binding_cols, maintain_order=True, keep="first").select(
+                ["index"] + shap_cols + binding_cols
+            ).sort("index").collect()
+
+            abs_mean_shap_dict = {
+                shap_col: unique_df
+                    .filter(pl.col(shap_col.replace("_shap", "_binding")) == 1)[shap_col]
+                    .abs()
+                    .mean()
+                for shap_col in shap_cols
+            }
+
+            abs_mean_shap = pl.DataFrame([abs_mean_shap_dict])
+
+            heatmap_df = self.convert_RBP_position_to_2d_heatmap(abs_mean_shap)
+            heatmap_df.to_csv(f"{cell_line}_SHAP_in_PSI_bound_global_SHAP.tsv", sep="\t")
+
+            display(abs_mean_shap)
+
+            del unique_df
+            gc.collect()
+
+            
+        for cell_line in self.cell_lines:  
+            heatmap_df = pd.read_csv(f"{cell_line}_SHAP_in_PSI_bound_global_SHAP.tsv", sep="\t", index_col=0)
+
+            # Cluster columns (RBPs) using Ward linkage
+            linkage = sch.linkage(heatmap_df.T.fillna(0), method="ward")
+            dendro = sch.dendrogram(linkage, no_plot=True)
+            ordered_cols = [heatmap_df.columns[i] for i in dendro["leaves"]]
+            heatmap_df = heatmap_df[ordered_cols]
+
+            plt.figure(figsize=(35,9), dpi=100)
+            sns.heatmap(
+                heatmap_df,
+                cmap="Blues",
+                linewidths=0.5,
+                linecolor="gray",
+                annot=True,
+                fmt=".3f",
+                annot_kws={"size": 12, "rotation": 90}
+            )
+            plt.gca().set_facecolor('black')
+            plt.title(f"{cell_line}: Global SHAP in PSI Units\nNOTE: Yogi chose a random model per cell line\nNOTE 2: columns clustered with Ward", fontsize=16)
+            plt.xlabel("RBP")
+            plt.ylabel("Position")
+            plt.tight_layout()
+            plt.show()
+
+
+        # Plot both cell lines and both scales (linear/log) in a single figure
+        fig, axes = plt.subplots(len(self.cell_lines), 2, figsize=(10, 9), dpi=300)
+        for row_idx, cell_line in enumerate(self.cell_lines):
+            
+            # Load data for this cell line
+            heatmap_df = pd.read_csv(f"{cell_line}_SHAP_in_PSI_bound_global_SHAP.tsv", sep="\t", index_col=0)
+            bound_global_shap = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data="Unique-Binding")[cell_line]
+            # Assert RBPs and positions match
+            assert set(heatmap_df.columns) == set(bound_global_shap.columns), "RBP columns mismatch"
+            assert set(heatmap_df.index) == set(bound_global_shap.index), "Position index mismatch"
+            
+            # Flatten to feature arrays
+            x_vals = []
+            y_vals = []
+            for pos in heatmap_df.index:
+                for rbp in heatmap_df.columns:
+                    x_vals.append(bound_global_shap.at[pos, rbp])
+                    y_vals.append(heatmap_df.at[pos, rbp])
+            
+            x_vals = np.array(x_vals)
+            y_vals = np.array(y_vals)
+            
+            # Mask for valid values
+            mask = ~np.isnan(x_vals) & ~np.isnan(y_vals)
+            x_valid = x_vals[mask]
+            y_valid = y_vals[mask]
+            
+            # Mask for log scale
+            mask_log = (x_valid > 0) & (y_valid > 0)
+            
+            # Iterate over columns: 0=linear, 1=log
+            for col_idx in range(2):
+                ax = axes[row_idx, col_idx]
+                if col_idx == 0:
+                    # Linear scale
+                    x_plot = x_valid
+                    y_plot = y_valid
+                    pearson_corr, _ = pearsonr(x_plot, y_plot)
+                    spearman_corr, _ = spearmanr(x_plot, y_plot)
+                    n_points = len(x_plot)
+                    ax.scatter(x_plot, y_plot, color="deepskyblue", edgecolor="black", alpha=0.4, s=10)
+                    ax.set_title(f"{cell_line} - Linear Scale", fontsize=12)
+
+                    # Label the top 10 points on each axis
+                    top_10_x = np.argsort(x_plot)[-10:]
+                    top_10_y = np.argsort(y_plot)[-10:]
+                    labeled = set()
+                    for idx in np.unique(np.concatenate([top_10_x, top_10_y])):
+                        ax.text(
+                            x_plot[idx]-0.05,
+                            y_plot[idx]+0.01,
+                            f"{heatmap_df.columns[idx % len(heatmap_df.columns)]}_{heatmap_df.index[idx // len(heatmap_df.columns)]}",
+                            fontsize=4,
+                            color="black",
+                            alpha=0.8
+                        )
+
+                else:
+                    # Log-log scale
+                    x_plot = np.log10(x_valid[mask_log])
+                    y_plot = np.log10(y_valid[mask_log])
+                    pearson_corr, _ = pearsonr(x_plot, y_plot)
+                    spearman_corr, _ = spearmanr(x_plot, y_plot)
+                    n_points = mask_log.sum()
+                    ax.scatter(x_plot, y_plot, color="deepskyblue", edgecolor="black", alpha=0.4, s=10)
+                    ax.set_title(f"{cell_line} - Log-Log Scale", fontsize=12)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.text(
+                    0.02, 0.98,
+                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints (Features): {n_points}",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='top',
+                    horizontalalignment='left'
+                )
+        plt.suptitle("PSI Units Global SHAP vs Log-Odds Bound Global SHAP\n\nNOTE: Using unique-binding\nNOTE 2: Comparing 'Averaged' Log-Odds SHAP w/ SINGLE Model PSI SHAP", fontsize=12, y=1.02)
+        fig.supxlabel("Log-Odds Bound Global SHAP", fontsize=12)
+        fig.supylabel("PSI Units Bound Global SHAP", fontsize=12)
+        plt.tight_layout()
+        plt.show()
+    
+            
+
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices = args
         _, shap_series = self.parallel_helper_for_getting_local_SHAP_by_binding(
