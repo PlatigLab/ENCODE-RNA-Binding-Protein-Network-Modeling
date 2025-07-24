@@ -115,10 +115,7 @@ class ShapNetworkInvestigator:
                 "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
                 "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
             },
-            "SHAP_additivity_assertions": {
-                "best_model": "../outputs/SHAP_additivity_assertions/BEST_model_SHAP_additivity_assertions.tsv.gz",
-                "all_models": "../outputs/SHAP_additivity_assertions/ALL_models_SHAP_additivity_assertions.tsv.gz",
-            }
+            "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -5773,90 +5770,29 @@ class ShapNetworkInvestigator:
 
     def assert_SHAP_additivity(self):
 
-        best_model_path = self.CACHE_INFO["SHAP_additivity_assertions"]["best_model"]
-        all_models_path = self.CACHE_INFO["SHAP_additivity_assertions"]["all_models"]
+        data_file = self.CACHE_INFO["SHAP_additivity_assertions"]
 
-        if Path(best_model_path).exists() and Path(all_models_path).exists():
-            logger.success(f"FROM CACHE: loading data for SHAP additivity assertions from {best_model_path} and {all_models_path}")
+        if Path(data_file).exists():
 
-            # Load both files and add a "Source" column
-            dfs = []
-            for path, source in [(best_model_path, "Best Model"), (all_models_path, "All Models")]:
-                df = pl.read_csv(path, separator="\t").to_pandas()
-                df["Source"] = source
-                # Melt the DataFrame
-                melted = pd.melt(
-                    df,
-                    id_vars=["cell_line", "Source"],
-                    value_vars=["difference_logodds", "difference_prediction"],
-                    var_name="difference_type",
-                    value_name="difference_value"
-                )
-                dfs.append(melted)
+            logger.success(f"FROM CACHE: loading data for SHAP additivity assertions")
 
-            melted_best, melted_all = dfs
-            additivity_df = pd.concat([melted_best, melted_all], ignore_index=True)
+            additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
+
+            # All rows are already logodds differences; no need to filter
+            logodds_df = additivity_df.copy()
+            logodds_df["Source"] = logodds_df["model"].astype(str)
+
+            # Set cell line and source order
+            cell_line_order = sorted(logodds_df["cell_line"].unique())
+            source_order = [str(i) for i in range(5)] + ["Average"]
+
+            plt.figure(figsize=(7, 4), dpi=300)
             
-            # Map pretty labelss
-            difference_type_labels = {
-                "difference_logodds": "Log Odds",
-                "difference_prediction": "PSI"
-            }
-            additivity_df["difference_type_label"] = additivity_df["difference_type"].map(difference_type_labels)
-
-            # Determine cell line and source order
-            cell_line_order = sorted(additivity_df["cell_line"].unique())
-            source_order = ["Best Model", "All Models"]
-            hue_order = sorted(additivity_df["difference_type_label"].unique())
-
-            # First violinplot: 2 rows (cell lines), x=Source, hue=difference_type_label
-            fig, axes = plt.subplots(2, 1, figsize=(5,5.5), dpi=300, sharex=True, sharey=True)
-
-            for i, cell_line in enumerate(cell_line_order):
-                
-                ax = axes[i]
-                plot_df = additivity_df[additivity_df["cell_line"] == cell_line]
-                
-                sns.violinplot(
-                    data=plot_df,
-                    x="Source",
-                    y="difference_value",
-                    hue="difference_type_label",
-                    order=source_order,
-                    hue_order=hue_order,
-                    cut=0,
-                    scale="width",
-                    inner="box",
-                    split=True,
-                    gap=0.1,
-                    ax=ax
-                )
-                
-                ax.set_title(f"{cell_line}", fontsize=12)
-                ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.get_legend().remove()
-
-            # Add a single shared legend to the right of the subplots
-            handles, labels = axes[0].get_legend_handles_labels()
-            fig.legend(
-                handles, labels, title="Difference Type",
-                bbox_to_anchor=(0.99, 0.5), loc="center left", fontsize=12, title_fontsize=13
-            )
-            fig.suptitle("Difference between prediction and \n(sum(SHAP) + expected value)", fontsize=12, y=0.99)
-            fig.supxlabel("Source", fontsize=13, y=-0.01)
-            fig.supylabel("Difference Value", fontsize=13, x=-0.01)
-            plt.tight_layout()
-            plt.show()
-
-            # Second violinplot: log-odds only, x=cell_line, hue=Source
-            logodds_df = additivity_df[additivity_df["difference_type"] == "difference_logodds"]
-            plt.figure(figsize=(7, 5), dpi=300)
             ax = plt.gca()
             sns.violinplot(
                 data=logodds_df,
                 x="cell_line",
-                y="difference_value",
+                y="difference_logodds",
                 hue="Source",
                 order=cell_line_order,
                 hue_order=source_order,
@@ -5864,26 +5800,35 @@ class ShapNetworkInvestigator:
                 scale="width",
                 inner="box"
             )
+
             ax.set_title("Difference between Log-Odds Prediction and\n[sum(Local SHAP) + Expected Value]", fontsize=10)
             ax.set_xlabel("Cell Line", fontsize=12)
             ax.set_ylabel("Difference (Log Odds)", fontsize=12)
+
             ax.tick_params(axis='x', labelsize=10)
             ax.tick_params(axis='y', labelsize=10)
-            ax.legend(title="Source", bbox_to_anchor=(1.01, 0.55), loc="upper left", fontsize=10, title_fontsize=11)
+            ax.legend(title="Source", bbox_to_anchor=(1.01, 0.7), loc="upper left", fontsize=10, title_fontsize=11)
 
-            # Annotate percentage of points greater than 0.001 above each violin
+            cutoff = 0.001
+            y_offset = 0.02  # Fixed offset above each violin
+
             for i, cell_line in enumerate(cell_line_order):
                 for j, source in enumerate(source_order):
-                    vals = logodds_df[(logodds_df["cell_line"] == cell_line) & (logodds_df["Source"] == source)]["difference_value"]
+
+                    vals = logodds_df[(logodds_df["cell_line"] == cell_line) & (logodds_df["Source"] == source)]["difference_logodds"].to_numpy()
                     
-                    pct = (np.abs(vals) > 0.001).mean() * 100
-                    # Move "Best Model" further left and "All Models" further right, and higher on y axis
-                    x_offset = -0.22 if source == "Best Model" else 0.22
-                    y_offset = 0.2
+                    assert not np.isnan(vals).any(), "Null values found in vals"
+                    pct = (np.abs(vals) > cutoff).mean() * 100
+
+                    logger.info(f"Cell Line: {cell_line}, Source: {source}, Percentage > {cutoff}: {pct:.2e}%")
+
+                    # Offset for annotation: spread out along x-axis for each source
+                    x_offset = -0.35 + j * (0.7 / (len(source_order)-1))
+
                     ax.text(
-                        i + x_offset, y_offset,
-                        f"{pct:.1e}%\n> 0.001",
-                        ha="center", va="bottom", fontsize=9, color="#009e73"
+                        i + x_offset, y_offset + 0.03 if j % 2 ==0 else y_offset,
+                        f"{pct:.1e}%\n> {cutoff}",
+                        ha="center", va="bottom", fontsize=7, color="#009e73"
                     )
 
             plt.tight_layout()
@@ -5892,128 +5837,94 @@ class ShapNetworkInvestigator:
         else: 
             logger.info(f"No cache found. Calculating SHAP additivity differences...")
 
-            for data_mode in ["best_model", "all_models"]:
-                # Prepare a list to collect results for all cell lines and models
-                results = []
+            def log_odds(p):
+                return np.log(p / (1 - p))
 
-                if data_mode == "best_model":
-                    for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
-                        shap_file = f"{self.SHAP_DIR}/{model_hash}.feather"
-                        lf = pl.scan_ipc(shap_file)
+            all_results = []
+            # Load the final SHAP cache data as unique binding but as a lazyframe
+            final_shap_lazy_dict = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
 
-                        # Get all columns ending in "_binding"
-                        schema = lf.collect_schema().names()
-                        binding_cols = [col for col in schema if col.endswith("_binding")]
+            for cell_line in self.cell_lines:
+                # Get 5 SHAP lazyframes
+                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
+                schema = shap_lazyframes[0].collect_schema().names()
+                binding_cols = [col for col in schema if col.endswith("_binding")]
+                shap_cols = [col for col in schema if col.endswith("_shap")]
 
-                        # Get unique rows of all binding columns, maintaining order and keeping the first row
-                        lf_unique = lf.unique(subset=binding_cols, maintain_order=True, keep="first")
+                # Get expected values for each model for this cell line
+                expected_values = (
+                    self.hash_metadata[
+                        (self.hash_metadata['cell_line'] == cell_line) & 
+                        (self.hash_metadata['name'] == "XGBRegressor")
+                    ]
+                    .sort_values("hash")
+                    ['shap_expected_value']
+                    .to_numpy()
+                )
 
-                        # Select all columns ending in "_shap", the Predictions column, and the index
-                        shap_cols = [col for col in schema if col.endswith("_shap")]
-                        selected_cols = ["index"] + shap_cols + ["Predictions"]
+                # Loop over each shap_lazyframe (each model)
+                logodds_preds_list = []
+                indices_list = None
 
-                        # Collect the unique DataFrame as polars
-                        df = lf_unique.select(selected_cols).collect()
+                for model_num, lf in enumerate(shap_lazyframes):
+                    # Get expected value for this model
+                    expected_value = expected_values[model_num]
 
-                        # Get expected value from hash_metadata
-                        expected_value = self.hash_metadata[self.hash_metadata["hash"] == model_hash]["shap_expected_value"].iloc[0]
+                    # Create unique binding using binding columns for this model
+                    unique_rows = (
+                        lf
+                        .unique(subset=binding_cols, maintain_order=True, keep="first")
+                        .select(["index"] + shap_cols + ["Predictions"])
+                        .sort('index')
+                        .collect()
+                    )
+                    indices = unique_rows["index"].to_list()
+                    if indices_list is None:
+                        indices_list = indices
+                    else:
+                        assert indices_list == indices, "Indices are not aligned across models"
 
-                        # Calculate shap_sum, prediction (raw), prediction (log-odds), and shap_sum + expected_value
-                        df = df.with_columns([
-                            pl.sum_horizontal(shap_cols).alias("shap_sum")
-                        ])
+                    # Save logodds predictions for stacking later
+                    logodds_preds = log_odds(unique_rows["Predictions"].to_numpy())
+                    logodds_preds_list.append(logodds_preds)
 
-                        assert (df["Predictions"] > 0).all(), "All values in Predictions must be greater than 0 (not absolute zero)"
-                        df = df.with_columns([
-                            (pl.col("Predictions") / (1 - pl.col("Predictions"))).log().alias("prediction_log_odds")
-                        ])
+                    shap_sum = unique_rows.select(shap_cols).to_numpy().sum(axis=1)
+                    diff = logodds_preds - (shap_sum + expected_value)
+                    for idx, d in zip(indices, diff):
+                        all_results.append({
+                            "cell_line": cell_line,
+                            "model": model_num,
+                            "index": idx,
+                            "difference_logodds": d
+                        })
 
-                        df = df.with_columns([
-                            (pl.col("shap_sum") + expected_value).alias("shap_sum_plus_expected_value")
-                        ])
+                # Stack the logodds predictions and take the average per index
+                logodds_preds_stack = np.stack(logodds_preds_list, axis=0)  # shape: (5, num_indices)
+                avg_logodds_preds = np.mean(logodds_preds_stack, axis=0)    # shape: (num_indices,)
+                
+                final_shap_lazy = final_shap_lazy_dict[cell_line]
+                final_shap_df = final_shap_lazy.select(["index"] + shap_cols).sort("index").collect()
+                # Assert indices match
+                assert indices_list == final_shap_df["index"].to_list(), "Indices in final SHAP cache do not match indices_list"
+                
+                # Calculate differences for the average model
+                shap_sum = final_shap_df.select(shap_cols).to_numpy().sum(axis=1)
+                avg_expected_value = np.mean(expected_values)
+                diff_avg = avg_logodds_preds - (shap_sum + avg_expected_value)
+                for idx, d in zip(indices_list, diff_avg):
+                    all_results.append({
+                        "cell_line": cell_line,
+                        "model": "Average",
+                        "index": idx,
+                        "difference_logodds": d
+                    })
 
-                        # Calculate the difference between prediction_log_odds and shap_sum_plus_expected_value
-                        df = df.with_columns([
-                            (pl.col("prediction_log_odds") - pl.col("shap_sum_plus_expected_value")).alias("Difference_logodds")
-                        ])
+                del unique_rows, final_shap_df, shap_sum, diff_avg, avg_logodds_preds, logodds_preds_stack
+                gc.collect()
 
-                        # Calculate the difference between predictions and shap_sum_plus_expected_value directly
-                        df = df.with_columns([
-                            (pl.col("Predictions") - pl.col("shap_sum_plus_expected_value")).alias("Difference_prediction")
-                        ])
-
-                        # Save the difference columns as variables if needed
-                        difference_logodds = df["Difference_logodds"].to_numpy()
-                        difference_prediction = df["Difference_prediction"].to_numpy()
-                        indices = df["index"].to_numpy()
-
-                        # Add results to the list, including index
-                        for idx, diff_logodds, diff_pred in zip(indices, difference_logodds, difference_prediction):
-                            results.append({
-                                "cell_line": cell_line,
-                                "index": idx,
-                                "difference_logodds": diff_logodds,
-                                "difference_prediction": diff_pred
-                            })
-
-                        # Clean up memory
-                        del df
-                        gc.collect()
-
-                elif data_mode == "all_models":
-                    # Load final SHAP data using unique-binding and as_lazyframe=True
-                    final_shap_data = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
-                    for cell_line in self.cell_lines:
-                        # Get expected value for cell line by averaging shap_expected_value in hash_metadata
-                        expected_value = self.hash_metadata[self.hash_metadata["cell_line"] == cell_line]["shap_expected_value"].mean()
-
-                        # Collect indices from final SHAP cache
-                        indices = final_shap_data[cell_line].select("index").collect()["index"].to_numpy()
-                        # Get schema and columns
-                        schema = final_shap_data[cell_line].collect_schema().names()
-                        shap_cols = [col for col in schema if col.endswith("_shap")]
-
-                        # Collect SHAP cache as DataFrame
-                        df_cache = final_shap_data[cell_line].select(["index"] + shap_cols).sort('index').collect()
-                        # Get predictions from all 5 SHAP matrices
-                        shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
-                        pred_arrays = []
-                        for lf in shap_lazyframes:
-                            # Subset to rows with indices in final SHAP cache
-                            df_pred = lf.filter(pl.col("index").is_in(indices)).select(["index", "Predictions"]).collect().sort("index")
-                            pred_arrays.append(df_pred["Predictions"].to_numpy())
-                            
-                        # Average predictions across 5 matrices
-                        predictions = np.mean(np.stack(pred_arrays, axis=0), axis=0)
-
-                        # Calculate shap_sum for each row
-                        shap_sum = df_cache.select(shap_cols).to_numpy().sum(axis=1)
-                        # Calculate prediction_log_odds
-                        prediction_log_odds = np.log(predictions / (1 - predictions))
-                        # Calculate shap_sum_plus_expected_value
-                        shap_sum_plus_expected_value = shap_sum + expected_value
-                        # Calculate differences
-                        difference_logodds = prediction_log_odds - shap_sum_plus_expected_value
-                        difference_prediction = predictions - shap_sum_plus_expected_value
-
-                        # Add results to the list, including index
-                        for idx, diff_logodds, diff_pred in zip(indices, difference_logodds, difference_prediction):
-                            results.append({
-                                "cell_line": cell_line,
-                                "index": idx,
-                                "difference_logodds": diff_logodds,
-                                "difference_prediction": diff_pred
-                            })
-
-                        del df_cache
-                        gc.collect()
-
-                # Create a pandas DataFrame from the results and save to file
-                results_df = pd.DataFrame(results)
-                results_df.to_csv(self.CACHE_INFO["SHAP_additivity_assertions"][data_mode], sep="\t", index=False)
-            
-                logger.success(f"Saved SHAP additivity differences to {self.CACHE_INFO['SHAP_additivity_assertions'][data_mode]}")
-
+            # Save as DataFrame to data_file with gzip compression
+            out_df = pd.DataFrame(all_results)
+            out_df.to_csv(data_file, sep="\t", index=False, compression="gzip")
 
 
 
