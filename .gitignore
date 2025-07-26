@@ -24,3 +24,9 @@ wandb/
 
 # ignore ols regression matrices
 analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_matrices/
+
+# ignore SHAP analysis outputs that are larger than 100MB
+analysis/6_SHAP_network_analysis/outputs/SHAP_cv/local_SHAP_cv.pkl.gz
+analysis/6_SHAP_network_analysis/outputs/SHAP_std/local_SHAP_std.pkl.gz
+
+analysis/6_model_variation_rapid_testing/*

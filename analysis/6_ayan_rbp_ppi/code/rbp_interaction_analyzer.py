@@ -656,12 +656,12 @@ class RbpInteractionAnalyzer:
         for title_prefix in ["KD + CTRL:", "CTRL ONLY:"]:
 
             if title_prefix == "KD + CTRL:":
-                iter_data = self.shap_data
+                iter_data = self.xgboost_ppi
             elif title_prefix == "CTRL ONLY:":
-                iter_data = {cell_line: self.shap_data[cell_line].filter(pl.col("RBP_KD") == "NONE") for cell_line in self.cell_lines}
+                iter_data = {cell_line: self.xgboost_ppi[cell_line].filter(pl.col("RBP_KD") == "NONE") for cell_line in self.cell_lines}
+            iter_data = {cell_line: data.unique(subset = "graph_index") for cell_line, data in iter_data.items()}
 
             logger.info(f"Plotting amount of binding vs PSI for {title_prefix.strip(':')}")
-
             fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=False, sharey=True, dpi=200)
 
             for ax, cell_line in zip(axes, self.cell_lines):
@@ -1201,10 +1201,10 @@ class RbpInteractionAnalyzer:
 
     def create_and_plot_num_bindings_vs_r2_score(self): 
 
-        if not hasattr(self, 'ppi_vs_single_binder_df'):
-            self.create_ppi_vs_single_binder_table()
+        if not hasattr(self, 'ppi_vs_single_binders_df'):
+            self.create_ppi_vs_single_binders_table()
         
-        for _, row in self.ppi_vs_single_binder_df.iterrows():
+        for _, row in self.ppi_vs_single_binders_df.iterrows():
             cell_line = row["Cell Line"]
             model = row["Model"]
             rbp_pair = row["RBP Pair"]

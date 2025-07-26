@@ -234,6 +234,22 @@ class YogiBindingPatternAnalyzer:
         return heatmap_df
     
 
+    def return_ward_hierarchical_clustering_order(self, df): 
+
+        assert isinstance(df, pd.DataFrame), "Input must be a pandas DataFrame"
+        assert df.shape[1] > df.shape[0], "DataFrame must have more columns than rows for clustering"
+        assert list(df.index) == list(map(str, range(1, 7))), "Rows of the DataFrame are not in the order of 1 to 6"
+        
+
+        return df.iloc[ 
+                :,
+                leaves_list(
+                    linkage(df.T, method='ward')
+                )
+            ]
+
+
+
     def plot_entire_dataset_RBP_heatmaps(self): 
         
         for cell_line in self.cell_lines:
@@ -247,9 +263,13 @@ class YogiBindingPatternAnalyzer:
                     column_normalized=column_normalized
                 )
 
+                plotting_data = plotting_data.dropna(axis=1, how='all')
+                assert not plotting_data.isnull().values.any(), "plotting_data contains null values"
                 assert plotting_data.max().max() <= 100, "Some values in the heatmap are greater than 1"
 
-                plt.figure(figsize=(28, 5), dpi=300)
+                plotting_data = self.return_ward_hierarchical_clustering_order(plotting_data)
+
+                plt.figure(figsize=(35, 7), dpi=300)
 
                 ax = sns.heatmap(
                     plotting_data,
@@ -280,7 +300,7 @@ class YogiBindingPatternAnalyzer:
                     normalization_filename_suffix = "not-column-normalized"
                     figure_aim_suffix = "percent-graphs-bound"
 
-                plt.suptitle(f"{cell_line}: {figure_aim}", fontsize=30, x=0.45, y=1)
+                plt.suptitle(f"{cell_line}: {figure_aim}\n{normalization_suffix}\nNOTE: hierarchically clustered w/ Ward", fontsize=26, x=0.45, y=1.08)
                 # ax.set_title(f"{normalization_suffix}", fontsize=18, y=1.04)
 
                 plt.savefig(f"../outputs/rbp_binding_heatmaps/all_data_heatmaps/{cell_line}_{figure_aim_suffix}_AKA_{normalization_filename_suffix}.png", bbox_inches='tight', dpi=300)
@@ -323,10 +343,14 @@ class YogiBindingPatternAnalyzer:
                         ),
                         column_normalized=column_normalized
                     )
-
+                    
+                    plotting_data = plotting_data.dropna(axis=1, how='all')
+                    assert not plotting_data.isnull().values.any(), "plotting_data contains null values"
                     assert plotting_data.max().max() <= 100, "Some values in the heatmap are greater than 1"
 
-                    plt.figure(figsize=(28, 5), dpi=300)
+                    plotting_data = self.return_ward_hierarchical_clustering_order(plotting_data)
+
+                    plt.figure(figsize=(35, 5), dpi=300)
 
                     ax = sns.heatmap(
                         plotting_data,
@@ -358,7 +382,7 @@ class YogiBindingPatternAnalyzer:
                         figure_aim_suffix = "percent-graphs-bound"
 
                     plt.suptitle(f"{cell_line} {self.distance}: {figure_aim} (PSI bin: {bin})", fontsize=36, x=0.45, y=1.1)
-                    ax.set_title(f"All Graphs; {normalization_suffix}", fontsize=20, y=1.04)
+                    ax.set_title(f"All Graphs; Hierarchical clustering w/ Ward; {normalization_suffix}", fontsize=20, y=1.04)
 
                     sanitized_key = bin.replace("<", "less-than").replace(">", "greater-than").replace("=", "equals").replace("&", "and")
                     plt.savefig(f"../outputs/rbp_binding_heatmaps/psi_stratified_heatmaps/{cell_line}_{sanitized_key}_{figure_aim_suffix}_AKA_{normalization_filename_suffix}.png", bbox_inches='tight', dpi=300)
@@ -397,10 +421,13 @@ class YogiBindingPatternAnalyzer:
                         ),
                         column_normalized=column_normalized
                     )
-
+                    plotting_data = plotting_data.dropna(axis=1, how='all')
+                    assert not plotting_data.isnull().values.any(), "plotting_data contains null values"
                     assert plotting_data.max().max() <= 100, "Some values in the heatmap are greater than 1"
 
-                    plt.figure(figsize=(28, 5), dpi=300)
+                    plotting_data = self.return_ward_hierarchical_clustering_order(plotting_data)
+
+                    plt.figure(figsize=(35, 5), dpi=300)
 
                     ax = sns.heatmap(
                         plotting_data,
@@ -434,7 +461,7 @@ class YogiBindingPatternAnalyzer:
                     plt.suptitle(f"{cell_line} {self.distance}: 'Responsive KD' {figure_aim}", fontsize=36, x=0.45, y=1.1)
                     
                     exons_used = "Unique 3-Exon Combinations" if use_unique_exons else "All Graphs"
-                    ax.set_title(f"{normalization_suffix}; # Graphs: {num_graphs}; {exons_used}", fontsize=20, y=1.04)
+                    ax.set_title(f"{normalization_suffix}; # Graphs: {num_graphs}; {exons_used}; Hierarchical clustering w/ Ward", fontsize=20, y=1.04)
 
                     plt.savefig(f"../outputs/rbp_binding_heatmaps/knockdown_responsive_heatmaps/{cell_line}_unique_exons_{use_unique_exons}_knockdown_responsive_binding_{normalization_filename_suffix}.png", bbox_inches='tight', dpi=300)
                     plt.show()

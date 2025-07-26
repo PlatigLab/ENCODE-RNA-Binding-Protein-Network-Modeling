@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from loguru import logger
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.lines import Line2D
+
 
 @dataclass
 class DatasetAndModelParameterAnalyzer:
@@ -12,7 +14,8 @@ class DatasetAndModelParameterAnalyzer:
     sweep_projects = {
         'dataset': 'yogi-dataset-sweep-feb-2025', 
         'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025',
-        'linear_models': 'yogi-RBP-ML-linear-models-april-2025'
+        'linear_models': 'yogi-RBP-ML-linear-models-april-2025', 
+        'variations_of_model': "yogi-wild-west-model-variation-rapid-testing-v1" 
     }
 
     dataset_sweep_covariates= {
@@ -34,8 +37,8 @@ class DatasetAndModelParameterAnalyzer:
         self.sweep_results = {}
     
         output_folder = Path("../output/wandb_summary_tables/")
-        if len(list(output_folder.glob('*'))) == 3: 
-            
+        if len(list(output_folder.glob('*'))) == len(self.sweep_projects):
+
             self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
 
             logger.warning("REMINDER: removing early_stopping_rounds outside of 100")
@@ -45,6 +48,10 @@ class DatasetAndModelParameterAnalyzer:
 
             for key, df in self.sweep_results.items():
                 logger.info(f"{key} summary table contains {df.shape[0]} rows")
+
+                if key == 'variations': 
+                    if "data_file" in df.columns:
+                        df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
 
             logger.success("FROM CACHE: Retrieved WandB summary tables")
 
@@ -102,7 +109,11 @@ class DatasetAndModelParameterAnalyzer:
             table = self.sweep_results[key].copy(deep=True)
 
             assert table['run_id'].is_unique, "run_id column contains duplicated values"
-            assert (table['state'] == 'finished').all(), "Not all runs are finished"
+
+            if key != 'variations':
+                assert (table['state'] == 'finished').all(), "Not all runs are finished"
+            else: 
+                logger.warning("REMINDER: 'variations' sweep has failed runs, so we are not checking for 'finished' state")
 
             for col in table.columns:
                 if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
@@ -312,7 +323,7 @@ class DatasetAndModelParameterAnalyzer:
                 #     json.dump(combined_configs.to_dict(orient="records"), f, indent=4)
                 # logger.success(f"Saved top model configurations to {output_file}")
                 
-                # logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout R2 Score using parameters: {self.performance_chosen_parameters}")
+                # logger.info(f"Top Model Configurations by Avg. Inner Fold Holdout $R^2$ Score using parameters: {self.performance_chosen_parameters}")
                 # self.top_model_configs = combined_configs
                 # return self.top_model_configs
 
@@ -326,33 +337,38 @@ class DatasetAndModelParameterAnalyzer:
     def plot_r2_distributions(self): 
 
         for type in self.sweep_results:
+            if type != 'variations':  # variations sweep is not plotted
+                data = self.sweep_results[type]
 
-            data = self.sweep_results[type]
+                plt.figure(figsize=(8, 3), dpi=200)
 
-            plt.figure(figsize=(12, 5), dpi=200)
+                if type == 'dataset':
+                    y_variable = 'val_r2_score'
+                    y_label = 'Validation $R^2$ Score'
+                    size=5
+                    linewidth=1
+                elif type == 'model' or type == 'linear':
+                    y_variable = 'holdout_r2_score'
+                    y_label = 'Holdout $R^2$ Score'
+                    size=1
+                    linewidth=0.1
 
-            if type == 'dataset':
-                y_variable = 'val_r2_score'
-                y_label = 'Validation R2 Score'
-                size=5
-                linewidth=1
-            elif type == 'model' or type == 'linear':
-                y_variable = 'holdout_r2_score'
-                y_label = 'Holdout R2 Score'
-                size=0.5
-                linewidth=0.1
+                if type != 'linear': 
+                    sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
+                    sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+                elif type == 'linear': 
+                    sns.violinplot(
+                        x='dataset.cell_line', y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
+                    )
 
-            sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
-            sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+                plt.title(f'{type.capitalize()} Sweep: $R^2$ Score Distribution', y=1.03)
+                plt.xlabel('Cell Line')
+                plt.ylabel(y_label)
 
-            plt.title(f'{type.capitalize()} Sweep: R2 Score Distribution')
-            plt.xlabel('Cell Line')
-            plt.ylabel(y_label)
-
-            plt.savefig(f"../output/plots/summary/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-            
+                plt.savefig(f"../output/plots/summary/{type}_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+                plt.show()
+                plt.close()
+                
 
     def plot_dataset_r2_per_covariate(self): 
 
@@ -376,12 +392,12 @@ class DatasetAndModelParameterAnalyzer:
             ax_top.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title=legend_title)
 
             if covariate!='dataset.features.binding_matrix.binding_format':
-                ax_top.set_title(f'Validation R2 Score by {legend_title}\nNOTE: includes both binary and expression representation of binding data', y=1)
+                ax_top.set_title(f'Validation $R^2$ Score by {legend_title}\nNOTE: includes both binary and expression representation of binding data', y=1)
             else: 
-                ax_top.set_title(f'Validation R2 Score by {legend_title}')
+                ax_top.set_title(f'Validation $R^2$ Score by {legend_title}')
                 ax_top.set_xlabel('Cell Line')
 
-            ax_top.set_ylabel('Validation R2 Score')            
+            ax_top.set_ylabel('Validation $R^2$ Score')            
 
             if ax_bottom is not None:
 
@@ -448,7 +464,7 @@ class DatasetAndModelParameterAnalyzer:
 
             plt.title(f'1D Hyperparameter Sweep: "{hyperparameter}"')
             plt.xlabel(f'Value for "{hyperparameter}"')
-            plt.ylabel('Holdout R2 Score')
+            plt.ylabel('Holdout $R^2$ Score')
 
             plt.savefig(f"../output/plots/model/1d_sweeps/model_{hyperparameter}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
             plt.show()
@@ -463,7 +479,7 @@ class DatasetAndModelParameterAnalyzer:
                 model_sweep = model_sweep[model_sweep['training.seed'] != 17]
                 logger.warning("REMINDER: Excluding configurations where 'training.seed' is 17")
                 
-                plt.figure(figsize=(10, 4), dpi=200)
+                plt.figure(figsize=(9, 4), dpi=200)
 
                 sns.swarmplot(
                     x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
@@ -471,8 +487,8 @@ class DatasetAndModelParameterAnalyzer:
                 )
                 sns.boxplot(
                     x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
-                    data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
-                    whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+                    data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'gray'}, 
+                    whiskerprops={'color':'gray', 'linewidth':2}, medianprops={'color':'gray'}, 
                     showfliers=False, hue_order=["K562", "HepG2"], dodge=True
                 )
 
@@ -480,9 +496,9 @@ class DatasetAndModelParameterAnalyzer:
                 n = len(handles) // 2
                 plt.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), markerscale=7, title='Cell Line', fontsize=12, title_fontsize=12)
 
-                plt.title(f'Holdout R2 Score by HTD Seed ({key.capitalize()} Sweep)\n(All tuning experiments included)', fontsize=16, y=1.03)
+                plt.title(f'Holdout $R^2$ Score by HTD Seed ({key.capitalize()} Sweep)\n(All tuning experiments included)', fontsize=16, y=1.05)
                 plt.xlabel('Training Seed', fontsize=14)
-                plt.ylabel('Holdout R2 Score', fontsize=14)
+                plt.ylabel('Holdout $R^2$ Score', fontsize=14)
 
                 plt.xticks(fontsize=12)
                 plt.yticks(fontsize=12)
@@ -516,16 +532,16 @@ class DatasetAndModelParameterAnalyzer:
                         hue_order = list(range(100, 901, 100))
 
                     param_name = param.split(".")[-1]
-                    plt.figure(figsize=(8,3), dpi=200)
+                    plt.figure(figsize=(7,3), dpi=200)
                     
                     sns.swarmplot(
-                        x=param, y="holdout_r2_score", hue=hue, size=0.8,
+                        x=param, y="holdout_r2_score", hue=hue, size=1,
                         data=subset, palette=palette, linewidth=0.05, edgecolor='black', hue_order=hue_order, dodge=True
                     )
                     sns.boxplot(
                         x=param, y="holdout_r2_score", hue=hue, 
-                        data=subset, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
-                        whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
+                        data=subset, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'gray'}, 
+                        whiskerprops={'color':'gray', 'linewidth':2}, medianprops={'color':'gray'}, 
                         showfliers=False, hue_order=["K562", "HepG2"], dodge=True
                     )
 
@@ -536,7 +552,7 @@ class DatasetAndModelParameterAnalyzer:
 
                     plt.title(f"{param_name} in sweep: {', '.join(sweep_name.split(':')[-1].split('-'))}", fontsize=12)
                     plt.xlabel(param_name, fontsize=10)
-                    plt.ylabel('Holdout R2 Score', fontsize=10)
+                    plt.ylabel('Holdout $R^2$ Score', fontsize=10)
 
                     plt.savefig(
                         f'../output/plots/model/interrelated_hyperparameters/1D_plotting/sweep_{sweep_name.split(":")[0]}-{param_name}-{hue.replace(".", "_")}-r2_score_distribution.png', 
@@ -558,14 +574,9 @@ class DatasetAndModelParameterAnalyzer:
             param_names = [f"model.{param}" for param in sweep_name.split(":")[1].split("-")]
             subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
 
-            if "1:" in sweep_name: 
-                markerscale = 6
-                linewidth=0.1
-                size=1.2
-            else:
-                markerscale = 1
-                linewidth=0.5
-                size=3
+            markerscale = 2
+            linewidth=0.4
+            size=2.5
             
             if len(param_names) == 3:
                 param_combinations = [(param_names[0], param_names[1]), (param_names[0], param_names[2]), (param_names[1], param_names[2])]
@@ -573,7 +584,7 @@ class DatasetAndModelParameterAnalyzer:
                 param_combinations = [(param_names[0], param_names[1])]
             
             for param_x, param_hue in param_combinations:
-                fig, axes = plt.subplots(2, 1, figsize=(10, 5), dpi=200, sharex=True, sharey=True)
+                fig, axes = plt.subplots(2, 1, figsize=(8, 5), dpi=200, sharex=True, sharey=True)
                 cell_lines = subset['dataset.cell_line'].unique()
 
                 for i, cell_line in enumerate(cell_lines):
@@ -586,7 +597,7 @@ class DatasetAndModelParameterAnalyzer:
                         palette='Set2', linewidth=linewidth, edgecolor='black', ax=ax, dodge=True, hue_order=hue_order
                     )
 
-                    ax.set_title(cell_line, fontsize=16)
+                    ax.set_title(cell_line, fontsize=12)
                     ax.legend_.remove()  # Remove the legend for each subplot
                     ax.set_xlabel('')
                     ax.set_ylabel('')
@@ -594,10 +605,10 @@ class DatasetAndModelParameterAnalyzer:
                 handles, labels = ax.get_legend_handles_labels()
                 fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), markerscale=markerscale, title=param_hue.split(".")[-1], title_fontsize=12)
 
-                plt.suptitle(f'Holdout R2 Score by {param_x.split(".")[-1]} and {param_hue.split(".")[-1]}', y=0.98, fontsize=20)
+                plt.suptitle(f'Holdout $R^2$ Score by {param_x.split(".")[-1]} and {param_hue.split(".")[-1]}', y=0.98, fontsize=20)
                 plt.tight_layout(rect=[0, 0, 0.98, 1])  # Adjust layout to make space for the legend
-                fig.supxlabel(f'{param_x.split(".")[-1]}', fontsize=18, y=-0.06)
-                fig.supylabel('Holdout R2 Score', fontsize=18, x=-0.03)
+                fig.supxlabel(f'{param_x.split(".")[-1]}', fontsize=16, y=-0.06)
+                fig.supylabel('Holdout $R^2$ Score', fontsize=16, x=-0.03)
                 
                 plt.savefig(
                     f"../output/plots/model/interrelated_hyperparameters/higher_dimension_plotting/sweep_{sweep_name.split(':')[0]}-{param_x.split('.')[-1]}-{param_hue.split('.')[-1]}-r2_score_distribution.png",
@@ -634,9 +645,9 @@ class DatasetAndModelParameterAnalyzer:
                         ax.set_title(f'Seed: {seed}', pad=10)
 
                     cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.7, pad=0.15, location='right')
-                    cbar.ax.set_title('Holdout R2 Score', pad=10)
+                    cbar.ax.set_title('Holdout $R^2$ Score', pad=10)
 
-                    fig.suptitle(f'{cell_line}: Holdout R2 Score by {param_x}, {param_y}, {param_z}\nNOTE: only showing Holdout R2 Scores > 0.2', y=0.98, fontsize=20)
+                    fig.suptitle(f'{cell_line}: Holdout $R^2$ Score by {param_x}, {param_y}, {param_z}\nNOTE: only showing Holdout $R^2$ Scores > 0.2', y=0.98, fontsize=20)
                     
                     plt.savefig(
                         f"../output/plots/model/interrelated_hyperparameters/higher_dimension_plotting/sweep_{sweep_name.split(':')[0]}-{cell_line}-{param_x}-{param_y}-{param_z}-r2_score_distribution.png",
@@ -695,7 +706,7 @@ class DatasetAndModelParameterAnalyzer:
         assert model_sweep['outer_loop_holdout_r2_score'].notna().all(), "Some rows have missing values in the 'outer_loop_holdout_r2_score' column"
         assert model_sweep.shape[0] == len(self.run_ids), "Mismatch between the number of rows in model_sweep and the length of valid_run_ids"
         assert len(model_sweep) == (2 * self.choose_n_configs)
-        logger.success("Assertions for outer loop holdout R2 scores passed")
+        logger.success("Assertions for outer loop holdout $R^2$ Scores passed")
 
         self.outer_loop_r2_scores_table = model_sweep
 
@@ -727,7 +738,7 @@ class DatasetAndModelParameterAnalyzer:
         self.inner_vs_outer_r2_scores_table = merged_table[model_sweep_parameters + ["run_id", "dataset.cell_line", "avg_holdout_r2_score", "outer_loop_holdout_r2_score"]]
         
         # Create a scatterplot of avg_holdout_r2_score vs. outer_loop_holdout_r2_score
-        plt.figure(figsize=(6,3), dpi=200)
+        plt.figure(figsize=(4,3), dpi=200)
         sns.scatterplot(
             x="avg_holdout_r2_score", 
             y="outer_loop_holdout_r2_score", 
@@ -750,12 +761,13 @@ class DatasetAndModelParameterAnalyzer:
         )
         plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        plt.title("Inner Fold vs. Outer Loop Holdout R2 Scores", fontsize=14)
-        plt.xlabel("Average Holdout R2 Score (Inner Fold)", fontsize=12)
-        plt.ylabel("Outer Loop Holdout R2 Score", fontsize=12)
-        plt.legend(title="Cell Line", fontsize=9, title_fontsize=10, loc="best")
+        plt.title("Avg. Holdout vs Final Holdout $R^2$ Scores", fontsize=12, y=1.04)
+        plt.xlabel("Avg. Holdout $R^2$ Score", fontsize=12)
+        plt.ylabel("Final Holdout $R^2$ Score", fontsize=12)
+        plt.legend(fontsize=9, loc="best")
 
         # Save the plot
+        plt.savefig("../output/plots/summary/xgboost_inner_vs_outer_r2_scores.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
         return self.inner_vs_outer_r2_scores_table
@@ -771,7 +783,7 @@ class DatasetAndModelParameterAnalyzer:
 
         # Extract the exact holdout_r2_score for each cell line
         bar_data = linear_sweep[['dataset.cell_line', 'holdout_r2_score']].drop_duplicates()
-        assert bar_data.shape[0] == len(unique_cell_lines), "Mismatch in the number of unique cell lines and exact R2 scores"
+        assert bar_data.shape[0] == len(unique_cell_lines), "Mismatch in the number of unique cell lines and exact $R^2$ Scores"
 
         # Create a bar plot for holdout_r2_score by dataset.cell_line
         plt.figure(figsize=(4, 3), dpi=200)
@@ -792,15 +804,15 @@ class DatasetAndModelParameterAnalyzer:
         for container in ax.containers: 
             ax.bar_label(container, padding=5)
 
-        plt.title('OLS Holdout R2 Score by Cell Line', fontsize=12)
+        plt.title('OLS Holdout $R^2$ Score by Cell Line', fontsize=12, y=1.04)
         plt.xlabel('Cell Line', fontsize=10)
-        plt.ylabel('Holdout R2 Score', fontsize=10)
+        plt.ylabel('Final Holdout $R^2$ Score', fontsize=10)
         plt.xticks(fontsize=9)
         plt.yticks(fontsize=9)
 
         # Save and show the plot
         plt.tight_layout()
-        # plt.savefig("../output/plots/linear/ols_r2_score_distribution.png", dpi=200, bbox_inches='tight')
+        plt.savefig("../output/plots/summary/OLS_holdout_r2_score.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
@@ -812,37 +824,7 @@ class DatasetAndModelParameterAnalyzer:
         unique_cell_lines = sorted(linear_sweep['dataset.cell_line'].unique())
         hue_order = sorted(linear_sweep['model.l1_ratio'].unique())
 
-        for y_variable in ['holdout_r2_score', 'holdout_sigmoid_r2']:
-            fig, axes = plt.subplots(len(unique_cell_lines), 1, figsize=(13, 9), dpi=200, sharey=True, sharex=True)
-
-            for i, cell_line in enumerate(unique_cell_lines):
-                ax = axes[i]
-                subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
-
-                sns.swarmplot(
-                    x='model.alpha', y=y_variable, hue='model.l1_ratio',
-                    data=subset, palette='Set2', edgecolor='black', size=2, linewidth=0.01, ax=ax, hue_order=hue_order, dodge=True
-                )
-
-                ax.set_title(f'Cell Line: {cell_line}', fontsize=12)
-                ax.legend_.remove()  # Remove legend for individual subplots
-                ax.tick_params(axis='x', rotation=90)
-
-            # Set figure-level x and y axis labels
-            fig.supxlabel('Model Alpha', fontsize=12)
-            fig.supylabel('Holdout R2 Score' if y_variable == 'holdout_r2_score' else 'Holdout Sigmoid R2', fontsize=12)
-
-            fig.suptitle(f'ElasticNet Hyperparameter Sweep: {y_variable}', fontsize=20)
-            # Add a single shared legend outside the plot
-            handles, labels = ax.get_legend_handles_labels()
-            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=10, title_fontsize=11, markerscale=5)
-
-            plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
-            # plt.savefig(f"../output/plots/linear/elasticnet_{y_variable}_distribution.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-
-        # Create a scatterplot of holdout_r2_score vs. holdout_sigmoid_r2
+           # Create a scatterplot of holdout_r2_score vs. holdout_sigmoid_r2
         plt.figure(figsize=(5,4), dpi=200)
         sns.scatterplot(
             x="holdout_r2_score", 
@@ -867,9 +849,9 @@ class DatasetAndModelParameterAnalyzer:
         )
         plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        plt.title("Holdout R2 Score vs. \nHoldout Sigmoid R2", fontsize=12)
-        plt.xlabel("Holdout R2 Score", fontsize=10)
-        plt.ylabel("Holdout Sigmoid R2", fontsize=10)
+        plt.title("Holdout $R^2$ Score vs. \nHoldout Sigmoid $R^2$", fontsize=12)
+        plt.xlabel("Holdout $R^2$ Score", fontsize=10)
+        plt.ylabel("Holdout Sigmoid $R^2$", fontsize=10)
         plt.legend(title="Cell Line", fontsize=8, title_fontsize=9, loc="best")
 
         # Save and show the plot
@@ -877,6 +859,43 @@ class DatasetAndModelParameterAnalyzer:
         # plt.savefig("../output/plots/linear/holdout_r2_vs_sigmoid_r2.png", dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
+
+        for y_variable in ['holdout_r2_score', 'holdout_sigmoid_r2']:
+            fig, axes = plt.subplots(len(unique_cell_lines), 1, figsize=(10,8), dpi=200, sharey=True, sharex=True)
+
+            for i, cell_line in enumerate(unique_cell_lines):
+                ax = axes[i]
+                subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
+
+                sns.swarmplot(
+                    x='model.alpha', y=y_variable, hue='model.l1_ratio',
+                    data=subset, palette='Set2', edgecolor='black', size=1.5, linewidth=0.02, ax=ax, hue_order=hue_order, dodge=True
+                )
+
+                ax.set_title(f'{cell_line}', fontsize=14)
+                ax.legend_.remove()  # Remove legend for individual subplots
+                ax.set_xlabel('')
+                ax.set_ylabel('')
+
+                # Manually set x tick labels
+                ax.set_xticks(range(len(subset['model.alpha'].unique())))
+                ax.set_xticklabels([float(f"{value:.5f}") for value in subset['model.alpha'].unique()], rotation=45, ha='right', fontsize=10)
+
+
+            # Set figure-level x and y axis labels
+            fig.supxlabel('Alpha', fontsize=16)
+            fig.supylabel('Holdout $R^2$ Score' if y_variable == 'holdout_r2_score' else 'Holdout Sigmoid $R^2$', fontsize=18)
+
+            fig.suptitle(f'ElasticNet Hyperparameter Sweep: {y_variable}', fontsize=20)
+            # Add a single shared legend outside the plot
+            handles, labels = ax.get_legend_handles_labels()
+            fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5), title='L1 Ratio', fontsize=11, title_fontsize=12, markerscale=6)
+
+            plt.tight_layout(rect=[0, 0, 0.99, 1])  # Adjust layout to make space for the legend
+            plt.savefig(f"../output/plots/summary/elasticnet_{y_variable}_distribution.png", dpi=200, bbox_inches='tight')
+            plt.show()
+            plt.close()
+
 
     
     def get_elasticnet_run_ids(self): 
@@ -923,13 +942,29 @@ class DatasetAndModelParameterAnalyzer:
         linear_sweep = linear_sweep[linear_sweep['outer_loop_holdout_r2_score'].notna()]
         assert linear_sweep.shape[0] == 2, "Expected exactly 2 rows where outer_loop_holdout_r2_score is not null"
 
+        configs = self.show_top_model_configs_after_averaging_by_seed(
+            all_configs=True, 
+            linear=True
+        ).sort_values(
+            by='avg_holdout_r2_score',
+            ascending=False
+        )
+
+        merged_data = pd.merge(
+            configs,
+            linear_sweep,
+            on=['dataset.cell_line', 'model.l1_ratio', 'model.alpha'],
+            how='inner'
+        )
+        assert merged_data.shape[0] == 2, "Expected exactly 2 rows after merging with linear_sweep"
+
         # Create a scatterplot
-        plt.figure(figsize=(6, 4), dpi=200)
+        plt.figure(figsize=(4,3), dpi=200)
         sns.scatterplot(
-            x="holdout_r2_score",
+            x="avg_holdout_r2_score",
             y="outer_loop_holdout_r2_score",
             hue="dataset.cell_line",
-            data=linear_sweep,
+            data=merged_data,
             palette="Set2",
             edgecolor="black",
             linewidth=1,
@@ -938,25 +973,191 @@ class DatasetAndModelParameterAnalyzer:
 
         # Add the y=x line
         min_val = min(
-            linear_sweep["holdout_r2_score"].min(),
-            linear_sweep["outer_loop_holdout_r2_score"].min()
+            merged_data["avg_holdout_r2_score"].min(),
+            merged_data["outer_loop_holdout_r2_score"].min()
         )
-        max_val = max(
-            linear_sweep["holdout_r2_score"].max(),
-            linear_sweep["outer_loop_holdout_r2_score"].max()
+        max_val = max(  
+            merged_data["avg_holdout_r2_score"].max(),
+            merged_data["outer_loop_holdout_r2_score"].max()
         )
+
         plt.plot([min_val, max_val], [min_val, max_val], color="gray", linestyle="--", linewidth=1, label="y = x")
 
-        plt.title("ElasticNet: Holdout R2 vs. Outer Loop Holdout R2", fontsize=14)
-        plt.xlabel("Holdout R2 Score", fontsize=12)
-        plt.ylabel("Outer Loop Holdout R2 Score", fontsize=12)
-        plt.legend(title="Cell Line", fontsize=10, title_fontsize=11, loc="best")
+        plt.title("ElasticNet: Avg. Holdout $R^2$ vs. Final Holdout $R^2$", fontsize=8, y=1.04)
+        plt.xlabel("Avg. Holdout $R^2$ Score", fontsize=11)
+        plt.ylabel("Final Holdout $R^2$ Score", fontsize=11)
+        plt.legend(fontsize=9, loc="best")
 
         # Save and show the plot
         plt.tight_layout()
+        plt.savefig('../output/plots/summary/elasticnet_outer_vs_avg_inner_r2.png', dpi=200, bbox_inches='tight')
         plt.show()
         plt.close()
 
+
+    def visualize_model_variation_results(self): 
+        variations_df = self.sweep_results['variations'].copy(deep=True)
+
+        # Columns to plot (also used as hue)
+        plot_columns = ['seed', 'distance', 'data_type']
+
+        fig, axes = plt.subplots(3, 1, figsize=(12, 8), dpi=100, sharex=True, sharey=True)
+        for idx, col in enumerate(plot_columns):
+            ax = axes[idx]
+            hue_order = sorted(variations_df[col].unique())
+            
+            sns.violinplot(
+                x='cell_line',
+                y='test_r2',
+                hue=col,
+                data=variations_df,
+                ax=ax,
+                hue_order=hue_order,
+                palette='Set2',
+                inner='box'
+            )
+            
+            ax.set_title('')
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+            # Place a legend for each subplot on the outside center right
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles, labels,
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.5),
+                title=col,
+                fontsize=11,
+                title_fontsize=12
+            )
+
+            # Add horizontal red dotted line at y=0.28
+            ax.axhline(0.28, color='red', linestyle=':', linewidth=2, label='SOTA (Yogi) ~= 0.28')
+
+            ax.tick_params(axis='x', labelsize=18)
+            ax.tick_params(axis='y', labelsize=12)
+
+        fig.suptitle('Effect of covariates on "Test $R^2$" Score per Cell Line', fontsize=20, y=1, x=0.4)
+        fig.supxlabel('Cell Line', fontsize=20, x=0.38)
+        fig.supylabel('Test $R^2$ Score', fontsize=20)
+
+        # Add a single legend for the SOTA line at the top right
+        custom_legend = [Line2D([0], [0], color='red', linestyle=':', linewidth=4, label='SOTA (Yogi)\n~= 0.28')]
+        fig.legend(
+            handles=custom_legend,
+            bbox_to_anchor=(0.95, 0.99),
+            fontsize=16,
+            title=None,
+            markerscale=3,
+            handlelength=3,
+            handleheight=2
+        )
+
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        # plt.savefig("../output/plots/summary/variations_violinplots.png", dpi=200, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+        # Wide violinplot for "type" vs test_r2, hue=cell_line, sorted by median test_r2 per type
+        type_medians = variations_df.groupby("type")["test_r2"].median().sort_values()
+        type_order = type_medians.index.tolist()
+        cell_line_order = sorted(variations_df["cell_line"].unique())
+
+        # Colorblind-friendly palette: blue and orange for cell lines, green for SOTA line
+        palette = {"K562": "#0072B2", "HepG2": "#E69F00"}  # blue, orange
+        sota_color = "#009E73"  # green
+
+        plt.figure(figsize=(1.5 * len(type_order), 16), dpi=300)
+        ax = sns.violinplot(
+            x="type",
+            y="test_r2",
+            hue="cell_line",
+            data=variations_df,
+            order=type_order,
+            hue_order=cell_line_order,
+            palette=palette,
+            inner=None,
+            cut=0
+        )
+        sns.boxplot(
+            x="type",
+            y="test_r2",
+            hue="cell_line",
+            data=variations_df,
+            order=type_order,
+            hue_order=cell_line_order,
+            palette=palette,
+            showcaps=True,
+            boxprops={'facecolor':'None', 'edgecolor':'gray'},
+            whiskerprops={'color':'gray', 'linewidth':2},
+            medianprops={'color':'black'},
+            showfliers=True,
+            dodge=True
+        )
+
+        # Remove duplicate legends from boxplot
+        handles, labels = ax.get_legend_handles_labels()
+        n = len(cell_line_order)
+        handles = handles[:n]
+        labels = labels[:n]
+
+        # Add SOTA line
+        ax.axhline(0.28, color=sota_color, linestyle=":", linewidth=4, label="SOTA (Yogi) ~= 0.28")
+
+        # Annotate the highest value above each violin/boxplot in color #cc79a7
+        for i, exp_type in enumerate(type_order):
+            for j, cell_line in enumerate(cell_line_order):
+                subset = variations_df[(variations_df["type"] == exp_type) & (variations_df["cell_line"] == cell_line)]
+                if not subset.empty:
+                    max_val = subset["test_r2"].max()
+                    # Calculate the x position for the annotation
+                    # Violin/boxplot with dodge: x + offset for each hue
+                    n_hue = len(cell_line_order)
+                    offset = (j - (n_hue - 1) / 2) * 0.4 
+                    ax.annotate(
+                        f"{max_val:.2f}",
+                        xy=(i + offset, max_val),
+                        xytext=(0, 5),
+                        textcoords="offset points",
+                        ha="center",
+                        va="bottom",
+                        color="#cc79a7",
+                        fontsize=14,
+                        fontweight="bold"
+                    )
+
+        # Add legend (cell lines + SOTA) at top center left
+        custom_lines = [
+            Line2D([0], [0], color=palette[cell_line_order[0]], lw=6, label=cell_line_order[0]),
+            Line2D([0], [0], color=palette[cell_line_order[1]], lw=6, label=cell_line_order[1]),
+            Line2D([0], [0], color=sota_color, lw=6, linestyle=":", label="SOTA (Yogi) ~= 0.28"),
+        ]
+        ax.legend(
+            handles=custom_lines,
+            loc="upper left",
+            bbox_to_anchor=(0.005, 0.995),
+            fontsize=24,
+            title=None,
+            frameon=True,
+            markerscale=10,  # Increase handle size
+            handlelength=3, # Make handles longer
+            handleheight=1.5  # Make handles thicker
+        )
+
+        ax.set_xlabel("Experiment Type", fontsize=24)
+        ax.set_ylabel("Test $R^2$ Score", fontsize=30)
+        ax.set_title('Test $R^2$ by Model Variation Experiment per Cell Line\n\nNOTE: Not all runs were completed for each experiment type.', fontsize=30, y=1.05)
+        plt.xticks(rotation=90, ha="right", fontsize=24)
+        plt.yticks(fontsize=12)
+
+        ax.set_ylim(None, variations_df["test_r2"].max() * 1.20)  # Set y-axis limit to 10% higher than the highest test_r2 value in the entire dataframe
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+        
+    
 
 
 if __name__ == "__main__":
