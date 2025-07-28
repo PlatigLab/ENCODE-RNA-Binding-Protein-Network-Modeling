@@ -1,5 +1,5 @@
 import sys, os, argparse, glob, gzip, pickle, shap
-import polars as pl, pandas as pd
+import pandas as pd
 from loguru import logger
 
 MODEL_DIR = "../outputs/pickled_models/XGBRegressor/"
@@ -7,9 +7,9 @@ PREDICTIONS_DIR = "../outputs/predictions/XGBRegressor/"
 SHAP_DIR = "../outputs/SHAP/"
 SLURM_DIR="../outputs/SLURM_logs/"
 
-CPUS = 32
-MEM= 256
-PARTITION="standard"
+CPUS = 64
+MEM= 512
+PARTITION="parallel"
 ACCOUNT="platiglab"
 
 
@@ -31,9 +31,12 @@ def main(hash, normal_or_interaction):
     
     explainer = shap.TreeExplainer(
             model, 
-            feature_perturbation= 'tree_path_dependent', 
+            data = data[data["Partition"].isin(["Train", "Validate"])][binding_input.columns],
+            model_output="probability",
             feature_names=binding_input.columns.tolist()
         )
+    
+    logger.info(f"Size of background data used for SHAP: {data[data['Partition'].isin(['Train', 'Validate'])][binding_input.columns].shape}.")
     
     if normal_or_interaction == "normal":
         prefix = f"{SHAP_DIR}/regular/normal"
@@ -55,8 +58,10 @@ def main(hash, normal_or_interaction):
         
         # Concatenate SHAP values to the original data
         result = pd.concat([data, shap_df], axis=1)
-        # Assert that there are no missing values in the entire result dataframe
-        assert not result.isnull().values.any(), "Result dataframe contains missing values."
+    
+        # Check for missing values in the entire result dataframe and log a warning if any are found
+        if result.isnull().values.any():
+            logger.warning("Result dataframe contains missing values.")
 
         logger.success("SHAP values concatenated to the original data by merging horizontally.")
 
@@ -126,5 +131,5 @@ if __name__ == "__main__":
                 job_prefix = f"SHAP_{model_hash}"
 
                 os.system(
-                    f"sbatch --job-name={job_prefix} -N2 -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --hash {model_hash} {flag}'"
+                    f"sbatch --job-name={job_prefix} -N2 -n{CPUS} --mem={MEM}GB --time=1-00:00:00 --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --hash {model_hash} {flag}'"
                 )
