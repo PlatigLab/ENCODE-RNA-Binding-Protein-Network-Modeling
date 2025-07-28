@@ -6302,7 +6302,7 @@ class ShapNetworkInvestigator:
             ordered_cols = [heatmap_df.columns[i] for i in dendro["leaves"]]
             heatmap_df = heatmap_df[ordered_cols]
 
-            plt.figure(figsize=(35,9), dpi=100)
+            plt.figure(figsize=(35,9), dpi=300)
             sns.heatmap(
                 heatmap_df,
                 cmap="Blues",
