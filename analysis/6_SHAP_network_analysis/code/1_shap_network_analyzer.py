@@ -270,6 +270,27 @@ class ShapNetworkInvestigator:
         logger.success(f"Data quality assertions passed for both cell lines.")
     
 
+    def numpy_metric_wrapper(self, tensors, metric):
+
+        # Calculate the desired metric along the stacked axis
+        if metric == 'std':
+            result = np.std(tensors, axis=0)
+        elif metric == 'mean':
+            result = np.mean(tensors, axis=0)
+        elif metric == 'median':
+            result = np.median(tensors, axis=0)
+        elif metric =='coefficient_of_variation':
+            mean = np.mean(tensors, axis=0)
+            std = np.std(tensors, axis=0)
+            result = std / mean
+        elif metric == 'variance':
+            result = np.var(tensors, axis=0)
+        else:
+            raise ValueError(f"Unsupported metric: {metric}")
+
+        return result
+    
+
     def calculate_pointwise_SHAP_metric_per_cell_line(self, cell_line_shap=None, metric=None):
         
         assert None not in (cell_line_shap, metric), "Arguments 'cell_line_shap' and 'metric' cannot be None"
@@ -290,36 +311,76 @@ class ShapNetworkInvestigator:
         ), "Index order mismatch across SHAP DataFrames"
         cell_line_shap = [df.drop("index") for df in cell_line_shap]
 
+        columns = copy.deepcopy(cell_line_shap[0].columns)
+        shape = copy.deepcopy(cell_line_shap[1].shape)
+
         # ensure all dataframes have the same shape
         assert all(df.shape == cell_line_shap[0].shape for df in cell_line_shap), "SHAP DataFrames have inconsistent dimensions"
         # ensure all dataframes have the same columns and ordering
         assert all(df.columns == cell_line_shap[0].columns for df in cell_line_shap), "Column names are not consistent across cell_line_shap"
 
-        # Convert to numpy tensors and stack
-        tensors = np.stack([df.to_numpy() for df in cell_line_shap], axis=0)
+        if len(cell_line_shap[0].columns) < 50: 
+            logger.info("Less than 50 columns in SHAP DataFrames, stacking all columns at once")
+            # Convert to numpy tensors and stack
+            tensors = np.stack([df.to_numpy() for df in cell_line_shap], axis=0)
 
-        # Calculate the desired metric along the stacked axis
-        if metric == 'std':
-            result = np.std(tensors, axis=0)
-        elif metric == 'mean':
-            result = np.mean(tensors, axis=0)
-        elif metric == 'median':
-            result = np.median(tensors, axis=0)
-        elif metric =='coefficient_of_variation':
-            mean = np.mean(tensors, axis=0)
-            std = np.std(tensors, axis=0)
-            result = std / mean
-        elif metric == 'variance':
-            result = np.var(tensors, axis=0)
-        else:
-            raise ValueError(f"Unsupported metric: {metric}")
+            del cell_line_shap
+            gc.collect()
+
+            result = self.numpy_metric_wrapper(tensors, metric)
+        
+        else: 
+            logger.info("More than 50 columns in SHAP DataFrames, processing in batches of 50 columns...")
+
+            # Process columns in batches of 50, save each batch result to a temporary file, then concatenate
+            batch_size = 50
+            num_cols = len(columns)
+            temp_files = []
+
+            for start in tqdm.tqdm(range(0, num_cols, batch_size), desc="Averaging SHAP per batch"):
+                end = min(start + batch_size, num_cols)
+                batch_cols = columns[start:end]
+
+                # Stack only the relevant columns for each DataFrame
+                tensors = np.stack([df.select(batch_cols).to_numpy() for df in cell_line_shap], axis=0)
+                batch_result = self.numpy_metric_wrapper(tensors, metric)
+
+                # Save batch result to a fast, uncompressed .npy file
+                temp_file = f"shap_metric_tmp_{start}_{end}.npy"
+                np.save(temp_file, batch_result)
+
+                temp_files.append((temp_file, batch_cols))
+
+            del batch_result
+            gc.collect()
+
+            # Concatenate all batches in the correct order
+            result_arrays = []
+            result_columns = []
+            for temp_file, batch_cols in tqdm.tqdm(temp_files, desc="Concatenating SHAP batches"):
+                arr = np.load(temp_file, allow_pickle=True)
+                
+                result_arrays.append(arr)
+                result_columns.extend(batch_cols)
+                
+                os.remove(temp_file)
+
+            # Concatenate along the last axis (columns)
+            result = np.concatenate(result_arrays, axis=1)
+            assert result_columns == columns, "Column names do not match the original columns"
+            assert result.shape[0] == shape[0], "Resulting metric array has inconsistent number of rows"
+            assert result.shape[1] == len(columns), "Resulting metric array has inconsistent number of columns"
+
         
         # Convert the result back to a Polars DataFrame
-        result_df = pl.DataFrame(result, schema=cell_line_shap[0].columns)
+        result_df = pl.DataFrame(result, schema=columns)
         # Assert that the result and result_df have the same number of columns and rows as the second DataFrame in cell_line_shap
         # using second dataframe just as another double check that the first and second dataframe have the same shape
-        assert result.shape == cell_line_shap[1].shape, "Resulting metric array has inconsistent dimensions"
-        assert result_df.shape == cell_line_shap[1].shape, "Resulting DataFrame has inconsistent dimensions"
+        assert result.shape == shape, "Resulting metric array has inconsistent dimensions"
+        del result
+        gc.collect()
+
+        assert result_df.shape == shape, "Resulting DataFrame has inconsistent dimensions"
 
         logger.success(f"Calculated pointwise SHAP {metric}")
         return result_df
