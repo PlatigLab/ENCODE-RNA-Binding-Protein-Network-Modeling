@@ -400,10 +400,17 @@ class ShapNetworkInvestigator:
         for hash_value in group['hash']:
             feather_file = f"{self.SHAP_DIR}/{hash_value}.feather"
 
-            # Read the feather file using polars
-            shap_dfs.append(
-                pl.scan_ipc(feather_file)
-            )
+            # Read the feather file using polars and cast column types
+            lf = pl.scan_ipc(feather_file)
+            schema = lf.collect_schema().names()
+
+            binding_cols = [col for col in schema if col.endswith("_binding")]
+
+            # Cast "_binding" columns to uint32
+            lf = lf.with_columns([
+                pl.col(binding_cols).cast(pl.UInt32)
+            ])
+            shap_dfs.append(lf)
         
         return shap_dfs
     
