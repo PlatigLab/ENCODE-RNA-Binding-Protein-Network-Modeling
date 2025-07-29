@@ -253,7 +253,23 @@ class ShapNetworkInvestigator:
             
         self.hash_metadata = hash_metadata
 
+
+    def run_data_quality_assertions(self): 
+        for cell_line in self.cell_lines:
+
+            lfs = self.get_SHAP_data_as_lazyframe(cell_line)
+
+            for i, lf in enumerate(lfs):
+                assert lf.null_count().collect().sum_horizontal().item() == 0, f"Null values found in SHAP DataFrame {i+1} for cell line {cell_line}"
+
+                binding_cols = [col for col in lf.collect_schema().names() if col.endswith("_binding")]
+                binding_values = lf.select(binding_cols).collect().to_numpy()
+
+                assert np.isin(binding_values, [0, 1]).all(), f"One or more '_binding' columns contain values other than 0 or 1 in SHAP DataFrame {i+1} for cell line {cell_line}"
+
+        logger.success(f"Data quality assertions passed for both cell lines.")
     
+
     def calculate_pointwise_SHAP_metric_per_cell_line(self, cell_line_shap=None, metric=None):
         
         assert None not in (cell_line_shap, metric), "Arguments 'cell_line_shap' and 'metric' cannot be None"
