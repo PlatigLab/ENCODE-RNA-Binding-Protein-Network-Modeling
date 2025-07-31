@@ -7,8 +7,8 @@ PREDICTIONS_DIR = "../outputs/predictions/XGBRegressor/"
 SHAP_DIR = "../outputs/SHAP/"
 SLURM_DIR="../outputs/SLURM_logs/"
 
-CPUS = 64
-MEM= 512
+CPUS = 32
+MEM= 256
 PARTITION="parallel"
 ACCOUNT="platiglab"
 
@@ -31,12 +31,10 @@ def main(hash, normal_or_interaction):
     
     explainer = shap.TreeExplainer(
             model, 
-            data = data[data["Partition"].isin(["Train", "Validate"])][binding_input.columns],
-            model_output="probability",
+            feature_perturbation="tree_path_dependent",
+            model_output="raw",
             feature_names=binding_input.columns.tolist()
         )
-    
-    logger.info(f"Size of background data used for SHAP: {data[data['Partition'].isin(['Train', 'Validate'])][binding_input.columns].shape}.")
     
     if normal_or_interaction == "normal":
         prefix = f"{SHAP_DIR}/regular/normal"
@@ -47,7 +45,7 @@ def main(hash, normal_or_interaction):
     if normal_or_interaction == "normal":
         logger.info(f"Retrieving normal SHAP values for data with size: {binding_input.shape}.")
 
-        shap_values = explainer.shap_values(binding_input)
+        shap_values = explainer.shap_values(binding_input, check_additivity=True)
 
         assert shap_values.shape == binding_input.shape, logger.error(f"SHAP values shape {shap_values.shape} does not match input data shape {binding_input.shape}.")
         assert shap_values.shape[0] == data.shape[0], logger.error("Number of rows in SHAP values does not match the input data.")
