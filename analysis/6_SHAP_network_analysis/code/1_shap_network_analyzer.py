@@ -501,6 +501,11 @@ class ShapNetworkInvestigator:
 
         gc.collect()
 
+
+    def log_odds(self, p): 
+        assert np.all((p > 0) & (p < 1)), "Input probabilities must be strictly between 0 and 1 (no exact 0 or 1 values)"
+        return np.log(p / (1 - p))
+    
     
     def check_no_SHAP_variance_per_binding_pattern(self): 
 
@@ -513,11 +518,13 @@ class ShapNetworkInvestigator:
             return shap_variance_df
         
         else: 
-            all_results = []
+
+            temp_files = []
             for cell_line in self.cell_lines:
+                all_results = []
                 shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
 
-                for i, lf in enumerate(shap_lazyframes):
+                for i, lf in enumerate(tqdm.tqdm(shap_lazyframes, desc=f"Processing SHAP files for {cell_line}")):
                     binding_cols = [col for col in lf.collect_schema().names() if col.endswith("_binding")]
                     shap_cols = [col for col in lf.collect_schema().names() if col.endswith("_shap")]
 
@@ -544,8 +551,20 @@ class ShapNetworkInvestigator:
                     del df
                     gc.collect()
 
-            final_df = pd.DataFrame(all_results)
+                # Save per-cell-line results to a file named with the cell line
+                temp_file = f"shap_dispersion_{cell_line}.tsv"
+                pd.DataFrame(all_results).to_csv(temp_file, sep="\t", index=False)
+                temp_files.append(temp_file)
+
+            # Concatenate all cell line files into the final output
+            dfs = [pd.read_csv(f, sep="\t") for f in temp_files]
+            final_df = pd.concat(dfs, ignore_index=True)
             final_df.to_csv(self.CACHE_INFO["SHAP_dispersion_per_binding_pattern"], sep="\t", index=False)
+
+            # Clean up temporary files
+            for f in temp_files:
+                os.remove(f)
+
             return final_df
 
 
