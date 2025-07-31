@@ -5915,7 +5915,6 @@ class ShapNetworkInvestigator:
 
             additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
 
-            # All rows are already logodds differences; no need to filter
             logodds_df = additivity_df.copy()
             logodds_df["Source"] = logodds_df["model"].astype(str)
 
@@ -5938,9 +5937,9 @@ class ShapNetworkInvestigator:
                 inner="box"
             )
 
-            ax.set_title("Difference between Log-Odds Prediction and\n[sum(Local SHAP) + Expected Value]", fontsize=10)
+            ax.set_title("Difference between Predicted PSI and\n[sum(Local SHAP) + Expected Value]", fontsize=10)
             ax.set_xlabel("Cell Line", fontsize=12)
-            ax.set_ylabel("Difference (Log Odds)", fontsize=12)
+            ax.set_ylabel("Difference (Log-Odds)", fontsize=12)
 
             ax.tick_params(axis='x', labelsize=10)
             ax.tick_params(axis='y', labelsize=10)
@@ -5974,9 +5973,6 @@ class ShapNetworkInvestigator:
         else: 
             logger.info(f"No cache found. Calculating SHAP additivity differences...")
 
-            def log_odds(p):
-                return np.log(p / (1 - p))
-
             all_results = []
             # Load the final SHAP cache data as unique binding but as a lazyframe
             final_shap_lazy_dict = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
@@ -5999,10 +5995,7 @@ class ShapNetworkInvestigator:
                     .to_numpy()
                 )
 
-                # Loop over each shap_lazyframe (each model)
-                logodds_preds_list = []
                 indices_list = None
-
                 for model_num, lf in enumerate(shap_lazyframes):
                     # Get expected value for this model
                     expected_value = expected_values[model_num]
@@ -6021,12 +6014,12 @@ class ShapNetworkInvestigator:
                     else:
                         assert indices_list == indices, "Indices are not aligned across models"
 
-                    # Save logodds predictions for stacking later
-                    logodds_preds = log_odds(unique_rows["Predictions"].to_numpy())
-                    logodds_preds_list.append(logodds_preds)
+                    preds = unique_rows["Predictions"].to_numpy()
+                    preds = self.log_odds(preds)
 
                     shap_sum = unique_rows.select(shap_cols).to_numpy().sum(axis=1)
-                    diff = logodds_preds - (shap_sum + expected_value)
+                    diff = preds - (shap_sum + expected_value)
+
                     for idx, d in zip(indices, diff):
                         all_results.append({
                             "cell_line": cell_line,
@@ -6034,20 +6027,20 @@ class ShapNetworkInvestigator:
                             "index": idx,
                             "difference_logodds": d
                         })
-
-                # Stack the logodds predictions and take the average per index
-                logodds_preds_stack = np.stack(logodds_preds_list, axis=0)  # shape: (5, num_indices)
-                avg_logodds_preds = np.mean(logodds_preds_stack, axis=0)    # shape: (num_indices,)
                 
                 final_shap_lazy = final_shap_lazy_dict[cell_line]
-                final_shap_df = final_shap_lazy.select(["index"] + shap_cols).sort("index").collect()
+                final_shap_df = final_shap_lazy.select(["index", "Averaged Prediction (Log-Odds)"] + shap_cols).sort("index").collect()
                 # Assert indices match
                 assert indices_list == final_shap_df["index"].to_list(), "Indices in final SHAP cache do not match indices_list"
                 
                 # Calculate differences for the average model
                 shap_sum = final_shap_df.select(shap_cols).to_numpy().sum(axis=1)
                 avg_expected_value = np.mean(expected_values)
-                diff_avg = avg_logodds_preds - (shap_sum + avg_expected_value)
+
+                # Assert that the lengths match before proceeding
+                assert len(shap_sum) == len(final_shap_df["Averaged Prediction (Log-Odds)"]), "Length mismatch between shap_sum and Averaged Prediction (Log-Odds)"
+                diff_avg = final_shap_df["Averaged Prediction (Log-Odds)"].to_numpy() - (shap_sum + avg_expected_value)
+
                 for idx, d in zip(indices_list, diff_avg):
                     all_results.append({
                         "cell_line": cell_line,
@@ -6056,13 +6049,12 @@ class ShapNetworkInvestigator:
                         "difference_logodds": d
                     })
 
-                del unique_rows, final_shap_df, shap_sum, diff_avg, avg_logodds_preds, logodds_preds_stack
+                del unique_rows, final_shap_df, shap_sum, diff_avg, indices_list
                 gc.collect()
 
             # Save as DataFrame to data_file with gzip compression
             out_df = pd.DataFrame(all_results)
             out_df.to_csv(data_file, sep="\t", index=False, compression="gzip")
-
 
 
 ###############################################################
