@@ -259,7 +259,7 @@ class ShapNetworkInvestigator:
 
             lfs = self.get_SHAP_data_as_lazyframe(cell_line)
 
-            for i, lf in enumerate(lfs):
+            for i, lf in enumerate(tqdm.tqdm(lfs, desc=f"Checking SHAP DataFrames for {cell_line}")):
                 assert lf.null_count().collect().sum_horizontal().item() == 0, f"Null values found in SHAP DataFrame {i+1} for cell line {cell_line}"
 
                 binding_cols = [col for col in lf.collect_schema().names() if col.endswith("_binding")]
@@ -4935,7 +4935,6 @@ class ShapNetworkInvestigator:
         if underlying_data == "Unique-Binding":
             logger.warning(f"REMINDER: 'All-Data' is used to create cache and {underlying_data} must be created each time from 'All-Data' cache.")
 
-
         k562_output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"]["K562"]
         hepg2_output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"]["HepG2"]
         
@@ -4977,9 +4976,8 @@ class ShapNetworkInvestigator:
             for cell_line in self.cell_lines: 
                 output_file = self.CACHE_INFO["final_SHAP_cache"]["All-Data"][cell_line]
 
-                # Step 1: Retrieve 5 SHAP tables and compute mean
+                # Step 1: Retrieve 5 SHAP tables
                 shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
-                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=shap_dfs, metric='mean')
 
                 # Step 2: Get the first lazyframe and collect non-SHAP columns
                 shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
@@ -4993,29 +4991,65 @@ class ShapNetworkInvestigator:
                 # Step 4: Join with corrected has_RBP_KD results
                 joined_df = self.get_has_RBP_KD_results(base_df, cell_line)
                 assert joined_df.shape[0] == base_df.shape[0], "Row count changed after join"
+                
+                del base_df
+                gc.collect()
 
                 joined_df = joined_df.sort("index")
 
-                # Step 5: Add mean SHAP columns (order matches by sorted index)
-                for col in mean_df.columns:
-                    assert col.endswith("_shap"), f"Column {col} is not a SHAP column"
-                    assert len(mean_df[col]) == len(joined_df), f"Length mismatch for column {col}"
-                    joined_df = joined_df.with_columns(pl.Series(col, mean_df[col]))
-
-                # Step 5.5: Assert that there are no missing or null values in the joined DataFrame
-                assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the final joined DataFrame"
-                
-                # Step 6: Add "Binding Sum" column as the horizontal sum of all binding columns per row
+                # Step 5: Add "Binding Sum" column as the horizontal sum of all binding columns per row
                 binding_cols = [col for col in joined_df.columns if col.endswith("_binding")]
                 joined_df = joined_df.with_columns(
                     pl.sum_horizontal([pl.col(col) for col in binding_cols]).alias("Binding Sum")
                 )
 
-                # Step 7: Write to LZ4-compressed feather file
+                # Step 6: Add "Averaged Prediction" columns
+                joined_df = joined_df.drop("Predictions")
+
+                indices_to_match = shap_dfs[0].sort("index")["index"].to_list()
+                predictions_list = []
+                for lf in shap_lazyframes:
+                    pred_df = lf.select(["index", "Predictions"]).sort("index").collect()
+                    assert pred_df["index"].to_list() == indices_to_match, "Indices do not match across SHAP dataframes"
+                    predictions_list.append(pred_df["Predictions"].to_numpy())
+                
+                del pred_df
+                gc.collect()
+                
+                # Add averaged predictions as new column
+                joined_df = joined_df.with_columns(
+                    pl.Series("Averaged Prediction (Probability)", np.mean(np.stack(predictions_list, axis=0), axis=0))
+                )
+
+                # Add averaged log-odds predictions as new column
+                log_odds_predictions = [self.log_odds(pred) for pred in predictions_list]
+                joined_df = joined_df.with_columns(
+                    pl.Series("Averaged Prediction (Log-Odds)", np.mean(np.stack(log_odds_predictions, axis=0), axis=0))
+                )
+                
+                del predictions_list, log_odds_predictions
+                gc.collect()
+
+                # Step 7: Add mean SHAP columns (order matches by sorted index)
+                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=shap_dfs, metric='mean')
+                assert mean_df.shape[0] == joined_df.shape[0], "Row count mismatch after calculating mean SHAP"
+                
+                for col in mean_df.columns:
+                    assert col.endswith("_shap"), f"Column {col} is not a SHAP column"
+                    assert len(mean_df[col]) == len(joined_df), f"Length mismatch for column {col}"
+                    joined_df = joined_df.with_columns(pl.Series(col, mean_df[col]))
+
+                del mean_df, shap_dfs
+                gc.collect()
+
+                # Step 8: Assert that there are no missing or null values in the joined DataFrame
+                assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the final joined DataFrame"
+
+                # Step 9: Write to LZ4-compressed feather file
                 joined_df.sort('index').write_ipc(output_file, compression="lz4")
                 logger.success(f"Saved final SHAP cache for {cell_line} to {output_file}")
 
-                del shap_dfs, mean_df, shap_lazyframes, base_df, joined_df
+                del joined_df
                 gc.collect()
 
 
