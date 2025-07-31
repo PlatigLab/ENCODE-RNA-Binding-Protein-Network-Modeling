@@ -6486,7 +6486,121 @@ class ShapNetworkInvestigator:
         plt.tight_layout()
         plt.show()
     
-            
+
+    def hacky_check_shap_additivity(self): 
+
+        # Get all model hashes for XGBRegressor from self.hash_metadata, filtering out hashes that begin with "8f31"
+        # Sort by cell_line so hashes are grouped by cell line in the plot
+        hashes = (
+            self.hash_metadata[self.hash_metadata["name"] == "XGBRegressor"]
+            .sort_values("cell_line")["hash"].tolist()
+        )
+        all_diffs = []
+        all_labels = []
+
+        for model_hash in hashes:
+            shap_file = os.path.join(self.SHAP_DIR, f"{model_hash}.feather")
+            lf = pl.scan_ipc(shap_file)
+            schema = lf.collect_schema().names()
+
+            shap_cols = [col for col in schema if col.endswith("_shap")]
+            binding_cols = [col for col in schema if col.endswith("_binding")]
+            pred_col = "Predictions"
+
+            df = lf.unique(subset=binding_cols, maintain_order=True, keep="first").select(
+                ["index"] + shap_cols + [pred_col]
+            ).sort("index").collect()
+
+            assert df.null_count().sum_horizontal().item() == 0, "Null values found in df"
+
+            model_file = os.path.join(self.SHAP_MODEL_PICKLE_DIR, f"{model_hash}.pkl")
+            with open(model_file, "rb") as f:
+                model = pickle.load(f)
+            expected_value = model.expected_value
+
+            shap_sum = df.select(shap_cols).to_numpy().sum(axis=1)
+            pred = df[pred_col].to_numpy()
+            diff = pred - (shap_sum + expected_value)
+
+            all_diffs.extend(diff)
+            all_labels.extend([model_hash] * len(diff))
+
+        # Prepare DataFrame for seaborn violinplot
+        plot_df = pl.DataFrame({
+            "Model": all_labels,
+            "Diff": all_diffs
+        })
+        # Save as TSV using polars
+        tsv_path = "model_diff_WITH_expected_value.tsv.gz"
+        plot_df.write_csv(tsv_path, separator="\t", compression="gzip")
+
+        diff_without_expected_value = pl.read_csv(
+            "model_diff_WITHOUT_expected_value.tsv.gz", 
+            separator="\t"
+        ).to_pandas()
+
+        diff_with_expected_value = pl.read_csv(
+            "model_diff_with_expected_value.tsv.gz", 
+            separator="\t"
+        ).to_pandas()
+
+        fig, axes = plt.subplots(2, 1, figsize=(9, 7), dpi=300, sharex=True, sharey=True)
+        datasets = [
+            (diff_with_expected_value, r"$\mathrm{Prediction} - \left(\sum \mathrm{SHAP} + \mathrm{Expected\ Value}\right)$"),
+            (diff_without_expected_value, r"$\mathrm{Prediction} - \sum \mathrm{SHAP}$"),
+        ]
+        for i, (data, title) in enumerate(datasets):
+            # Add abbreviated model hash column
+            data = data.copy()
+            data["Model Hash (Abbreviated)"] = data["Model"].astype(str).str[:5]
+            sns.violinplot(
+                x="Model Hash (Abbreviated)", y="Diff", data=data, inner="box", color="skyblue", cut=0, density_norm='width', ax=axes[i]
+            )
+            axes[i].set_title(title, fontsize=13)
+
+            axes[i].axhline(0, color="red", linestyle="--", linewidth=0.5)
+            axes[i].axvline(4.5, color="green", linestyle="--", linewidth=1)
+
+            # Add text annotation to subplot
+            axes[i].text(
+                2, -1,
+                f"HepG2",
+                fontsize=10,
+                color="green",
+                ha="center",
+                va="top"
+            )
+            # Add text annotation to subplot
+            axes[i].text(
+                7, -1,
+                f"K562",
+                fontsize=10,
+                color="green",
+                ha="center",
+                va="top"
+            )
+
+            axes[i].set_xlabel("")
+            axes[i].set_ylabel("")
+
+            axes[i].tick_params(axis='x', labelrotation=45, labelsize=8, labelbottom=True)
+            axes[i].tick_params(axis='y', labelsize=10)
+
+            # Add annotation above each violinplot: % of absolute values > 0.05
+            model_hash_abbr_order = data["Model Hash (Abbreviated)"].unique()
+            for j, model_hash_abbr in enumerate(model_hash_abbr_order):
+                vals = data[data["Model Hash (Abbreviated)"] == model_hash_abbr]["Diff"].to_numpy()
+                pct_gt_005 = (np.abs(vals) > 0.05).mean() * 100
+                axes[i].text(
+                    j-0.1, -0.2,
+                    f"{pct_gt_005:.0f}%\nDiff > 0.05",
+                    ha="center", va="top", fontsize=7, color="#fc6f03", zorder=10,
+                )
+        fig.supxlabel("Model Hash (Abbreviated)", fontsize=14, y=0.01)
+        fig.supylabel("Difference", fontsize=14, x=0.01)
+        plt.tight_layout()
+        plt.show()
+
 
     def tmp_parallel_helper(self, args):
         feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices = args
