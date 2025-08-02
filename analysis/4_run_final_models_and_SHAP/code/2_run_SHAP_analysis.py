@@ -1,5 +1,5 @@
-import sys, os, argparse, glob, gzip, pickle, shap
-import pandas as pd
+import sys, os, argparse, glob, gzip, pickle, shap, gc
+import pandas as pd, polars as pl
 from loguru import logger
 
 MODEL_DIR = "../outputs/pickled_models/XGBRegressor/"
@@ -18,64 +18,110 @@ def main(hash, normal_or_interaction):
     Run TreeSHAP on the specified model hash.
     """
 
-    # Load the model
-    with gzip.open(f"{MODEL_DIR}/{hash}.pkl.gz", "rb") as f:
+    assert normal_or_interaction == 'normal', "Only 'normal' SHAP is supported in this script."
+    
+    # Load model
+    with gzip.open(f"{MODEL_DIR}/{hash}.pkl.gz", 'rb') as f:
         model = pickle.load(f)
 
-    data = pd.read_feather(f"{PREDICTIONS_DIR}/{hash}.feather")
-    binding_input = data[[col for col in data.columns if col.endswith("_binding")]]
-
-    assert list(binding_input.columns) == list(model.column_order_when_fitting), "Column order mismatch between input data and model."
-    binding_input = binding_input[model.column_order_when_fitting]
-    assert list(binding_input.columns) == list(model.column_order_when_fitting), "Column order mismatch between input data and model."
+    predictions_lf = pl.scan_ipc(f"{PREDICTIONS_DIR}/{hash}.feather").sort('index')
+    binding_cols = [col for col in predictions_lf.collect_schema().names() if col.endswith("_binding")]
     
+    # Select background data: only rows from Train or Validate partitions and unique binding patterns
+    background_data = (
+        predictions_lf
+        .filter(pl.col("Partition").is_in(["Train", "Validate"]))
+        .unique(subset = binding_cols, keep='first', maintain_order=True)
+        .select(binding_cols)
+        .collect()
+        .to_pandas()
+    )
+
+    assert background_data.columns.tolist() == list(model.column_order_when_fitting)
+    
+    logger.info(f"Background data shape: {background_data.shape}")
+    assert len(background_data) > 50_000, f"Background data must have more than 50K rows. You have {background_data.shape}."
+
     explainer = shap.TreeExplainer(
-            model, 
-            feature_perturbation="tree_path_dependent",
-            model_output="raw",
-            feature_names=binding_input.columns.tolist()
-        )
+        model, 
+        data = background_data, 
+        model_output="probability",
+        feature_perturbation="interventional",
+    )
+
+    # Select all data for SHAP analysis
+    all_data = (
+        predictions_lf
+        .unique(subset=binding_cols, keep='first', maintain_order=True)
+        .select(binding_cols)
+        .collect()
+        .to_pandas()
+    )
+
+    assert all_data.columns.tolist() == list(model.column_order_when_fitting)
+    logger.info(f"Retrieving SHAP values for data with shape: {all_data.shape}")
+
+    # Run SHAP analysis
+    shap_values = explainer.shap_values(all_data)
+
+    # Method 1: Use the pickled model's .predict functionality on all_data
+    model_preds = model.predict(all_data)
+    del all_data  # Free memory
+    gc.collect()
+
+    assert model_preds.shape[0] == shap_values.shape[0], f"Model predictions shape ({model_preds.shape}) does not match SHAP values shape ({shap_values.shape})"
+    diff_model_pred = model_preds - (shap_values.sum(axis=1) + explainer.expected_value)
+
+    logger.info(f"[Model.predict] Absolute mean difference: {abs(diff_model_pred).mean()}")
+    logger.info(f"[Model.predict] Max absolute difference: {abs(diff_model_pred).max()}")
+
+    # Method 2: Compute the difference between predictions and the sum of SHAP values plus expected value (using predictions column)
+    predictions_np = (
+        predictions_lf
+        .unique(subset=binding_cols, keep='first', maintain_order=True)
+        .select("Predictions")
+        .collect()["Predictions"]
+        .to_numpy()
+    )
+    assert predictions_np.shape[0] == shap_values.shape[0], f"Predictions shape ({predictions_np.shape}) does not match SHAP values shape ({shap_values.shape})"
+    diff_pred_col = predictions_np - (shap_values.sum(axis=1) + explainer.expected_value)
+
+    logger.info(f"[Predictions column] Absolute mean difference: {abs(diff_pred_col).mean()}")
+    logger.info(f"[Predictions column] Max absolute difference: {abs(diff_pred_col).max()}")
+
+    logger.info(f"Expected value: {explainer.expected_value}")
+
+    # get unique predictions DataFrame with binding columns
+    predictions_pl = predictions_lf.unique(subset=binding_cols, keep='first', maintain_order=True).collect()
+
+    # Create a polars DataFrame for SHAP values with appropriate column names
+    shap_values = pl.DataFrame(shap_values, schema=[col.replace("_binding", "_shap") for col in binding_cols])
     
-    if normal_or_interaction == "normal":
-        prefix = f"{SHAP_DIR}/regular/normal"
-    elif normal_or_interaction == "interaction":
-        prefix = f"{SHAP_DIR}/interactions/shap_package/interaction"
+    # Ensure the shape of shap_values matches the number of rows and features
+    assert shap_values.height == predictions_pl.height, f"SHAP values height ({shap_values.height}) does not match predictions height ({predictions_pl.height})"
+    assert shap_values.width == len(binding_cols), f"SHAP values width ({shap_values.width}) does not match number of binding columns ({len(binding_cols)})"
 
-    # Run TreeSHAP
-    if normal_or_interaction == "normal":
-        logger.info(f"Retrieving normal SHAP values for data with size: {binding_input.shape}.")
+    # Concatenate along columns
+    shap_values = pl.concat([predictions_pl, shap_values], how="horizontal")
 
-        shap_values = explainer.shap_values(binding_input, check_additivity=True)
-
-        assert shap_values.shape == binding_input.shape, logger.error(f"SHAP values shape {shap_values.shape} does not match input data shape {binding_input.shape}.")
-        assert shap_values.shape[0] == data.shape[0], logger.error("Number of rows in SHAP values does not match the input data.")
-        logger.success("SHAP values retrieved")
-
-        # Convert SHAP values to a DataFrame and add suffix "_shap" to column names
-        shap_df = pd.DataFrame(shap_values, columns=[f"{col.replace('_binding', '_shap')}" for col in binding_input.columns])
-        
-        # Concatenate SHAP values to the original data
-        result = pd.concat([data, shap_df], axis=1)
+    # Final assertion to check shape
+    expected_cols = predictions_pl.width + len(binding_cols)
+    assert shap_values.height == predictions_pl.height, f"SHAP values height ({shap_values.height}) != predictions_pl height ({predictions_pl.height})"
+    assert shap_values.width == expected_cols, f"Resulting DataFrame should have {expected_cols} columns, got {shap_values.width}"
     
-        # Check for missing values in the entire result dataframe and log a warning if any are found
-        if result.isnull().values.any():
-            logger.warning("Result dataframe contains missing values.")
+    del predictions_pl  # Free memory
+    gc.collect()
 
-        logger.success("SHAP values concatenated to the original data by merging horizontally.")
+    # Check for null or missing values and log a warning if any are found
+    if shap_values.null_count().sum_horizontal().item() != 0:
+        logger.warning("There are null or missing values in the SHAP values DataFrame.")
 
-    elif normal_or_interaction == "interaction":
-        return NotImplementedError("Interaction SHAP is not implemented yet.")
-    
-    os.makedirs(f"{prefix}/explainer_objects/", exist_ok=True)
-    os.makedirs(f"{prefix}/shap_values/", exist_ok=True)
+    shap_values.write_ipc(f"{SHAP_DIR}/regular/normal/shap_values/{hash}.feather", compression="lz4")
+    logger.success(f"SHAP value dataframe with shape {shap_values.shape} saved to {SHAP_DIR}/regular/normal/shap_values/{hash}.feather")
 
-    with open(f"{prefix}/explainer_objects/{hash}.pkl", "wb") as f:
+    with open(f"{SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl", "wb") as f:
         pickle.dump(explainer, f)
-    logger.success(f"Explainer object saved to {prefix}/explainer_objects/{hash}.pkl")
-
-    result.to_feather(f"{prefix}/shap_values/{hash}.feather")
-    logger.success(f"SHAP values saved to {prefix}/shap_values/{hash}.feather", compression='lz4')
-
+    logger.success(f"Explainer object saved to {SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl")
 
 
 
@@ -123,7 +169,7 @@ if __name__ == "__main__":
         for model_hash in model_hashes:
             
             shap_type_hash_file = glob.glob(f"{SHAP_TYPE_DIR}/**/*{model_hash}*.feather", recursive=True)
-            assert len(shap_type_hash_file) < 2
+            assert len(shap_type_hash_file) <= 1
 
             if len(shap_type_hash_file) == 0:
                 job_prefix = f"SHAP_{model_hash}"
