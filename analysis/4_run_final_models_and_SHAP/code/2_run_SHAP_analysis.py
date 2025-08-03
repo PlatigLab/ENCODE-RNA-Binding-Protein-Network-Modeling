@@ -116,8 +116,8 @@ def main(hash, normal_or_interaction):
     if shap_values.null_count().sum_horizontal().item() != 0:
         logger.warning("There are null or missing values in the SHAP values DataFrame.")
 
-    shap_values.write_ipc(f"{SHAP_DIR}/regular/normal/shap_values/{hash}.feather", compression="lz4")
-    logger.success(f"SHAP value dataframe with shape {shap_values.shape} saved to {SHAP_DIR}/regular/normal/shap_values/{hash}.feather")
+    shap_values.write_ipc(f"{SHAP_DIR}/regular/normal/shap_values/{hash}_unique_binding.feather", compression="lz4")
+    logger.success(f"SHAP value dataframe with shape {shap_values.shape} saved to {SHAP_DIR}/regular/normal/shap_values/{hash}_unique_binding.feather")
 
     with open(f"{SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl", "wb") as f:
         pickle.dump(explainer, f)
