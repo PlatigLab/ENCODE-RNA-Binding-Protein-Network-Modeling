@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
         CPUS = 32
         MEM= 256
-        PARTITION="standard"
+        PARTITION="parallel"
         ACCOUNT="platiglab"
         SLURM_DIR="../outputs/SLURM_logs/"
 
@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
             if len(glob.glob(f"{PREDICTIONS_DIR}/**/{job_prefix}*.feather", recursive=True)) == 0: 
                 os.system(
-                    f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
+                    f"sbatch --job-name={job_prefix} -N2 -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
                 )
             else: 
                 print(f"Skipping hash {job_prefix} as it has already been run.")
