@@ -77,7 +77,7 @@ def main(mode, shap_file):
 
     # Save the joined dataframe as a feather file with the pattern {hash}.feather
     output_path = f"{SHAP_NORMAL_DIR if mode == 'normal' else SHAP_INTERACTION_DIR}/{hash}.feather"
-    joined_df.write_ipc(output_path, compression="lz4")
+    joined_df.sort('index').write_ipc(output_path, compression="lz4")
 
     # Remove the original SHAP file
     os.remove(shap_file)
