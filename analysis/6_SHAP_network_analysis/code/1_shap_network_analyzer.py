@@ -5915,20 +5915,20 @@ class ShapNetworkInvestigator:
 
             additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
 
-            logodds_df = additivity_df.copy()
-            logodds_df["Source"] = logodds_df["model"].astype(str)
+            probability_df = additivity_df.copy()
+            probability_df["Source"] = probability_df["model"].astype(str)
 
             # Set cell line and source order
-            cell_line_order = sorted(logodds_df["cell_line"].unique())
+            cell_line_order = sorted(probability_df["cell_line"].unique())
             source_order = [str(i) for i in range(5)] + ["Average"]
 
             plt.figure(figsize=(7, 4), dpi=300)
             
             ax = plt.gca()
             sns.violinplot(
-                data=logodds_df,
+                data=probability_df,
                 x="cell_line",
-                y="difference_logodds",
+                y="difference_probability",
                 hue="Source",
                 order=cell_line_order,
                 hue_order=source_order,
@@ -5939,33 +5939,12 @@ class ShapNetworkInvestigator:
 
             ax.set_title("Difference between Predicted PSI and\n[sum(Local SHAP) + Expected Value]", fontsize=10)
             ax.set_xlabel("Cell Line", fontsize=12)
-            ax.set_ylabel("Difference (Log-Odds)", fontsize=12)
+            ax.set_ylabel("Difference (Probability)", fontsize=12)
 
             ax.tick_params(axis='x', labelsize=10)
             ax.tick_params(axis='y', labelsize=10)
             ax.legend(title="Source", bbox_to_anchor=(1.01, 0.7), loc="upper left", fontsize=10, title_fontsize=11)
 
-            cutoff = 0.001
-            y_offset = 0.02  # Fixed offset above each violin
-
-            for i, cell_line in enumerate(cell_line_order):
-                for j, source in enumerate(source_order):
-
-                    vals = logodds_df[(logodds_df["cell_line"] == cell_line) & (logodds_df["Source"] == source)]["difference_logodds"].to_numpy()
-                    
-                    assert not np.isnan(vals).any(), "Null values found in vals"
-                    pct = (np.abs(vals) > cutoff).mean() * 100
-
-                    logger.info(f"Cell Line: {cell_line}, Source: {source}, Percentage > {cutoff}: {pct:.2e}%")
-
-                    # Offset for annotation: spread out along x-axis for each source
-                    x_offset = -0.35 + j * (0.7 / (len(source_order)-1))
-
-                    ax.text(
-                        i + x_offset, y_offset + 0.03 if j % 2 ==0 else y_offset,
-                        f"{pct:.1e}%\n> {cutoff}",
-                        ha="center", va="bottom", fontsize=7, color="#009e73"
-                    )
 
             plt.tight_layout()
             plt.show()
@@ -6015,7 +5994,6 @@ class ShapNetworkInvestigator:
                         assert indices_list == indices, "Indices are not aligned across models"
 
                     preds = unique_rows["Predictions"].to_numpy()
-                    preds = self.log_odds(preds)
 
                     shap_sum = unique_rows.select(shap_cols).to_numpy().sum(axis=1)
                     diff = preds - (shap_sum + expected_value)
@@ -6025,11 +6003,11 @@ class ShapNetworkInvestigator:
                             "cell_line": cell_line,
                             "model": model_num,
                             "index": idx,
-                            "difference_logodds": d
+                            "difference_probability": d
                         })
                 
                 final_shap_lazy = final_shap_lazy_dict[cell_line]
-                final_shap_df = final_shap_lazy.select(["index", "Averaged Prediction (Log-Odds)"] + shap_cols).sort("index").collect()
+                final_shap_df = final_shap_lazy.select(["index", "Averaged Prediction (Probability)"] + shap_cols).sort("index").collect()
                 # Assert indices match
                 assert indices_list == final_shap_df["index"].to_list(), "Indices in final SHAP cache do not match indices_list"
                 
@@ -6038,15 +6016,15 @@ class ShapNetworkInvestigator:
                 avg_expected_value = np.mean(expected_values)
 
                 # Assert that the lengths match before proceeding
-                assert len(shap_sum) == len(final_shap_df["Averaged Prediction (Log-Odds)"]), "Length mismatch between shap_sum and Averaged Prediction (Log-Odds)"
-                diff_avg = final_shap_df["Averaged Prediction (Log-Odds)"].to_numpy() - (shap_sum + avg_expected_value)
+                assert len(shap_sum) == len(final_shap_df["Averaged Prediction (Probability)"]), "Length mismatch between shap_sum and Averaged Prediction (Probability)"
+                diff_avg = final_shap_df["Averaged Prediction (Probability)"].to_numpy() - (shap_sum + avg_expected_value)
 
                 for idx, d in zip(indices_list, diff_avg):
                     all_results.append({
                         "cell_line": cell_line,
                         "model": "Average",
                         "index": idx,
-                        "difference_logodds": d
+                        "difference_probability": d
                     })
 
                 del unique_rows, final_shap_df, shap_sum, diff_avg, indices_list
