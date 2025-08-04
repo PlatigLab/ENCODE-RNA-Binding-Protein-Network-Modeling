@@ -400,17 +400,9 @@ class ShapNetworkInvestigator:
         for hash_value in group['hash']:
             feather_file = f"{self.SHAP_DIR}/{hash_value}.feather"
 
-            # Read the feather file using polars and cast column types
-            lf = pl.scan_ipc(feather_file)
-            schema = lf.collect_schema().names()
-
-            binding_cols = [col for col in schema if col.endswith("_binding")]
-
-            # Cast "_binding" columns to uint32
-            lf = lf.with_columns([
-                pl.col(binding_cols).cast(pl.UInt32)
-            ])
-            shap_dfs.append(lf)
+            shap_dfs.append(
+                pl.scan_ipc(feather_file)
+            )
         
         return shap_dfs
     
@@ -623,11 +615,11 @@ class ShapNetworkInvestigator:
             logger.info(f"Global SHAP file for mode {mode} and {binding_unique} does not exist. Calculating...")
             global_heatmaps = {}
 
-            dfs_global_SHAP = {
-                cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=binding_unique) for cell_line in self.cell_lines
-            }
-
             if mode == '5_dfs':
+                dfs_global_SHAP = {
+                    cell_line: self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=binding_unique) for cell_line in self.cell_lines
+                }
+
                 for cell_line, dfs in dfs_global_SHAP.items():
                     # Drop the 'index' column and calculate the absolute value average of each column
                     averaged_df = [df.sort('index').drop('index').select(pl.all().abs().mean()) for df in dfs]
@@ -637,13 +629,16 @@ class ShapNetworkInvestigator:
                     global_heatmaps[cell_line] = heatmaps
 
             elif mode == '5_dfs_average':
-                for cell_line in self.cell_lines: 
-                    average_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
-                        cell_line_shap=dfs_global_SHAP[cell_line], 
-                        metric='mean'
-                    )
 
-                    average_df = average_df.select(pl.all().abs().mean())
+                lazy_final_SHAP = self.load_final_SHAP_data(underlying_data=binding_unique, as_lazyframe=True)
+                for cell_line in lazy_final_SHAP: 
+                    shap_cols = [col for col in lazy_final_SHAP[cell_line].collect_schema().names() if col.endswith("_shap")]
+                    # Calculate the average of the absolute values of the SHAP columns
+                    average_df = lazy_final_SHAP[cell_line].select(
+                        [pl.col(col).abs().mean() for col in shap_cols]
+                    ).collect()
+
+                    # Convert the averaged DataFrame to a 2D heatmap
                     heatmap = self.convert_RBP_position_to_2d_heatmap(average_df)
                     # Store the heatmap in the global dictionary
                     global_heatmaps[cell_line] = heatmap
@@ -1163,19 +1158,19 @@ class ShapNetworkInvestigator:
                     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1e}"))
 
                     ax.text(
-                        0.97, 0.4,
+                        0.03, 0.9,
                         f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
                         transform=ax.transAxes,
                         fontsize=10,
                         verticalalignment='center',
-                        horizontalalignment='right'
+                        horizontalalignment='left'
                     )
 
                     # only annotate top row
                     if row_idx == 0:
                         for _, row in top5.iterrows():
                             ax.text(
-                                row["Mean"]-0.01, row["Variance"]+0.0000001,
+                                row["Mean"]-0.001, row["Variance"]+0.00000001,
                                 row["RBP_Position"],
                                 fontsize=6, color="black", alpha=0.8
                             )
@@ -1183,7 +1178,7 @@ class ShapNetworkInvestigator:
             plt.suptitle(
                 "Mean vs Variance of Global SHAP per Feature Across 5 Models\nNOTE 1: top row is linear scale, bottom row is log-log scale\nNOTE 2: log-log scale only shows points with both mean and variance > 0",
                 fontsize=16, 
-                y=1.01
+                y=0.99
             )
             plt.tight_layout()
 
@@ -1261,7 +1256,7 @@ class ShapNetworkInvestigator:
         for idx, cell_line in enumerate(cv_df["Cell Line"].unique()):
             n_points = (cv_df["Cell Line"] == cell_line).sum()
             plt.text(idx, cv_df[cv_df["Cell Line"] == cell_line]["CV"].max() + 0.02, f"n={n_points}", 
-                     ha="center", va="bottom", fontsize=10, color="black")
+                    ha="center", va="bottom", fontsize=10, color="black")
 
         plt.tight_layout()
         plt.show()
@@ -4969,7 +4964,6 @@ class ShapNetworkInvestigator:
                     self.final_all_data_SHAP_data = final_shap_data
 
                 logger.success(f"Loaded final SHAP data from cache for {underlying_data} mode.")
-
 
         else: 
             
