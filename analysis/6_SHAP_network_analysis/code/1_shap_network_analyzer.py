@@ -4214,74 +4214,63 @@ class ShapNetworkInvestigator:
             return pd.read_csv(OUTPUT_FILE, sep="\t")
 
         else: 
-            ZERO_CUTOFF = [0, 1e-7, 1e-6, 1e-5, 1e-4, 5e-3, 1e-3, 1e-2,]
+            ZERO_CUTOFF = [0, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
 
             logger.info(f"Calculating Activator/Repressor behavior score for binding_mode={binding_mode}")
 
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(
+            local_shap_gen = self.get_local_SHAP_based_on_binding_and_covariates(
                 binding_value=1 if binding_mode == "Bound-Only" else 0,
-                condition=None,
                 binding_pattern_type=underlying_data
             )
 
             results = []
-            for cell_line in self.cell_lines:
-                feature_dict = local_shap[cell_line]
-                for feature, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} {binding_mode}"):
-                    # Convert to numpy array for fast computation
-                    arr = series.to_numpy()
-                    for zero_cutoff in ZERO_CUTOFF:
-                        pos_mask = arr > zero_cutoff
-                        neg_mask = arr < -(zero_cutoff)
+            for cell_line, feature, series in tqdm.tqdm(local_shap_gen, desc=f"Computing ARBS/NARBS for {binding_mode}"):
+                arr = series.to_numpy()
+                for zero_cutoff in ZERO_CUTOFF:
+                    pos_mask = arr > zero_cutoff
+                    neg_mask = arr < -(zero_cutoff)
 
-                        num_pos = np.sum(pos_mask)
-                        sum_pos = np.sum(arr[pos_mask]) if num_pos > 0 else 0.0
-                        num_neg = np.sum(neg_mask)
-                        sum_neg = np.sum(arr[neg_mask]) if num_neg > 0 else 0.0
+                    num_pos = np.sum(pos_mask)
+                    sum_pos = np.sum(arr[pos_mask]) if num_pos > 0 else 0.0
+                    num_neg = np.sum(neg_mask)
+                    sum_neg = np.sum(arr[neg_mask]) if num_neg > 0 else 0.0
 
-                        if all(x ==0 for x in [num_pos, num_neg, sum_pos, sum_neg]):
-                            
-                            arbs = np.nan
-                            narbs = np.nan
-                        else:
-                            
-                            numerator = abs(sum_pos) - abs(sum_neg)
-                            # ARBS: not normalized metric
-                            arbs = numerator
-                            
-                            # NARBS: normalized metric (|sum_pos| - |sum_neg|) / (|sum_pos| + |sum_neg|)
-                            denominator = abs(sum_pos) + abs(sum_neg)
-                            narbs = numerator / denominator if denominator != 0 else np.nan
-
-                        num_non_zeros = np.sum(np.abs(arr) > zero_cutoff)
-                        percent_non_zeros = (num_non_zeros / len(arr)) * 100
+                    if all(x == 0 for x in [num_pos, num_neg, sum_pos, sum_neg]):
+                        arbs = np.nan
+                        narbs = np.nan
                         
-                        results.append({
-                            "Data Mode": "Unique Binding",
-                            "Binding Type": binding_mode.replace("-", " "),
-                            "Cell Line": cell_line,
-                            "Feature": feature.replace("_shap", ""),
-                            "Zero Cutoff": zero_cutoff,
-                            "# Non-Zeros": num_non_zeros,
-                            "% Non-Zeros": percent_non_zeros,
-                            "Num Positive": num_pos,
-                            "Sum Positive": sum_pos,
-                            "Num Negative": num_neg,
-                            "Sum Negative": sum_neg,
-                            "ARBS": arbs,
-                            "NARBS": narbs,
-                        })
+                    else:
+                        numerator = abs(sum_pos) - abs(sum_neg)
+                        # ARBS: not normalized metric
+                        arbs = numerator
+                        # NARBS: normalized metric (|sum_pos| - |sum_neg|) / (|sum_pos| + |sum_neg|)
+                        denominator = abs(sum_pos) + abs(sum_neg)
+                        narbs = numerator / denominator if denominator != 0 else np.nan
+
+                    num_non_zeros = np.sum(np.abs(arr) > zero_cutoff)
+                    percent_non_zeros = (num_non_zeros / len(arr)) * 100
+
+                    results.append({
+                        "Data Mode": "Unique Binding",
+                        "Binding Type": binding_mode.replace("-", " "),
+                        "Cell Line": cell_line,
+                        "Feature": feature.replace("_shap", ""),
+                        "Zero Cutoff": zero_cutoff,
+                        "# Non-Zeros": num_non_zeros,
+                        "% Non-Zeros": percent_non_zeros,
+                        "Num Positive": num_pos,
+                        "Sum Positive": sum_pos,
+                        "Num Negative": num_neg,
+                        "Sum Negative": sum_neg,
+                        "ARBS": arbs,
+                        "NARBS": narbs,
+                    })
 
             df = pd.DataFrame(results)
             df = df.sort_values(by=["Cell Line", "Feature", "Zero Cutoff"]).reset_index(drop=True)
             df.to_csv(OUTPUT_FILE, sep="\t", index=False)
 
             logger.success(f"Saved Activator/Repressor behavior score for {binding_mode} to {OUTPUT_FILE}")
-
-            del local_shap, results, feature_dict, 
-            gc.collect()
-
-            return df.head()
 
     
     def plot_activator_repressor_behavior_score(self, underlying_data=None):
@@ -4301,7 +4290,7 @@ class ShapNetworkInvestigator:
             return np.sign(x) * np.log10(np.abs(x)) if x != 0 else np.nan
 
         for score_col in ["ARBS", "NARBS"]:
-            for zero_cutoff in sorted(bound_df["Zero Cutoff"].unique()):
+            for zero_cutoff in sorted(bound_df["Zero Cutoff"].unique())[:-1]: 
                 for cell_line in self.cell_lines:
                     # Subset to this cell line and cutoff
                     bound_sub = bound_df[(bound_df["Cell Line"] == cell_line) & (bound_df["Zero Cutoff"] == zero_cutoff)].copy(deep=True)
