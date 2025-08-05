@@ -3308,7 +3308,7 @@ class ShapNetworkInvestigator:
         
         else:
             logger.info(f"Calculating percent positive and negative local SHAP for mode {mode}")
-            POSITIVE_NEGATIVE_CUTOFFS = [1e-4, 1e-3, 1e-2, 1e-1, 0.5]
+            POSITIVE_NEGATIVE_CUTOFFS = [1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 0.1]
 
             # Get local SHAP values for the entire dataset with the specified binding_value based on mode
             if mode == "NOT-Bound-Only":
@@ -3318,36 +3318,44 @@ class ShapNetworkInvestigator:
             else:
                 raise ValueError(f"Unsupported mode: {mode}")
             
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=None, binding_pattern_type=underlying_data)
+            # Prepare results as: {cell_line: {shap_col: {cutoff: {"positive": val, "negative": val}}}}
+            results = {cell_line: {} for cell_line in self.cell_lines}
 
+            # Iterate through the generator once, and for each feature, compute percent positive/negative for all cutoffs
+            for yielded_cell_line, shap_col, series in self.get_local_SHAP_based_on_binding_and_covariates(
+                binding_value, 
+                binding_pattern_type=underlying_data
+            ):
+                total = len(series)
+                if total == 0:
+                    percent_pos = {cutoff: float('nan') for cutoff in POSITIVE_NEGATIVE_CUTOFFS}
+                    percent_neg = {cutoff: float('nan') for cutoff in POSITIVE_NEGATIVE_CUTOFFS}
+                else:
+                    arr = series.to_numpy()
+                    percent_pos = {cutoff: ((np.sum(arr > cutoff)) / total) * 100 for cutoff in POSITIVE_NEGATIVE_CUTOFFS}
+                    percent_neg = {cutoff: ((np.sum(arr < -cutoff)) / total) * 100 for cutoff in POSITIVE_NEGATIVE_CUTOFFS}
+
+                # Store by cell_line and shap_col
+                results[yielded_cell_line][shap_col] = {
+                    cutoff: {"positive": percent_pos[cutoff], "negative": percent_neg[cutoff]}
+                    for cutoff in POSITIVE_NEGATIVE_CUTOFFS
+                }
+
+            # Now, for each cutoff, build the output structure as before
             results_by_cutoff = {}
-
             for cutoff in POSITIVE_NEGATIVE_CUTOFFS:
-                percent_positive = {}
-                percent_negative = {}
+                percent_positive = {cell_line: {} for cell_line in self.cell_lines}
+                percent_negative = {cell_line: {} for cell_line in self.cell_lines}
 
                 for cell_line in self.cell_lines:
-                    logger.info(f"Calculating percent positive and negative local SHAP for {cell_line} at cutoff {cutoff}")
-
-                    feature_dict = local_shap[cell_line]
                     pos_results = {}
                     neg_results = {}
-
-                    for shap_col, series in tqdm.tqdm(feature_dict.items(), desc=f"{cell_line} features (cutoff={cutoff})"):
-                        total = len(series)
-
-                        if total == 0:
-                            percent_pos = float('nan')
-                            percent_neg = float('nan')
-                        else:
-                            percent_pos = (
-                                (len(series.filter(series > cutoff)) / total) * 100
-                            )
-                            percent_neg = (
-                                (len(series.filter(series < (-cutoff))) / total) * 100
-                            )
-
+                    for shap_col, cutoff_dict in results[cell_line].items():
                         rbp, pos = self.get_RBP_position(shap_col)
+
+                        percent_pos = cutoff_dict[cutoff]["positive"]
+                        percent_neg = cutoff_dict[cutoff]["negative"]
+
                         pos_results.setdefault(pos, {})[rbp] = percent_pos
                         neg_results.setdefault(pos, {})[rbp] = percent_neg
 
