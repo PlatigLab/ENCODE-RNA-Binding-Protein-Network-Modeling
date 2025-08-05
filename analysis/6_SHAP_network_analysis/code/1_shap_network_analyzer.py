@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, concurrent.futures
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, concurrent.futures, argparse, random
 
 import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 import scipy.cluster.hierarchy as sch
@@ -15,6 +15,7 @@ from matplotlib.legend import Legend
 from sklearn.metrics import r2_score
 from statannotations.Annotator import Annotator
 from pathlib import Path
+
 
 @dataclass
 class ShapNetworkInvestigator:
@@ -332,7 +333,9 @@ class ShapNetworkInvestigator:
         else: 
             logger.info("More than 50 columns in SHAP DataFrames, processing in batches of 50 columns...")
 
-            # Process columns in batches of 50, save each batch result to a temporary file, then concatenate
+
+            # Process columns in batches of 50, save each batch result to a temporary file with random id, then concatenate
+            random_id = random.randint(10**8, 10**12)
             batch_size = 50
             num_cols = len(columns)
             temp_files = []
@@ -346,7 +349,7 @@ class ShapNetworkInvestigator:
                 batch_result = self.numpy_metric_wrapper(tensors, metric)
 
                 # Save batch result to a fast, uncompressed .npy file
-                temp_file = f"shap_metric_tmp_{start}_{end}.npy"
+                temp_file = f"shap_metric_tmp_{random_id}_{start}_{end}.npy"
                 np.save(temp_file, batch_result)
 
                 temp_files.append((temp_file, batch_cols))
@@ -447,7 +450,7 @@ class ShapNetworkInvestigator:
 
         # Check if the SLURM_JOB_CPUS_PER_NODE environment variable is set
         if 'SLURM_JOB_CPUS_PER_NODE' in os.environ:
-            num_cpus = int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
+            num_cpus = int(os.environ['SLURM_NTASKS'])
             return num_cpus
         else:
             logger.warning("SLURM_JOB_CPUS_PER_NODE not set, defaulting to 1 CPU")
