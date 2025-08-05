@@ -4694,76 +4694,82 @@ class ShapNetworkInvestigator:
         not_bound_zero_cutoffs = set(not_bound_df["Zero Cutoff"].unique())
         bound_percent_zero_cutoffs = set(bound_percent.keys())
         not_bound_percent_zero_cutoffs = set(not_bound_percent.keys())
+
         shared_cutoffs = sorted(
             bound_zero_cutoffs & not_bound_zero_cutoffs & bound_percent_zero_cutoffs & not_bound_percent_zero_cutoffs
         )
+        # Remove cutoffs that are equal to or larger than 0.1
+        shared_cutoffs = [c for c in shared_cutoffs if c < 0.1]
 
-        for cutoff in shared_cutoffs:
-            fig, axes = plt.subplots(2, 2, figsize=(14, 13), dpi=300, sharex=True, sharey=True)
-            for row_idx, cell_line in enumerate(self.cell_lines):
-                for col_idx, (mode, df, percent_dict) in enumerate([
-                    ("Bound-Only", bound_df, bound_percent),
-                    ("NOT-Bound-Only", not_bound_df, not_bound_percent)
-                ]):
-                    # Subset ARBS/NARBS for this cell line and cutoff
-                    narbs_df = df[(df["Cell Line"] == cell_line) & (df["Zero Cutoff"] == cutoff)]
-                    # Get percent positive and negative DataFrames for this cell line and cutoff
-                    percent_pos_df = percent_dict[cutoff]["positive"][cell_line]
-                    percent_neg_df = percent_dict[cutoff]["negative"][cell_line]
-                    # Melt percent pos/neg to long form and merge
-                    pos_long = percent_pos_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Positive")
-                    neg_long = percent_neg_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Negative")
-                    percent_long = pd.merge(pos_long, neg_long, on=["index", "RBP"])
-                    percent_long["Feature"] = percent_long["RBP"].astype(str) + "_" + percent_long["index"].astype(str)
-                    # Merge with narbs_df on Feature
-                    merged = pd.merge(
-                        percent_long,
-                        narbs_df[["Feature", "NARBS"]],
-                        on="Feature",
-                        how="inner"
-                    )
-                    # Drop rows with nulls in either axis
-                    merged = merged.dropna(subset=["Percent_Positive", "Percent_Negative", "NARBS"])
-                    # Plot: x = Percent_Positive - Percent_Negative, y = NARBS
-                    x = merged["Percent_Positive"] - merged["Percent_Negative"]
-                    y = merged["NARBS"]
-                    ax = axes[row_idx, col_idx]
-                    
-                    sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.5, s=10)
+        for metric in ["ARBS", "NARBS"]:
+            for cutoff in shared_cutoffs:
+                fig, axes = plt.subplots(2, 2, figsize=(14, 13), dpi=300, sharex=True, sharey=True)
 
-                    # Move axes to the center
-                    ax.spines['left'].set_position('zero')
-                    ax.spines['bottom'].set_position('zero')
-                    ax.spines['right'].set_color('none')
-                    ax.spines['top'].set_color('none')
-                    ax.xaxis.set_ticks_position('bottom')
-                    ax.yaxis.set_ticks_position('left')
+                for row_idx, cell_line in enumerate(self.cell_lines):
+                    for col_idx, (mode, df, percent_dict) in enumerate([
+                        ("Bound-Only", bound_df, bound_percent),
+                        ("NOT-Bound-Only", not_bound_df, not_bound_percent)
+                    ]):
+                        # Subset ARBS/NARBS for this cell line and cutoff
+                        metric_df = df[(df["Cell Line"] == cell_line) & (df["Zero Cutoff"] == cutoff)]
+                        # Get percent positive and negative DataFrames for this cell line and cutoff
+                        percent_pos_df = percent_dict[cutoff]["positive"][cell_line]
+                        percent_neg_df = percent_dict[cutoff]["negative"][cell_line]
+                        # Melt percent pos/neg to long form and merge
+                        pos_long = percent_pos_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Positive")
+                        neg_long = percent_neg_df.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Negative")
+                        percent_long = pd.merge(pos_long, neg_long, on=["index", "RBP"])
+                        percent_long["Feature"] = percent_long["RBP"].astype(str) + "_" + percent_long["index"].astype(str)
+                        # Merge with metric_df on Feature
+                        merged = pd.merge(
+                            percent_long,
+                            metric_df[["Feature", metric]],
+                            on="Feature",
+                            how="inner"
+                        )
+                        # Drop rows with nulls in either axis
+                        merged = merged.dropna(subset=["Percent_Positive", "Percent_Negative", metric])
+                        # Plot: x = Percent_Positive - Percent_Negative, y = NARBS
+                        x = merged["Percent_Positive"] - merged["Percent_Negative"]
+                        y = merged[metric]
+                        ax = axes[row_idx, col_idx]
+                        
+                        sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.5, s=10)
 
-                    # Remove default axis labels
-                    ax.set_xlabel("")
-                    ax.set_ylabel("")
+                        # Move axes to the center
+                        ax.spines['left'].set_position('zero')
+                        ax.spines['bottom'].set_position('zero')
+                        ax.spines['right'].set_color('none')
+                        ax.spines['top'].set_color('none')
+                        ax.xaxis.set_ticks_position('bottom')
+                        ax.yaxis.set_ticks_position('left')
 
-                    # Correlations
-                    pearson_corr, _ = pearsonr(x, y)
-                    spearman_corr, _ = spearmanr(x, y)
-                    num_points = len(merged)
+                        # Remove default axis labels
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
 
-                    ax.set_title(f"{cell_line} - {mode}", fontsize=16, pad=20, color="green")
-                    ax.text(
-                        0.9, 0.2,
-                        f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
-                        transform=ax.transAxes,
-                        fontsize=12,
-                        verticalalignment='bottom',
-                        horizontalalignment='right'
-                    )
+                        # Correlations
+                        pearson_corr, _ = pearsonr(x, y)
+                        spearman_corr, _ = spearmanr(x, y)
+                        num_points = len(merged)
 
-            fig.supxlabel("% Positive - % Negative", fontsize=24, y=-0.02)
-            fig.supylabel("NARBS", fontsize=24, x=-0.02)
-            plt.suptitle(f"NARBS vs (% Positive - % Negative) Local SHAP\n\nZero Cutoff = {cutoff}\nNOTE 1: {underlying_data} data", fontsize =18, y=1.01)
-            plt.tight_layout()
-            plt.show()
+                        ax.set_title(f"{cell_line} - {mode}", fontsize=16, pad=20, color="green")
+                        ax.text(
+                            0.9, 0.2,
+                            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                            transform=ax.transAxes,
+                            fontsize=12,
+                            verticalalignment='bottom',
+                            horizontalalignment='right'
+                        )
 
+                fig.supxlabel("% Positive - % Negative", fontsize=24, y=-0.02)
+                fig.supylabel(metric, fontsize=24, x=-0.02)
+                plt.suptitle(f"{metric} vs (% Positive - % Negative) Local SHAP\n\nZero Cutoff = {cutoff}\nNOTE 1: {underlying_data} data", fontsize =18, y=1.01)
+                plt.tight_layout()
+                plt.show()
+
+        
     
     def load_final_SHAP_data(self, underlying_data=None, as_lazyframe=False):
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
