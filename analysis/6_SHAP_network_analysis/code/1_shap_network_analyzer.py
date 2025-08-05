@@ -3916,7 +3916,7 @@ class ShapNetworkInvestigator:
     def calculate_local_SHAP_percent_non_zero(self, mode=None):
         assert mode == "Unique-Binding", "Mode must be 'Unique-Binding' for this function"
 
-        ZERO_CUTOFFS = [1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1]
+        ZERO_CUTOFFS = [1e-15, 1e-10, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1]
         OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_non_zero"][mode]
 
         if os.path.exists(OUTPUT_FILE):
@@ -3926,15 +3926,18 @@ class ShapNetworkInvestigator:
         else:
             logger.info(f"Calculating percent non-zero local SHAP for mode: {mode}")
 
+            lfs = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
+
             all_results = []
             for cell_line in self.cell_lines:
 
-                mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
-                    cell_line_shap=self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique=mode),
-                    metric='mean'
-                )
+                logger.info(f"Calculating percent non-zero local SHAP for cell line: {cell_line}")
 
-                zero_cutoffs = ZERO_CUTOFFS  # for clarity
+                schema = lfs[cell_line].collect_schema().names()
+                shap_cols = [col for col in schema if col.endswith("_shap")]
+
+                mean_df = lfs[cell_line].select(shap_cols).collect()
+                zero_cutoffs = ZERO_CUTOFFS.copy() # for clarity
 
                 # Prepare arguments for parallel execution: (feature_series, zero_cutoff)
                 tasks = []
@@ -3945,7 +3948,7 @@ class ShapNetworkInvestigator:
                         tasks.append((series, zero_cutoff, feature))
 
                 # Use ProcessPoolExecutor for parallel computation
-                with concurrent.futures.ProcessPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
                     future_to_args = {
                         executor.submit(self.parallel_helper_local_SHAP_percent_non_zero, series, zero_cutoff): (feature, zero_cutoff)
                         for series, zero_cutoff, feature in tasks
@@ -3971,7 +3974,6 @@ class ShapNetworkInvestigator:
 
     def plot_local_SHAP_percent_non_zero(self): 
 
-        all_data_df = self.calculate_local_SHAP_percent_non_zero(mode="All-Data") 
         # Load percent zero local SHAP data for both modes
         unique_binding_df = self.calculate_local_SHAP_percent_non_zero(mode="Unique-Binding")
 
@@ -4002,57 +4004,57 @@ class ShapNetworkInvestigator:
         ]
 
         for config in violinplot_configs:
-            fig, axes = plt.subplots(4, 1, figsize=(20, 24), dpi=300, sharex=True, sharey=True)
-            modes = [("All-Data", all_data_df), ("Unique-Binding", unique_binding_df)]
+            fig, axes = plt.subplots(len(self.cell_lines), 1, figsize=(20, 12), dpi=300, sharex=True, sharey=True)
             legend_handles = None
             legend_labels = None
 
             for cell_idx, cell_line in enumerate(self.cell_lines):
-                for mode_idx, (mode_label, df) in enumerate(modes):
-                    ax_idx = cell_idx * 2 + mode_idx
-                    ax = axes[ax_idx]
-                    plot_df = df[df["Cell Line"] == cell_line].copy()
-                    plot_df["Zero Cutoff"] = plot_df["Zero Cutoff"].astype(float).sort_values(ascending=True)
+                ax = axes[cell_idx]
+                plot_df = unique_binding_df[unique_binding_df["Cell Line"] == cell_line].copy()
+                plot_df["Zero Cutoff"] = plot_df["Zero Cutoff"].astype(float).sort_values(ascending=True)
 
-                    if not config["use_hue"]:
-                        sns.violinplot(
-                            data=plot_df,
-                            x="Zero Cutoff",
-                            y="% Non Zero",
-                            order=zero_cutoff_order,
-                            palette=config["palette"],
-                            ax=ax,
-                            cut=0,
-                            linewidth=1,
-                            density_norm="width"
-                        )
-                    else:
-                        sns.violinplot(
-                            data=plot_df,
-                            x="Zero Cutoff",
-                            y="% Non Zero",
-                            hue=config["hue"],
-                            order=zero_cutoff_order,
-                            hue_order=position_order,
-                            palette=config["palette"],
-                            ax=ax,
-                            cut=0,
-                            linewidth=1,
-                            density_norm="width",
-                            split=False,
-                            inner="box",
-                            width=0.7
-                        )
-                        # Only collect legend handles/labels from the first plot
-                        if legend_handles is None and config["legend"]:
-                            handles, labels = ax.get_legend_handles_labels()
-                            legend_handles, legend_labels = handles, labels
-                        # Remove legend from individual axes
-                        if config["legend"]:
-                            ax.get_legend().remove()
+                if not config["use_hue"]:
+                    sns.violinplot(
+                        data=plot_df,
+                        x="Zero Cutoff",
+                        y="% Non Zero",
+                        order=zero_cutoff_order,
+                        palette=config["palette"],
+                        ax=ax,
+                        cut=0,
+                        linewidth=1,
+                        density_norm="width"
+                    )
+                else:
+                    sns.violinplot(
+                        data=plot_df,
+                        x="Zero Cutoff",
+                        y="% Non Zero",
+                        hue=config["hue"],
+                        order=zero_cutoff_order,
+                        hue_order=position_order,
+                        palette=config["palette"],
+                        ax=ax,
+                        cut=0,
+                        linewidth=1,
+                        density_norm="width",
+                        split=False,
+                        inner="box",
+                        width=0.7
+                    )
+                    # Only collect legend handles/labels from the first plot
+                    if legend_handles is None and config["legend"]:
+                        handles, labels = ax.get_legend_handles_labels()
+                        legend_handles, legend_labels = handles, labels
+
 
                 ax.set_title(f"{cell_line} - Unique-Binding", fontsize=30)
                 ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.set_ylim(-10, 110)
+                # ax.set_xscale("log")
+                ax.tick_params(axis="x", labelrotation=45, labelsize=20, labelbottom=True)
+                ax.tick_params(axis="y", labelsize=18)
 
             # Add a single legend to the right if using hue
             if config["use_hue"]:
@@ -4074,35 +4076,34 @@ class ShapNetworkInvestigator:
             plt.show()
 
         # Second Figure: Line plot of ALL FEATURES % Non-Zero Cutoff
-        fig, axes = plt.subplots(2, 2, figsize=(18, 12), dpi=200, sharex=True, sharey=True)
-        modes = [("All-Data", all_data_df), ("Unique-Binding", unique_binding_df)]
+        fig, axes = plt.subplots(len(self.cell_lines), 1, figsize=(18, 12), dpi=300, sharex=True, sharey=True)
 
         for row_idx, cell_line in enumerate(self.cell_lines):
-            for col_idx, (mode_label, df) in enumerate(modes):
-                ax = axes[row_idx, col_idx]
+            ax = axes[row_idx]
+            # Subset to this cell line and mode
             plot_df = unique_binding_df[unique_binding_df["Cell Line"] == cell_line]
             # Iterate by each unique feature and plot its line
-                # Iterate by each unique feature and plot its line
-                for feature in plot_df["Feature"].unique():
-                    feature_df = plot_df[plot_df["Feature"] == feature]
-                    sns.lineplot(
-                        data=feature_df,
-                        x="Zero Cutoff",
-                        y="% Non Zero",
-                        ax=ax,
-                        label=None,
-                        linewidth=0.7,
-                        alpha=0.7,
-                        marker='o',   # Show each point in the line
-                        markersize=6
-                    )
+            for feature in plot_df["Feature"].unique():
+                feature_df = plot_df[plot_df["Feature"] == feature]
+                sns.lineplot(
+                    data=feature_df,
+                    x="Zero Cutoff",
+                    y="% Non Zero",
+
+                    ax=ax,
+                    label=None,
+                    linewidth=0.7,
+                    alpha=0.7,
+                    marker='o',   # Show each point in the line
+                    markersize=6
+                )
             ax.set_title(f"{cell_line} - Unique-Binding", fontsize=20)
             ax.set_xlabel("")
-                ax.set_ylabel("")
-                ax.set_ylim(-10, 110)
-                ax.set_xscale("log")
-                ax.tick_params(axis="x", labelsize=16)
-                ax.tick_params(axis="y", labelsize=16)
+            ax.set_ylabel("")
+            ax.set_ylim(-10, 110)
+            ax.set_xscale("log")
+            ax.tick_params(axis="x", labelsize=16)
+            ax.tick_params(axis="y", labelsize=16)
 
         fig.suptitle("Percent Non-Zero Local SHAP per Feature\nNOTE: each feature is a line", fontsize=24)
         fig.supxlabel("Zero Cutoff", fontsize=20, y=-0.01)
@@ -4110,9 +4111,6 @@ class ShapNetworkInvestigator:
 
         fig.tight_layout()
         fig.show()
-
-        # Concatenate the two DataFrames for combined plotting
-        combined_df = pd.concat([all_data_df, unique_binding_df], ignore_index=True)
 
         # Third Figure: Line plot of % Non-Zero vs Zero Cutoff across all features and cell lines
         plt.figure(figsize=(6,5), dpi=300)
@@ -4122,7 +4120,6 @@ class ShapNetworkInvestigator:
             x="Zero Cutoff",
             y="% Non Zero",
             hue="Cell Line",
-            style="Data Mode",
             markers=True,
             dashes=True,
             n_boot = 5000,
@@ -4132,12 +4129,12 @@ class ShapNetworkInvestigator:
         plt.xlabel("Zero Cutoff", fontsize=10)
         plt.ylabel("% Non Zero", fontsize=10)
         plt.title("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: 'Confidence Interval' bands included around each line", fontsize=10)
-        plt.legend(title="Cell Line / Data Mode", fontsize=8, loc="lower left")
+        plt.legend(title="Cell Line", fontsize=8, loc="lower left")
 
         plt.show()
 
-        # Fourth Figure: Line plot of % Non-Zero vs Zero Cutoff by Position and Data Mode, per cell line
-        fig, axes = plt.subplots(2, 1, figsize=(10, 11), dpi=300, sharex=True, sharey=True)
+        # Fourth Figure: Line plot of % Non-Zero vs Zero Cutoff by Position per cell line
+        fig, axes = plt.subplots(len(self.cell_lines), 1, figsize=(10, 8), dpi=300, sharex=True, sharey=True)
 
         # Use a highly contrasting color palette for 6 positions
         palette = sns.color_palette("tab10", n_colors=6)
@@ -4145,17 +4142,15 @@ class ShapNetworkInvestigator:
         for ax, cell_line in zip(axes, self.cell_lines):
             plot_df = unique_binding_df[unique_binding_df["Cell Line"] == cell_line].copy()
             plot_df["Zero Cutoff"] = plot_df["Zero Cutoff"].astype(float)
-            # Plot with seaborn lineplot: hue=Position, style=Data Mode
+            # Plot with seaborn lineplot: hue=Position
             sns.lineplot(
                 data=plot_df,
                 x="Zero Cutoff",
                 y="% Non Zero",
                 hue="Position",
-                style="Data Mode",
                 markers=True,
                 dashes=True,
                 hue_order=position_order,
-                style_order=data_mode_order,
                 palette=palette,
                 ax=ax,
                 errorbar=None,  
@@ -4178,23 +4173,15 @@ class ShapNetworkInvestigator:
         # Build legend for hue (Position)
         hue_handles = []
         hue_labels = []
-        style_handles = []
-        style_labels = []
         for h, l in zip(handles, labels):
             if l in map(str, position_order):
                 hue_handles.append(h)
                 hue_labels.append(l)
-            elif l in data_mode_order:
-                style_handles.append(h)
-                style_labels.append(l)
         # Place legend for hue (Position)
         legend1 = Legend(fig, hue_handles, hue_labels, title="Position", loc="center left", bbox_to_anchor=(1.01, 0.55), fontsize=14, title_fontsize=16)
         fig.add_artist(legend1)
-        # Place legend for style (Data Mode)
-        legend2 = Legend(fig, style_handles, style_labels, title="Data Mode", loc="center left", bbox_to_anchor=(1.01, 0.39), fontsize=14, title_fontsize=16)
-        fig.add_artist(legend2)
 
-        plt.suptitle("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: each line is a position and each marker is for a specific 'Data Mode'\nNOTE 2: Error around each line ('Confidence Interval') disabled for clarity ", fontsize=20, y=1.01, x= 0.6)
+        plt.suptitle("% Local SHAP Non-Zero vs Zero Cutoff\nNOTE: each line is a position\nNOTE 2: Error around each line ('Confidence Interval') disabled for clarity ", fontsize=20, y=1.01, x= 0.6)
 
         fig.supxlabel("Zero Cutoff", fontsize=16, y=-0.01)
         fig.supylabel("% Non Zero", fontsize=16, x=-0.01)
