@@ -5233,7 +5233,7 @@ class ShapNetworkInvestigator:
                 median_val = np.median(vals)
                 pct_zero = (vals == 0).mean() * 100
                 x_pos = i - 0.2 + j * 0.4  # violinplot offset
-                y_pos = vals.max() + 0.1
+                y_pos = vals.max() + 0.02
                 ax.text(
                     x_pos, y_pos,
                     f"#: {n_points}\nMedian: {median_val:.1e}\n% Zero: {pct_zero:.0f}",
@@ -5396,16 +5396,16 @@ class ShapNetworkInvestigator:
 
     def plot_binding_sum_distribution(self):
 
-        if not hasattr(self, "final_unique_binding_SHAP_data"):
-            self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=False)
+        lf = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
 
         # Prepare a DataFrame for violinplot (percentage)
         plot_data = []
         for cell_line in self.cell_lines:
-            df = self.final_unique_binding_SHAP_data[cell_line]
-            binding_sum = df["Binding Sum"].to_numpy()
+            binding_sum = lf[cell_line].select("Binding Sum").collect().to_pandas()["Binding Sum"].to_numpy()
+            
             # Count number of columns ending with "_binding"
-            num_binding_cols = len([col for col in df.columns if col.endswith("_binding")])
+            num_binding_cols = len([col for col in lf[cell_line].collect_schema().names() if col.endswith("_binding")])
+
             binding_sum_pct = (binding_sum / num_binding_cols) * 100
             plot_data.append(pd.DataFrame({
                 "Cell Line": cell_line,
