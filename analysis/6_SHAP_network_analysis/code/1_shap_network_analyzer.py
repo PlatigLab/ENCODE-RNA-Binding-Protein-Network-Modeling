@@ -3053,13 +3053,13 @@ class ShapNetworkInvestigator:
             elif mode == "NOT-Bound-Only":
                 binding_value = 0
 
-            # Use the simplified function to get mean SHAP values for each feature at the given binding value
-            local_shap = self.get_local_SHAP_based_on_binding_and_covariates(binding_value, condition=condition, binding_pattern_type=underlying_data)
+            # Use the generator to collect mean SHAP values for each feature at the given binding value
+            cell_line_feature_dict = {cell_line: {} for cell_line in self.cell_lines}
+            for yielded_cell_line, shap_col, series in self.get_local_SHAP_based_on_binding_and_covariates(binding_value, binding_pattern_type=underlying_data):
+                cell_line_feature_dict[yielded_cell_line][shap_col] = series.abs().mean()
 
             for cell_line in self.cell_lines:
-                # local_shap[cell_line] is a dict: {shap_col: mean_series}
-                # Take the mean of the absolute values for each shap_col
-                results = {shap_col: series.abs().mean() for shap_col, series in local_shap[cell_line].items()}
+                results = cell_line_feature_dict[cell_line]
                 specialized_df = pd.DataFrame([results])
                 specialized_df = self.convert_RBP_position_to_2d_heatmap(specialized_df)
                 specialized_global_SHAP[cell_line] = specialized_df
@@ -3082,7 +3082,7 @@ class ShapNetworkInvestigator:
 
         # Prepare all metric variants
         shap_variants = {
-            "'Regular' All Data": global_shap_regular,
+            "Everything": global_shap_regular,
             "NOT Bound Only": global_shap_not_bound,
             "Bound Only": global_shap_bound,
         }
