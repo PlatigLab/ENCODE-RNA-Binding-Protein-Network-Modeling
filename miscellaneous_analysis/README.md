@@ -32,3 +32,7 @@ Mini-experiment to see how well ordinal regression models do as compared to our 
 
 Check that correlation between samples that should be in same condition is higher than those that are in different conditions. 
 Related to bug/issue I found in Janmejay's code as described here: https://github.com/NNeuralDynamics/as-rmats-turbo-encode/issues/2. 
+
+📂 `8_reproduce_probability_SHAP_bug/`:
+
+Add minimal code to reproduce a grave, dangerous, fatal bug in `SHAP` when using `probability` outputs. When asking for too many rows at once, the `local SHAP` values returned are extremely far off from what one would expect (too large numbers). @bcjonescbt has also independently verified this bug.
