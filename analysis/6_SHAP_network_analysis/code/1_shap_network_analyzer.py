@@ -6504,3 +6504,102 @@ class ShapNetworkInvestigator:
             
         for feature, binding_value, condition, abs_mean, num_items in results:
             logger.info(f"Feature: {feature}, Binding Value: {binding_value}, Condition: {condition}, Abs Mean: {abs_mean}, Num Items: {num_items}")
+
+
+if __name__ == "__main__":
+
+    # Set up loguru logger: all output to stdout, nothing to stderr
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
+
+    parser = argparse.ArgumentParser(description="SHAP Network Investigator")
+
+    PARALLELIZE_CHOICES = [
+        "data_qc_assertions", 
+        "shap_additivity_assertions", 
+        "no_shap_variance_per_binding_pattern", 
+        "create_final_shap_cache", 
+        "global_SHAP_5_dfs_all_data", 
+        "local_SHAP_mean_vs_variance_plot",
+        "calculate_local_SHAP_percent_non_zero",
+        "calculate_local_SHAP_mean_vs_variance_deciles_bound",
+        "calculate_local_SHAP_mean_vs_variance_deciles_unbound", 
+        "calculate_percent_positive_and_negative_local_SHAP_per_feature", 
+        "pct_pos_neg_local_SHAP_per_feature_bound",
+        "pct_pos_neg_local_SHAP_per_feature_unbound", 
+        "arbs_narbs_bound", 
+        "arbs_narbs_unbound", 
+    ]
+
+    parser.add_argument(
+        "--parallelize",
+        type=str,
+        choices=PARALLELIZE_CHOICES,
+        help="Specify the job type to parallelize. If provided, will run the job in parallel using sbatch.",
+        required=False
+    )
+
+    parser.add_argument(
+        "--job_type", 
+        type=str,
+        choices=PARALLELIZE_CHOICES, 
+        required=False, 
+        help="Specify the job type for specific job."
+    )
+
+    args = parser.parse_args()
+
+    if args.parallelize:
+
+        sbatch_prefix = "sbatch -N2 --partition=parallel -n32 --mem=256GB --account=platiglab"
+        sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
+        
+        logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
+        os.system(sbatch_command)
+    
+    elif args.job_type: 
+
+        analyzer = ShapNetworkInvestigator()
+
+        if args.job_type == "data_qc_assertions":
+            analyzer.run_data_quality_assertions()
+        
+        elif args.job_type == "shap_additivity_assertions":
+            analyzer.assert_SHAP_additivity()
+
+        elif args.job_type == "no_shap_variance_per_binding_pattern":
+            analyzer.check_no_SHAP_variance_per_binding_pattern()
+        
+        elif args.job_type == "create_final_shap_cache":
+            analyzer.load_final_SHAP_data(underlying_data="All-Data")
+        
+        elif args.job_type == "global_SHAP_5_dfs_all_data":
+            analyzer.calculate_global_SHAP(mode="5_dfs", binding_unique="All-Data")
+
+        elif args.job_type == "local_SHAP_mean_vs_variance_plot":
+            analyzer.plot_local_SHAP_mean_vs_variance()
+
+        elif args.job_type == "calculate_local_SHAP_percent_non_zero": 
+            analyzer.calculate_local_SHAP_percent_non_zero(mode="Unique-Binding")
+
+        elif args.job_type.startswith("calculate_local_SHAP_mean_vs_variance_deciles"): 
+            analyzer.calculate_local_SHAP_mean_vs_variance_deciles(
+                mode="Bound-Only" if args.job_type.endswith("_bound") else "NOT-Bound-Only",
+            )
+        
+        elif args.job_type.startswith("pct_pos_neg_local_SHAP_per_feature"): 
+            analyzer.calculate_percent_positive_and_negative_local_SHAP_per_feature(
+                underlying_data="Unique-Binding",
+                mode="Bound-Only" if args.job_type.endswith("_bound") else "NOT-Bound-Only"
+            )
+
+        elif args.job_type.startswith("arbs_narbs_"):
+            analyzer.calculate_activator_repressor_behavior_score(
+                underlying_data="Unique-Binding",
+                binding_mode = "Bound-Only" if args.job_type.endswith("_bound") else "NOT-Bound-Only",
+
+            )
+
+
+        else:
+            raise ValueError(f"Unknown job type: {args.job_type}")
