@@ -3070,100 +3070,30 @@ class ShapNetworkInvestigator:
         return set.intersection(*features_per_cell_line.values())
     
 
-    def parallel_helper_for_getting_local_SHAP_by_binding(self, binding_col, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices=None):
-        assert binding_col.endswith("_binding"), "Binding column must end with '_binding'"
-        assert len(shap_lazyframes) == 5, "There should be exactly 5 lazyframes for the 5 cell lines"
-        assert binding_value in [0, 1], "Binding value must be either 0 or 1"
-        assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position']
-        assert unique_binding_pattern_indices is None or isinstance(unique_binding_pattern_indices, set), "unique_binding_pattern_indices must be a set or None"
+    def get_local_SHAP_based_on_binding_and_covariates(self, binding_value, binding_pattern_type=None):
 
-        if unique_binding_pattern_indices is not None:
-            assert has_rbp_kd_df is None and condition is None, logger.error("If unique_binding_pattern_indices is provided, choosing by condition or in-silico KD rows is DANGEROUS as you may not get the rows you are expecting.")
+        assert binding_pattern_type in ["All-Data", "Unique-Binding"], "binding_pattern_type must be 'All-Data' or 'Unique-Binding'"
+        assert binding_value in [0, 1], "binding_value must be 0 or 1"
+        assert not hasattr(self, 'final_all_data_SHAP_data') and not hasattr(self, 'final_unique_binding_SHAP_data'), "Ensure final_all_data_SHAP_data and final_unique_binding_SHAP_data are not already set"
 
-        rbp, position = self.get_RBP_position(binding_col)
-
-        if condition == "RBP_KD_at_position":
-            assert isinstance(has_rbp_kd_df, pl.DataFrame), "has_rbp_kd_df must be a DataFrame"
-            assert binding_value == 0, "By definition, binding_value must be 0 for RBP_KD_at_position condition"
-
-            # Filter has_rbp_kd_df for rows where 'index' contains f"_{rbp}_KD-" and 'has_RBP_KD_{position}' is True
-            filtered_has_rbp_kd_df = has_rbp_kd_df.filter(
-                (pl.col("index").str.contains(f"_{rbp}_KD-")) &
-                (pl.col(f"has_RBP_KD_{position}") == True)
-            )
-            if filtered_has_rbp_kd_df.shape[0] == 0:
-                logger.warning(f"No rows for has_RBP_KD_{position} for {binding_col} == {binding_value} with condition {condition}")
-
-        shap_col = binding_col.replace("_binding", "_shap")
-
-        # Collect all rows from all 5 lazyframes where binding_col == binding_value
-        dfs = []
-        for lf in shap_lazyframes: 
-
-            if unique_binding_pattern_indices is not None:
-                # Filter the lazyframe to only include rows with indices in unique_binding_pattern_indices
-                lf = lf.filter(pl.col("index").is_in(unique_binding_pattern_indices))
-
-            if condition == "CTRL": 
-                lf = lf.filter(pl.col("RBP_KD_Target") == "CTRL")
-            elif condition == "RBP_KD":
-                lf = lf.filter(pl.col("RBP_KD_Target") == rbp)
-            elif condition == "RBP_KD_at_position":
-                lf = lf.filter(pl.col("index").is_in(filtered_has_rbp_kd_df["index"]))
-
-            filtered = lf.filter(pl.col(binding_col) == binding_value).select([shap_col, "index"]).collect()
-            if filtered.shape[0] == 0:
-                logger.warning(f"No rows found for {binding_col} == {binding_value} with condition {condition}")
-
-            dfs.append(filtered)
-
-        mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(cell_line_shap=dfs, metric='mean')
-        return shap_col, mean_df[shap_col]
-    
-
-    def get_local_SHAP_based_on_binding_and_covariates(self, binding_value, condition=None, binding_pattern_type=None): 
-
-        result = {}
+        final_shap_lazyframes = self.load_final_SHAP_data(underlying_data=binding_pattern_type, as_lazyframe=True)
 
         for cell_line in self.cell_lines:
-            shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
-            schema = shap_lazyframes[0].collect_schema().names()
-            binding_cols = [col for col in schema if col.endswith("_binding")]
+            shap_lazyframe = final_shap_lazyframes[cell_line]
+            binding_cols = [col for col in shap_lazyframe.collect_schema().names() if col.endswith("_binding")]
+            shap_cols = [col for col in shap_lazyframe.collect_schema().names() if col.endswith("_shap")]
 
-            if condition == "RBP_KD_at_position":
-                has_rbp_kd_df = self.get_has_RBP_KD_results(
-                    shap_lazyframes[0].clone(), 
-                    cell_line
+            df = shap_lazyframe.select(binding_cols + shap_cols).collect()
+
+            for binding_col in tqdm.tqdm(binding_cols, desc=f"{cell_line} binding_cols"):
+                shap_col = binding_col.replace("_binding", "_shap")
+                series = (
+                    df
+                    .select([binding_col, shap_col])
+                    .filter(pl.col(binding_col) == binding_value)
+                    .select(shap_col)[shap_col]
                 )
-            else: 
-                has_rbp_kd_df = None
-
-            if binding_pattern_type == "Unique-Binding": 
-                # Retrieve the 5 SHAP tables per cell line using unique binding mode
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="Unique-Binding", return_first_only=True)
-                # Take the first DataFrame, extract 'index' as a set
-                unique_binding_pattern_indices = set(shap_dfs[0]["index"].to_list())
-                # Delete the object and garbage collect
-                del shap_dfs
-                gc.collect()
-
-            elif binding_pattern_type == "All-Data":
-                unique_binding_pattern_indices = None
-
-            feature_dict = {}
-            with concurrent.futures.ProcessPoolExecutor(max_workers = self.get_slurm_job_num_cpus()) as executor:
-                futures = {executor.submit(self.parallel_helper_for_getting_local_SHAP_by_binding, binding_col, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices): binding_col for binding_col in binding_cols}
-                
-                for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(binding_cols), desc=f"{cell_line} {binding_value}-bound Features"):
-                    shap_col, series = future.result()
-                    feature_dict[shap_col] = series
-
-            result[cell_line] = feature_dict
-
-            del feature_dict
-            gc.collect()
-
-        return result
+                yield (cell_line, shap_col, series)
 
     
     def calculate_specialized_global_SHAP(self, mode=None, condition=None, underlying_data=None): 
