@@ -1338,7 +1338,7 @@ class ShapNetworkInvestigator:
 
 
     def calculate_SHAP_CV(self, binding_unique=None):
-        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
+        assert binding_unique == "Unique-Binding", "binding_unique should be 'Unique-Binding'"
 
         output_file = self.CACHE_INFO["SHAP_CV"]
         # Check if the output file exists
@@ -1377,7 +1377,7 @@ class ShapNetworkInvestigator:
 
     
     def plot_SHAP_CV(self, binding_unique=None):
-        assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
+        assert binding_unique == "Unique-Binding", "binding_unique should be 'Unique-Binding'"
         
         if not hasattr(self, 'SHAP_cv'):
             self.calculate_SHAP_CV(binding_unique = binding_unique)
@@ -1483,7 +1483,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Generating mean vs variance hexbin plot for cell line {cell_line}")
 
                 # Retrieve the 5 SHAP DataFrames for the cell line
-                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="All-Data")
+                shap_dfs = self.retrieve_5_SHAP_tables_per_cell_line(cell_line, binding_unique="Unique-Binding")
 
                 # Calculate mean and variance using the pointwise SHAP metric function
                 mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
@@ -3209,12 +3209,13 @@ class ShapNetworkInvestigator:
             return specialized_global_SHAP
 
 
-    def plot_specialized_vs_regular_global_SHAP(self): 
+    def plot_specialized_vs_regular_global_SHAP(self, underlying_data=None):
+        assert underlying_data == "Unique-Binding", "Currently only 'Unique-Binding' is supported for underlying_data"
         
         # Load all global SHAP variants
-        global_shap_regular = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique="All-Data")
-        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)
-        global_shap_not_bound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)
+        global_shap_regular = self.calculate_global_SHAP(mode="5_dfs_average", binding_unique = underlying_data)
+        global_shap_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data= underlying_data)
+        global_shap_not_bound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None, underlying_data= underlying_data)
 
         # Prepare all metric variants
         shap_variants = {
@@ -3280,7 +3281,7 @@ class ShapNetworkInvestigator:
                     horizontalalignment='right'
                 )
 
-            plt.suptitle(f"Global SHAP: {label_x} vs {label_y}\nNOTE: all metrics come from averaging SHAP across 5 models", fontsize=14)
+            plt.suptitle(f"Global SHAP: {label_x} vs {label_y}\nNOTE: using {underlying_data} data", fontsize=16, y=1.02)
             fig.supxlabel(f"Global SHAP: {label_x}", fontsize=12)
             fig.supylabel(f"Global SHAP: {label_y}", fontsize=12)
             plt.tight_layout()
@@ -3432,7 +3433,7 @@ class ShapNetworkInvestigator:
 
 
     def calculate_percent_positive_and_negative_local_SHAP_per_feature(self, mode=None, underlying_data=None):
-        assert underlying_data in ["Unique-Binding"], "Underlying data must be 'Unique-Binding' for this function"
+        assert underlying_data== "Unique-Binding", "Underlying data must be 'Unique-Binding' for this function"
         assert mode in ["NOT-Bound-Only", "Bound-Only"], "Mode must be 'NOT-Bound-Only' or 'Bound-Only' for this function"
         OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_positive_negative"][mode]
 
@@ -3504,7 +3505,7 @@ class ShapNetworkInvestigator:
 
 
     def plot_percent_positive_and_negative_local_SHAP_per_feature(self, underlying_data=None): 
-        assert underlying_data in ["Unique-Binding"], "Underlying data must be 'Unique-Binding' for this function"
+        assert underlying_data == "Unique-Binding", "Underlying data must be 'Unique-Binding' for this function"
 
         # Load the percent positive/negative local SHAP pickle files for Bound-Only and NOT-Bound-Only
         bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="Bound-Only", underlying_data=underlying_data)
@@ -4042,8 +4043,7 @@ class ShapNetworkInvestigator:
     
 
     def calculate_local_SHAP_percent_non_zero(self, mode=None):
-        VALID_MODES = ["All-Data", "Unique-Binding"]
-        assert mode in VALID_MODES, f"Mode must be one of {VALID_MODES} for this function"
+        assert mode == "Unique-Binding", "Mode must be 'Unique-Binding' for this function"
 
         ZERO_CUTOFFS = [1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1]
         OUTPUT_FILE = self.CACHE_INFO["local_SHAP_percent_non_zero"][mode]
@@ -4104,19 +4104,16 @@ class ShapNetworkInvestigator:
         # Load percent zero local SHAP data for both modes
         unique_binding_df = self.calculate_local_SHAP_percent_non_zero(mode="Unique-Binding")
 
-        # Add a "Position" column to both DataFrames by extracting the position using get_RBP_position
-        for df in [all_data_df, unique_binding_df]:
-            rbp_pos = df["Feature"].apply(lambda x: self.get_RBP_position(x))
-            df["RBP"] = rbp_pos.apply(lambda x: x[0])
-            df["Position"] = rbp_pos.apply(lambda x: x[1])
+        # Add a "Position" column by extracting the position using get_RBP_position
+        
+        rbp_pos = unique_binding_df["Feature"].apply(lambda x: self.get_RBP_position(x))
+        unique_binding_df["RBP"] = rbp_pos.apply(lambda x: x[0])
+        unique_binding_df["Position"] = rbp_pos.apply(lambda x: x[1])
 
         # Prepare zero cutoff order for x-axis
-        zero_cutoff_order = sorted(all_data_df["Zero Cutoff"].unique())
+        zero_cutoff_order = sorted(unique_binding_df["Zero Cutoff"].unique())
         # Prepare position order for hue
-        position_order = sorted(all_data_df["Position"].unique())
-        # prepare data mode order for hue
-        data_mode_order = sorted(pd.concat([all_data_df, unique_binding_df])["Data Mode"].unique())
-
+        position_order = sorted(unique_binding_df["Position"].unique())
 
         violinplot_configs = [
             {
@@ -4183,13 +4180,8 @@ class ShapNetworkInvestigator:
                         if config["legend"]:
                             ax.get_legend().remove()
 
-                    ax.set_title(f"{cell_line} - {mode_label}", fontsize=30)
-                    ax.set_xlabel("")
-                    ax.set_ylabel("")
-                    ax.set_ylim(-10, 110)
-                    # ax.set_xscale("log")
-                    ax.tick_params(axis="x", labelrotation=45, labelsize=20, labelbottom=True)
-                    ax.tick_params(axis="y", labelsize=18)
+                ax.set_title(f"{cell_line} - Unique-Binding", fontsize=30)
+                ax.set_xlabel("")
 
             # Add a single legend to the right if using hue
             if config["use_hue"]:
@@ -4217,8 +4209,8 @@ class ShapNetworkInvestigator:
         for row_idx, cell_line in enumerate(self.cell_lines):
             for col_idx, (mode_label, df) in enumerate(modes):
                 ax = axes[row_idx, col_idx]
-                # Subset to this cell line and mode
-                plot_df = df[df["Cell Line"] == cell_line]
+            plot_df = unique_binding_df[unique_binding_df["Cell Line"] == cell_line]
+            # Iterate by each unique feature and plot its line
                 # Iterate by each unique feature and plot its line
                 for feature in plot_df["Feature"].unique():
                     feature_df = plot_df[plot_df["Feature"] == feature]
@@ -4233,8 +4225,8 @@ class ShapNetworkInvestigator:
                         marker='o',   # Show each point in the line
                         markersize=6
                     )
-                ax.set_title(f"{cell_line} - {mode_label}", fontsize=20)
-                ax.set_xlabel("")
+            ax.set_title(f"{cell_line} - Unique-Binding", fontsize=20)
+            ax.set_xlabel("")
                 ax.set_ylabel("")
                 ax.set_ylim(-10, 110)
                 ax.set_xscale("log")
@@ -4255,7 +4247,7 @@ class ShapNetworkInvestigator:
         plt.figure(figsize=(6,5), dpi=300)
 
         sns.lineplot(
-            data=combined_df,
+            data=unique_binding_df,
             x="Zero Cutoff",
             y="% Non Zero",
             hue="Cell Line",
@@ -4280,7 +4272,7 @@ class ShapNetworkInvestigator:
         palette = sns.color_palette("tab10", n_colors=6)
 
         for ax, cell_line in zip(axes, self.cell_lines):
-            plot_df = combined_df[combined_df["Cell Line"] == cell_line].copy()
+            plot_df = unique_binding_df[unique_binding_df["Cell Line"] == cell_line].copy()
             plot_df["Zero Cutoff"] = plot_df["Zero Cutoff"].astype(float)
             # Plot with seaborn lineplot: hue=Position, style=Data Mode
             sns.lineplot(
@@ -4342,7 +4334,7 @@ class ShapNetworkInvestigator:
 
     def calculate_activator_repressor_behavior_score(self, binding_mode=None, underlying_data=None):
         assert binding_mode in ["Bound-Only", "NOT-Bound-Only"], "binding_mode must be 'Bound-Only' or 'NOT-Bound-Only' for this function"
-        assert underlying_data in ["Unique-Binding"], "underlying_data must be 'Unique-Binding' for this function"
+        assert underlying_data == "Unique-Binding", "underlying_data must be 'Unique-Binding' for this function"
 
         OUTPUT_FILE = self.CACHE_INFO["activator_repressor_behavior_score"][binding_mode]
 
@@ -5754,9 +5746,6 @@ class ShapNetworkInvestigator:
                     ax.grid(True, axis='y', linestyle='--', alpha=0.5)
                     ax.minorticks_on()
                     ax.grid(True, which='minor', axis='y', linestyle=':', alpha=0.3)
-
-                    # Remove individual legends; we'll add a single legend for the whole figure after plotting
-                    ax.get_legend().remove()
                         
                 plt.suptitle(
                     f"{self.latex_symbols['Unique-Binding']['local_SHAP']} > {cutoff}", 
