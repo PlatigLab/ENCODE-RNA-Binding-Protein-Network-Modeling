@@ -718,12 +718,19 @@ class ShapNetworkInvestigator:
             if mode == "Bound-Only":
                 all_values = all_values[~np.isnan(all_values)]  # Remove NaN values
             else: 
-                assert not np.isnan(all_values).any(), "NaN values found in all_values"         
-
-            bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
+                assert not np.isnan(all_values).any(), "NaN values found in all_values"   
+                
+            if mode == '5_dfs_average':
+                prefix = binding_unique.replace('-', ' ')
+            elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
+                prefix = mode.replace('-', ' ')
+            elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
+                prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
+            
 
             # Create a figure with 2 columns: left for histograms, right for boxplots
             fig, axes = plt.subplots(len(global_SHAP), 2, figsize=(11, 7), dpi=200, sharex=True, sharey=False)
+            bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
 
             for row_idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
                 # Flatten the heatmap values into a single array
@@ -769,13 +776,6 @@ class ShapNetworkInvestigator:
                 axes[row_idx, 1].set_xlabel("")
                 axes[row_idx, 1].set_ylabel("")
                 axes[row_idx, 1].tick_params(axis="both", labelsize=12)
-
-            if mode == '5_dfs' or mode == '5_dfs_average':
-                prefix = binding_unique.replace('-', ' ')
-            elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
-                prefix = mode.replace('-', ' ')
-            elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
-                prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
 
             plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=16, y=0.98)
             fig.supxlabel("Global SHAP Value", fontsize=16)
@@ -967,12 +967,13 @@ class ShapNetworkInvestigator:
                 "K562": k562_values,
                 "Feature": features
             })
-
+            if mode == "Bound-Only":
+                combined_df = combined_df.dropna(axis = 0, how = 'any')
             # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
 
             if mode == 'Bound-Only':
-                n_largest = 30
-                fontsize= 4
+                n_largest = 25
+                fontsize= 3
                 x_offset = 0.05
                 y_offset = 0.04
 
@@ -1026,18 +1027,6 @@ class ShapNetworkInvestigator:
                     ax=ax
                 )
 
-                # Annotate top features (only on linear plot for clarity)
-                if i == 0:
-                    for _, row in top_features.iterrows():
-                        ax.text(
-                            row["HepG2"] - x_offset,
-                            row["K562"] + y_offset,
-                            row["Feature"],
-                            fontsize=fontsize,
-                            color="green",
-                            alpha=0.8
-                        )
-
                 # Add y=x line
                 min_val = min(x.min(), y.min())
                 max_val = max(x.max(), y.max())
@@ -1061,13 +1050,38 @@ class ShapNetworkInvestigator:
                     horizontalalignment='left'
                 )
 
+                # Annotate top features (only on linear plot for clarity)
+                if i == 0:
+                    texts = []
+                    for _, row in top_features.iterrows():
+                        texts.append(
+                            ax.text(
+                                row["HepG2"],
+                                row["K562"],
+                                row["Feature"],
+                                fontsize=fontsize,
+                                color="brown",
+                                alpha=0.7
+                            )
+                        )
+                    
+                    adjustText.adjust_text(
+                        texts,
+                        ax=ax,
+                        arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+                        force_points=2.0,
+                        force_text=2.0,
+                        expand_points=(1.2, 1.2),
+                        expand_text=(1.2, 1.2),
+                        only_move={'points': 'y', 'text': 'y'}
+                    )
+
             plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=14, y=1.02)
             fig.supxlabel(f"HepG2 {self.latex_symbols[binding_unique][mode]}", fontsize=14) 
             fig.supylabel(f"K562 {self.latex_symbols[binding_unique][mode]}", fontsize=14)
-            
-            plt.tight_layout()
 
-            plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=300, bbox_inches='tight')
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=600, bbox_inches='tight')
             plt.show()
 
     
