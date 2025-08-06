@@ -5444,15 +5444,19 @@ class ShapNetworkInvestigator:
         assert mode in ["5_dfs_average", "Bound-Only", "NOT-Bound-Only"], "mode must be '5_dfs_average', 'Bound-Only', or 'NOT-Bound-Only'"
 
         hand_selected_rbps = {
-            "DDX3X": [3, 5],
+            "TARDBP": [1],
             "DDX55": [2, 4],
+            "RBFOX2": [4],
             "FTO": [5],
-            "RPS3": [3,4],
-            "LIN28B": [3,4],
+            "DDX3X": [5, 6],
+
+            "HNRNPM": [3, 4],
+            "IGF2BP1": [3, 4],
+            "LIN28B": [3, 4],
             "SND1": [3, 4],
-            "IGF2BP1": [3,4],
-            "GRWD1": [3,4],
-            "HNRNPM": [3,4],
+            "GRWD1": [3, 4],
+            "RPS3": [3, 4],
+            "FXR2": [3, 4],
         }
 
         # Load the appropriate global SHAP data based on mode and underlying_data
@@ -5512,8 +5516,8 @@ class ShapNetworkInvestigator:
             plt.show()
         
         # Separate RBPs into two groups: those with [3, 4] and those with other highlighted positions
-        rbps_3_4 = sorted([rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list == [3, 4]])
-        rbps_other = sorted([rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list != [3, 4]])
+        rbps_3_4 = [rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list == [3, 4]]
+        rbps_other = [rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list != [3, 4]]
 
         # Prepare plotting data for both groups
         rbp_groups = [
@@ -5563,13 +5567,13 @@ class ShapNetworkInvestigator:
                 axes[-1, col_idx].set_xticklabels([str(i) for i in range(1, 7)], fontsize=7)
 
             fig.supxlabel("Position", fontsize=14, y=group['supylabel_y_position'])
-            fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=20, x=-0.30)
+            fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=20, x=-0.32)
             for ax in axes.flat:
                 ax.tick_params(axis='x', labelsize=10)
 
             # Add cell line labels as column titles
             for col_idx, cell_line in enumerate(self.cell_lines):
-                axes[0, col_idx].set_title(cell_line, fontsize=13, pad=2)
+                axes[0, col_idx].set_title(cell_line, fontsize=13, pad=10)
 
             plt.tight_layout(pad=2)
 
@@ -6647,46 +6651,25 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def tmp_parallel_helper(self, args):
-        feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices = args
-        _, shap_series = self.parallel_helper_for_getting_local_SHAP_by_binding(
-            feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices
-        )
-        abs_mean = shap_series.abs().mean()
-        num_items = len(shap_series)
-        return (feature, binding_value, condition, abs_mean, num_items)
-
-
-    def tmp(self): 
-        feature_binding_values = [("TBRG4_1_binding", 1), ("TBRG4_1_binding", 0), ("SUGP2_4_binding", 1), ("SUGP2_4_binding", 0), ("SUGP2_3_binding", 1), ("SUGP2_3_binding", 0)]
-        shap_lazyframes = self.get_SHAP_data_as_lazyframe(self.cell_lines[0])
-
-        # Get unique binding pattern indices using the first shap lazyframe
-        schema = shap_lazyframes[0].collect_schema().names()
-        binding_cols = [col for col in schema if col.endswith("_binding")]
-        unique_binding_pattern_indices = set(
-            shap_lazyframes[0]
-            .unique(subset=binding_cols, maintain_order=True, keep="first")
-            .select('index')
-            .collect()
-            .sort('index')["index"].to_list()
+    def tmp(self, rbp=None): 
+        
+        bound_global_SHAP = self.calculate_specialized_global_SHAP(
+            mode="Bound-Only", 
+            underlying_data="Unique-Binding"
         )
         
-        # Set has_rbp_kd_df and condition to None for all tasks
-        has_rbp_kd_df = None
-        condition = None
+        # For the given rbp, build a DataFrame: rows = cell lines, columns = positions (1-6), values = global SHAP
+        df = pd.DataFrame(
+            {cell_line: bound_global_SHAP[cell_line][rbp] for cell_line in self.cell_lines}
+        ).T
 
-        # Prepare all combinations of (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices)
-        tasks = [
-            (feature, shap_lazyframes, binding_value, condition, has_rbp_kd_df, unique_binding_pattern_indices)
-            for feature, binding_value in feature_binding_values
-        ]
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
-            results = list(executor.map(self.tmp_parallel_helper, tasks))
-            
-        for feature, binding_value, condition, abs_mean, num_items in results:
-            logger.info(f"Feature: {feature}, Binding Value: {binding_value}, Condition: {condition}, Abs Mean: {abs_mean}, Num Items: {num_items}")
+        plt.figure(figsize=(8, 3))
+        sns.heatmap(df, annot=True, fmt=".4f", cmap="Blues")
+        plt.title(f"{rbp}: Bound-Only Global SHAP Across Cell Lines and Positions")
+        plt.xlabel("Position")
+        plt.ylabel("Cell Line")
+        plt.tight_layout()
+        plt.show()
 
 
 if __name__ == "__main__":
