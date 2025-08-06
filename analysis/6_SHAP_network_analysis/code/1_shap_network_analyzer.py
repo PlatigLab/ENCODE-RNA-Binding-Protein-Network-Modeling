@@ -1,8 +1,7 @@
 import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, concurrent.futures, argparse, random
 
-import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns
-import scipy.cluster.hierarchy as sch
-import matplotlib.gridspec as gridspec
+import pandas as pd, polars as pl, numpy as np, matplotlib.pyplot as plt, seaborn as sns, scipy.cluster.hierarchy as sch, matplotlib.gridspec as gridspec
+import adjustText
 
 from dataclasses import dataclass
 from IPython.display import display, Video
@@ -206,7 +205,11 @@ class ShapNetworkInvestigator:
 
                 },
             },
-        }
+        }, 
+        "pct_positive_minus_negative_local_SHAP": {
+            "heatmap_bound": "../outputs/publication_figures/local_SHAP_percent_positive_negative/local_SHAP_pct_pos_minus_neg_bound_heatmap.png",
+            "matching_features_bound_scatter": "../outputs/publication_figures/local_SHAP_percent_positive_negative/local_SHAP_pct_pos_minus_neg_bound_matching_features_scatter.png",
+        },
     }
 
     def __post_init__(self):
@@ -3382,8 +3385,11 @@ class ShapNetworkInvestigator:
         bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="Bound-Only", underlying_data=underlying_data)
         not_bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="NOT-Bound-Only", underlying_data=underlying_data)
 
+        # CUTOFFS = bound_data.keys()
+        CUTOFFS = [.01]
+
         for cell_line in self.cell_lines:
-            for cutoff in bound_data.keys():
+            for cutoff in CUTOFFS:
                 bound_cut = bound_data[cutoff]
                 not_bound_cut = not_bound_data[cutoff]
 
@@ -3400,7 +3406,7 @@ class ShapNetworkInvestigator:
                             assert ((arr_no_nan >= 0) & (arr_no_nan <= 100)).all(), f"Values out of range in {sign} for {cl}"
 
         # First Figure: Heatmaps for each cutoff
-        for cutoff in bound_data.keys():
+        for cutoff in CUTOFFS:
             for cell_line in self.cell_lines:
                 bound_cut = bound_data[cutoff]
                 not_bound_cut = not_bound_data[cutoff]
@@ -3479,7 +3485,7 @@ class ShapNetworkInvestigator:
                 plt.show()
 
         # Second Figure: Scatterplot of % Positive vs % Negative for Bound and NOT Bound, per cell line and cutoff
-        for cutoff in bound_data.keys():
+        for cutoff in CUTOFFS:
             bound_cut = bound_data[cutoff]
             not_bound_cut = not_bound_data[cutoff]
             bound_statuses = [("Bound Only", bound_cut), ("NOT Bound Only", not_bound_cut)]
@@ -3568,7 +3574,7 @@ class ShapNetworkInvestigator:
             plt.show()
 
         # Third Figure: Hexbin of % Positive vs % Negative for Bound and NOT Bound, per cell line, per cutoff
-        for cutoff in bound_data.keys():
+        for cutoff in CUTOFFS:
             bound_cut = bound_data[cutoff]
             not_bound_cut = not_bound_data[cutoff]
             bound_statuses = [("Bound Only", bound_cut), ("NOT Bound Only", not_bound_cut)]
@@ -3637,91 +3643,90 @@ class ShapNetworkInvestigator:
             plt.tight_layout()
             plt.show()
         
-        # Fourth Figure: Difference heatmap (% Positive - % Negative) for Bound and NOT Bound, per cell line, per cutoff
-        for cutoff in bound_data.keys():
+        # Fourth Figure: Difference heatmap (% Positive - % Negative) for Bound Only, both cell lines in one figure, per cutoff
+        for cutoff in CUTOFFS:
+            # Prepare difference heatmaps for both cell lines
+            diff_bounds = []
+            ordered_cols_list = []
+
             for cell_line in self.cell_lines:
-                # Get percent positive and negative heatmaps for bound and not bound for this cutoff
                 df_bound_pos = bound_data[cutoff]["positive"][cell_line].sort_index().sort_index(axis=1)
                 df_bound_neg = bound_data[cutoff]["negative"][cell_line].sort_index().sort_index(axis=1)
-                df_not_bound_pos = not_bound_data[cutoff]["positive"][cell_line].sort_index().sort_index(axis=1)
-                df_not_bound_neg = not_bound_data[cutoff]["negative"][cell_line].sort_index().sort_index(axis=1)
-
                 # Assert index and columns match for subtraction
                 assert (df_bound_pos.index.equals(df_bound_neg.index) and df_bound_pos.columns.equals(df_bound_neg.columns)), "Bound: index/columns mismatch"
-                assert (df_not_bound_pos.index.equals(df_not_bound_neg.index) and df_not_bound_pos.columns.equals(df_not_bound_neg.columns)), "Not Bound: index/columns mismatch"
-
-                # Calculate difference heatmaps
+                
+                # Calculate difference heatmap
                 diff_bound = df_bound_pos - df_bound_neg
-                diff_not_bound = df_not_bound_pos - df_not_bound_neg
-
-                # Assert that all values in both difference heatmaps are within [-100, 100] (inclusive), ignoring NaNs
+                # Assert values in [-100, 100]
                 assert ((diff_bound.values[~np.isnan(diff_bound.values)] >= -100) & (diff_bound.values[~np.isnan(diff_bound.values)] <= 100)).all(), "diff_bound has values outside [-100, 100]"
-                assert ((diff_not_bound.values[~np.isnan(diff_not_bound.values)] >= -100) & (diff_not_bound.values[~np.isnan(diff_not_bound.values)] <= 100)).all(), "diff_not_bound has values outside [-100, 100]"
-
-                # Cluster columns of diff_bound using Ward
+                
+                # Cluster columns using Ward
                 linkage = sch.linkage(diff_bound.fillna(0).T, method="ward")
                 dendro = sch.dendrogram(linkage, no_plot=True)
                 ordered_cols = [diff_bound.columns[i] for i in dendro["leaves"]]
-
-                # Reorder both heatmaps to match clustering
+                
+                # Reorder heatmap to match clustering
                 diff_bound = diff_bound[ordered_cols]
-                diff_not_bound = diff_not_bound[ordered_cols]
+                diff_bounds.append(diff_bound)
+                ordered_cols_list.append(ordered_cols)
 
-                # Plot
-                fig, axes = plt.subplots(2, 1, figsize=(40, 27), dpi=300, sharex=True, sharey=True)
-                cbar_ax = fig.add_axes([0.92, 0.1, 0.02, 0.7])
+            # Plot both cell lines in one figure, one subplot per cell line
+            fig, axes = plt.subplots(len(self.cell_lines), 1, figsize=(40, 27), dpi=300, sharex=False, sharey=True)
+            cbar_ax = fig.add_axes([0.92, 0.1, 0.02, 0.7])
+            vmin, vmax = -100, 100
 
-                vmin, vmax = -100, 100
-
-                for idx, (data, title) in enumerate([
-                    (diff_bound, "Bound Only: (RBPs Clustered by Ward)"),
-                    (diff_not_bound, "NOT Bound Only (RBP order matches Bound Only)")
-                ]):
-                    ax = axes[idx]
-                    sns.heatmap(
-                        data,
-                        ax=ax,
-                        cmap="bwr",
-                        vmin=vmin,
-                        vmax=vmax,
-                        center=0,
-                        cbar=(idx == 0),
-                        cbar_ax=(cbar_ax if idx == 0 else None),
-                        linewidths=0.5,
-                        linecolor="gray",
-                        annot=True,
-                        fmt=".1f",
-                        annot_kws={"size": 18, "rotation": 90},
-                    )
-                    ax.set_title(title, fontsize=40, pad=25)
-                    ax.set_xlabel("")
-                    ax.set_ylabel("")
-                    ax.tick_params(axis='y', labelsize=36)
-                    ax.tick_params(axis='x', labelsize=15)
-                    ax.set_facecolor("yellow")
-
-                cbar_ax.set_title("% Pos - % Neg", fontsize=40, pad=35)
-                cbar_ax.tick_params(labelsize=30)
-                cbar_ax.set_box_aspect(20)
-
-                fig.supxlabel("RBP", fontsize=50, x=0.45, y=-0.01)
-                fig.supylabel("Position", fontsize=50, x=-0.01)
-                plt.suptitle(
-                    f"{cell_line}: (% Positive Local SHAP) - (% Negative Local SHAP) (Zero Cutoff = {cutoff})\n\n"
-                    f"NOTE 0: '{underlying_data}' data mode used to calculate these values\n"
-                    "NOTE 1: 'Bound Only' clustered by Ward, 'NOT Bound Only' matches RBP order\n"
-                    "NOTE 2: Red = more positive; Blue = more negative; White = 0% Difference\n"
-                    "NOTE 3: Null values indicated by yellow squares\n"
-                    "NOTE 4: Heatmap colors shared across both heatmaps\n"
-                    "NOTE 5: Zero can have multiple meanings -\n[1] Local SHAP always zero, [2] % positive and % negative cancel each other out\n",
-
-                    fontsize=40, y=1.01
+            for idx, (cell_line, diff_bound) in enumerate(zip(self.cell_lines, diff_bounds)):
+                ax = axes[idx]
+                sns.heatmap(
+                    diff_bound,
+                    ax=ax,
+                    cmap="bwr",
+                    vmin=vmin,
+                    vmax=vmax,
+                    center=0,
+                    cbar=(idx == 0),
+                    cbar_ax=(cbar_ax if idx == 0 else None),
+                    linewidths=0.5,
+                    linecolor="gray",
+                    annot=True,
+                    fmt=".0f",
+                    annot_kws={"size": 20, "rotation": 90},
                 )
-                plt.tight_layout(rect=[0, 0, 0.91, 1])
-                plt.show()
+                
+                ax.set_title(f"{cell_line}", fontsize=40, pad=25)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                
+                ax.tick_params(axis='y', labelsize=36)
+                ax.tick_params(axis='x', labelsize=15)
+                
+                ax.set_facecolor("lightgray")
+
+            cbar_ax.set_title("% Pos - % Neg", fontsize=40, pad=35)
+            cbar_ax.tick_params(labelsize=30)
+            cbar_ax.set_box_aspect(20)
+
+            fig.supxlabel("RBP", fontsize=50, x=0.47, y=-0.01)
+            fig.supylabel("Position", fontsize=50, x=-0.01, y=0.4)
+            plt.suptitle(
+                f"Bound Only: (% Positive Local SHAP) - (% Negative Local SHAP) (Zero Cutoff = {cutoff})\n\n"
+                f"NOTE 0: '{underlying_data}' data mode used to calculate these values\n"
+                "NOTE 1: Each cell line's RBPs clustered by Ward\n"
+                "NOTE 2: Red = more positive; Blue = more negative; White = 0% Difference\n"
+                "NOTE 3: Null values indicated by gray squares\n"
+                "NOTE 4: Heatmap colors shared across both cell lines\n"
+                "NOTE 5: Zero can have multiple meanings -\n[1] Local SHAP always zero, [2] % positive and % negative cancel each other out\n",
+                fontsize=40, y=1.015
+            )
+            plt.tight_layout(rect=[0, 0, 0.91, 1])
+
+            if cutoff == 0.01: 
+                plt.savefig(self.FIGURES["pct_positive_minus_negative_local_SHAP"]["heatmap_bound"], bbox_inches='tight', dpi=600)
+
+            plt.show()
         
         # Fifth Figure: Scatterplot of (Bound: %Pos - %Neg) vs (NOT Bound: %Pos - %Neg) per cell line, for each cutoff
-        for cutoff in bound_data.keys():
+        for cutoff in CUTOFFS:
             for cell_line in self.cell_lines:
                 # Prepare difference DataFrames for this cutoff
                 diff_bound = bound_data[cutoff]["positive"][cell_line] - bound_data[cutoff]["negative"][cell_line]
@@ -3900,6 +3905,170 @@ class ShapNetworkInvestigator:
                 ax.text(-0.1, 0.5, "NOT Bound Only: % Positive - % Negative", fontsize=12, ha='right', va='center', rotation=90, transform=ax.transAxes)
                 plt.tight_layout()
                 plt.show()
+
+        # Sixth Figure: Scatterplot for matching RBPs between both cell lines
+        for cutoff in CUTOFFS:
+            # Get matching RBPs between both cell lines for this cutoff
+            bound_cut = bound_data[cutoff]
+            rbps_0 = set(bound_cut["positive"][self.cell_lines[0]].columns)
+            rbps_1 = set(bound_cut["positive"][self.cell_lines[1]].columns)
+
+            matching_rbps = sorted(rbps_0 & rbps_1)
+            assert len(matching_rbps) > 0, f"There should be matching RBPs between {self.cell_lines[0]} and {self.cell_lines[1]} for cutoff {cutoff}"
+
+            for cell_line in self.cell_lines:
+                df_pos = bound_cut["positive"][cell_line][matching_rbps]
+                df_neg = bound_cut["negative"][cell_line][matching_rbps]
+                
+                # Ensure index and columns match
+                df_pos = df_pos.sort_index().sort_index(axis=1)
+                df_neg = df_neg.sort_index().sort_index(axis=1)
+                assert df_pos.index.equals(df_neg.index) and df_pos.columns.equals(df_neg.columns), "Index/columns mismatch"
+
+                # Melt to long format and compute %pos - %neg, aligning by feature name
+                df_pos_long = df_pos.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Positive")
+                df_pos_long["Feature"] = df_pos_long["RBP"].astype(str) + "_" + df_pos_long["index"].astype(str)
+
+                df_neg_long = df_neg.reset_index().melt(id_vars="index", var_name="RBP", value_name="Percent_Negative")
+                df_neg_long["Feature"] = df_neg_long["RBP"].astype(str) + "_" + df_neg_long["index"].astype(str)
+
+                # Merge on Feature to ensure alignment
+                df_long = pd.merge(
+                    df_pos_long[["Feature", "Percent_Positive"]],
+                    df_neg_long[["Feature", "Percent_Negative"]],
+                    on="Feature",
+                    how="inner"
+                )
+                
+                # Extract RBP and index (Position) back if needed
+                df_long["RBP"] = df_long["Feature"].str.rsplit("_", n=1).str[0]
+                df_long["index"] = df_long["Feature"].str.rsplit("_", n=1).str[1]
+                df_long["Pct_Pos_Minus_Neg"] = df_long["Percent_Positive"] - df_long["Percent_Negative"]
+                df_long["Cell Line"] = cell_line
+
+                if cell_line == self.cell_lines[0]:
+                    df_long_0 = df_long
+                else:
+                    df_long_1 = df_long            
+
+            # Merge on Feature to get matching features
+            merged = pd.merge(
+                df_long_0[["Feature", "Pct_Pos_Minus_Neg"]],
+                df_long_1[["Feature", "Pct_Pos_Minus_Neg"]],
+                on="Feature",
+                suffixes=(f"_{self.cell_lines[0]}", f"_{self.cell_lines[1]}")
+            )
+
+            # Remove rows with NaN in either column
+            merged = merged.dropna(axis=0, how='any')
+            x = merged[f"Pct_Pos_Minus_Neg_{self.cell_lines[0]}"]
+            y = merged[f"Pct_Pos_Minus_Neg_{self.cell_lines[1]}"]
+
+            pearson_corr, _ = pearsonr(x, y)
+            spearman_corr, _ = spearmanr(x, y)
+            num_points = len(merged)
+
+            fig, ax = plt.subplots(figsize=(6, 5), dpi=200)
+
+            sns.scatterplot(x=x, y=y, color="deepskyblue", edgecolor="black", alpha=0.1, s=20, ax=ax)
+            # Make y=x line thinner
+            min_val = min(x.min(), y.min())
+            max_val = max(x.max(), y.max())
+            ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=0.7, label="y=x")
+
+            # Move axes to cross at (0,0)
+            ax.spines['left'].set_position('zero')
+            ax.spines['bottom'].set_position('zero')
+            ax.spines['right'].set_color('none')
+            ax.spines['top'].set_color('none')
+            ax.xaxis.set_ticks_position('bottom')
+            ax.yaxis.set_ticks_position('left')
+            
+            # Set x and y limits to -200 to 200 for space, but only show tick labels for -100 to 100
+            ax.set_xlim(-150, 150)
+            ax.set_ylim(-150, 150)
+
+            # Only show ticks and labels for -100 to 100
+            xticks = [tick for tick in ax.get_xticks() if -100 <= tick <= 100]
+            yticks = [tick for tick in ax.get_yticks() if -100 <= tick <= 100]
+
+            ax.set_xticks(xticks)
+            ax.set_yticks(yticks)
+
+            ax.set_xticklabels([str(int(tick)) for tick in xticks])
+            ax.set_yticklabels([str(int(tick)) for tick in yticks])
+
+            # Place x and y axis labels outside the plot using transAxes for precise positioning
+            ax.text(
+                0.5, -0.04,
+                f"{self.cell_lines[0]}: %Pos - %Neg",
+                fontsize=12,
+                ha='center',
+                va='top',
+                transform=ax.transAxes
+            )
+            ax.text(
+                -0.04, 0.5,
+                f"{self.cell_lines[1]}: %Pos - %Neg",
+                fontsize=12,
+                ha='right',
+                va='center',
+                rotation=90,
+                transform=ax.transAxes
+            )
+
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+
+            # Set the title at y=1.05
+            ax.set_title(f"Matching RBPs: Bound-Only % Positive - % Negative (cutoff={cutoff})", fontsize=8, y=1.05)
+
+            # Move correlation/points text outside the plot, center right
+            fig.text(
+                0.15, 0.75,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+                fontsize=8,
+                verticalalignment='center',
+                horizontalalignment='left'
+            )
+
+            # Annotate points where both x and y < -50 or both x and y > 50, using adjustText for non-overlapping labels
+            texts = []
+            for idx, row in merged.iterrows():
+                x_val = row[f"Pct_Pos_Minus_Neg_{self.cell_lines[0]}"]
+                y_val = row[f"Pct_Pos_Minus_Neg_{self.cell_lines[1]}"]
+                if (x_val < -50 and y_val < -50) or (x_val > 50 and y_val > 50):
+                    texts.append(
+                        ax.text(
+                            x_val,
+                            y_val,
+                            row["Feature"],
+                            fontsize=5,  # Reduced fontsize
+                            color="black",
+                            alpha=0.8
+                        )
+                    )
+            
+            adjustText.adjust_text(
+                texts,
+                ax=ax,
+                arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+                ensure_inside_axes=False,
+                expand_text=(2.0, 2.0),   # Increase distance between text labels
+                expand_points=(2.0, 2.0),  # Increase distance from points
+                force_text=(0.5, 0.5),     # Increase repulsion between texts
+                force_points=(0.5, 0.5),   # Increase repulsion between texts and points
+                lim=1000                    # Allow more iterations for better spacing
+            )
+
+            if cutoff == 0.01:
+                plt.savefig(
+                    self.FIGURES["pct_positive_minus_negative_local_SHAP"]["matching_features_bound_scatter"], 
+                    bbox_inches='tight',
+                    dpi=600
+                )
+
+            plt.show()
 
 
     def parallel_helper_local_SHAP_percent_non_zero(self, data, zero_cutoff): 
