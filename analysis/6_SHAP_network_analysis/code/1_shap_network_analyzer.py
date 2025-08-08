@@ -6061,6 +6061,93 @@ class ShapNetworkInvestigator:
             out_df.to_csv(data_file, sep="\t", index=False, compression="gzip")
 
 
+    def find_shap_waterfall_plot_examples(self): 
+
+        if not hasattr(self, "final_all_data_SHAP_data"):
+            self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
+        
+        PSI_THRESHOLDS = [0.1, 0.9]
+        BINDING_SUM_THRESHOLD = 5
+        PREDICTION_ERROR_THRESHOLD = 0.1
+
+        # Efficiently collect unique RBP_KD_Target values for each cell line
+        rbp_kd_targets = {
+            cell_line: set(self.final_all_data_SHAP_data[cell_line].select("RBP_KD_Target").unique().get_column("RBP_KD_Target").to_list())
+            for cell_line in self.cell_lines
+        }
+
+        # Intersect to get RBPs with knockdown in both cell lines, excluding "CTRL"
+        rbps_both = rbp_kd_targets[self.cell_lines[0]].intersection(rbp_kd_targets[self.cell_lines[1]])
+        rbps_both.discard("CTRL")
+
+        rbps_both = sorted(rbps_both)
+
+        # create lazy frames for each cell line with the base filtering conditions
+        base_filtering = {}
+        for cell_line in self.cell_lines:
+            base_filtering[cell_line] = self.final_all_data_SHAP_data[cell_line].filter(
+                (pl.col("Target_PSI") < PSI_THRESHOLDS[1]) & 
+                (pl.col("Target_PSI") > PSI_THRESHOLDS[0]) &
+                (pl.col("has_RBP_KD") == True) &
+                ((pl.col("Target_PSI") - pl.col("Averaged Prediction (Probability)")).abs() < PREDICTION_ERROR_THRESHOLD) & 
+                (pl.col("Binding Sum") > BINDING_SUM_THRESHOLD) &
+                (pl.col("RBP_KD_Target").is_in(rbps_both)) 
+            )
+
+        # Collect indices for both cell lines matching RBP_KD_Target and Target_PSI thresholds
+        indices_per_cell_line = {}
+        for cell_line in self.cell_lines:
+            indices_per_cell_line[cell_line] = set(
+                base_filtering[cell_line].select("index").get_column("index").to_list()
+            )
+
+        # Find intersection of indices between both cell lines
+        matching_indices = set.intersection(*indices_per_cell_line.values())
+        logger.info(f"Found {len(matching_indices)} indices matching {len(rbps_both)} RBPs with knockdown in both cell lines, and Target_PSI in {PSI_THRESHOLDS}")
+
+        # Now filter each cell line's DataFrame by the intersection of indices, overwriting base_filtering
+        for cell_line in self.cell_lines:
+            base_filtering[cell_line] = base_filtering[cell_line].filter(
+                pl.col("index").is_in(matching_indices)
+            )
+
+        # Example: print number of filtered rows per cell line
+        for cell_line, df in base_filtering.items():
+            logger.info(f"{cell_line}: {df.shape[0]} rows with RBP_KD_Target in both cell lines, Target_PSI in {PSI_THRESHOLDS}, and matching indices")
+
+        for cell_line in self.cell_lines:
+            df = base_filtering[cell_line]
+            shap_cols = [col for col in df.columns if col.endswith("_shap")]
+
+            # Calculate average non-zeroness per row (mean absolute value across SHAP columns)
+            avg_non_zeroness = df.select([pl.col(col).abs() for col in shap_cols]).sum_horizontal() / len(shap_cols)
+            # Compute average signed SHAP per row (mean of SHAP columns)
+            avg_row_shap = df.select([pl.col(col) for col in shap_cols]).sum_horizontal() / len(shap_cols)
+
+            # Compute difference between avg_non_zeroness and abs(avg_row_shap)
+            # This gives a signed difference where positive means avg_non_zeroness is greater than avg_row_shap
+            diff_nonzeroness_signed = avg_non_zeroness - avg_row_shap.abs()
+
+            # Add new columns and sort by diff_nonzeroness_signed
+            filtered_df = df.with_columns([
+                pl.Series("avg_non_zeroness", avg_non_zeroness),
+                pl.Series("avg_row_shap", avg_row_shap),
+                pl.Series("diff_nonzeroness_signed", diff_nonzeroness_signed)
+            ]).sort("diff_nonzeroness_signed", descending=True)
+
+            # Select the three new columns first, then all shap columns
+            ordered_cols = ["avg_non_zeroness", "avg_row_shap", "diff_nonzeroness_signed", "Binding Sum"] + shap_cols
+            filtered_df = filtered_df.select(ordered_cols)
+
+            base_filtering[cell_line] = filtered_df
+            
+        del indices_per_cell_line, matching_indices,
+        gc.collect()
+
+        return base_filtering
+
+
+
 ###############################################################
 ###############################################################
 ###############################################################
