@@ -682,7 +682,7 @@ class ShapNetworkInvestigator:
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
-        VALID_MODES = ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']
+        VALID_MODES = ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position', "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]
         assert mode in VALID_MODES, f"mode should be one of {VALID_MODES}"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
@@ -690,7 +690,7 @@ class ShapNetworkInvestigator:
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
         else: 
 
-            if mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
+            if mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only']:
                 global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None, underlying_data = binding_unique)
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1], underlying_data = binding_unique)
@@ -734,19 +734,19 @@ class ShapNetworkInvestigator:
                 plt.show()
                 plt.close()
 
-        elif mode in ['5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
+        else: 
 
             # Calculate the combined range of all heatmaps to define consistent bins
             all_values = np.concatenate([heatmap.to_numpy().flatten() for heatmap in global_SHAP.values()])
             
-            if mode == "Bound-Only":
+            if "Bound-Only" in mode: 
                 all_values = all_values[~np.isnan(all_values)]  # Remove NaN values
             else: 
                 assert not np.isnan(all_values).any(), "NaN values found in all_values"   
                 
             if mode == '5_dfs_average':
                 prefix = binding_unique.replace('-', ' ')
-            elif mode == 'Bound-Only' or mode == 'NOT-Bound-Only':
+            elif mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only']:
                 prefix = mode.replace('-', ' ')
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
@@ -900,24 +900,27 @@ class ShapNetworkInvestigator:
                     heatmap_kwargs = dict(
                         data=ordered_heatmap,
                         ax=ax,
-                        cmap="Blues",
+                        cmap= "seismic" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues",
                         cbar=True,
                         linewidths=0.01,  # Add black border around each cell
                         linecolor="gray",
                         cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},  # Adjust colorbar position and size
                         vmin=None,
+                        center= 0 if mode.startswith("Signed-Local-SHAP-Mean") else None,
                         norm=norm,
                         annot=True,
                         fmt=".3f",  # Default annotation format
                         annot_kws={"size": 14, "rotation": 90},
                     )
                     
-                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
+                    set_bad_color=False
+                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]: 
                         heatmap_kwargs["mask"] = ordered_heatmap.isnull()
+                        set_bad_color = True
 
                     sns.heatmap(**heatmap_kwargs)
 
-                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
+                    if set_bad_color:
                         ax.set_facecolor("black")
 
                     cbar = ax.collections[0].colorbar
@@ -991,11 +994,11 @@ class ShapNetworkInvestigator:
                 "K562": k562_values,
                 "Feature": features
             })
-            if mode == "Bound-Only":
+            if "Bound-Only" in mode: 
                 combined_df = combined_df.dropna(axis = 0, how = 'any')
             # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
 
-            if mode == 'Bound-Only':
+            if "Bound-Only" in mode:
                 n_largest = 25
                 fontsize= 3
                 x_offset = 0.05
@@ -1022,7 +1025,7 @@ class ShapNetworkInvestigator:
             for i, (label, xscale, yscale) in enumerate(plot_types):
                 ax = axes[i]
                 
-                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position"]:
+                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]:
                     combined_df = combined_df.dropna(subset=["HepG2", "K562"])
 
                 x = combined_df["HepG2"]
