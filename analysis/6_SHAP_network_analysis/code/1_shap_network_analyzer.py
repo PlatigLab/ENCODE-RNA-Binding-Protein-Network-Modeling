@@ -116,6 +116,10 @@ class ShapNetworkInvestigator:
                 "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
             },
             "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
+            "position_3_4_activating_and_others_repressing": {
+                "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
+                "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
+            }
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -6145,6 +6149,102 @@ class ShapNetworkInvestigator:
         gc.collect()
 
         return base_filtering
+
+
+    def is_position_3_4_activating_and_others_repressing(self): 
+
+        # BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["Bound Local SHAP Values"]
+        # NOT_BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["Not Bound Local SHAP Values"]
+
+        # if Path(BOUND_LOCAL_SHAP).exists() and Path(NOT_BOUND_LOCAL_SHAP).exists():
+
+            
+        
+        # Accumulate all cell line/position/SHAP values into a single DataFrame
+        all_rows = []
+        for cell_line, shap_col, series in bound_global_SHAP:
+            _, pos = self.get_RBP_position(shap_col)
+            for val in series.to_numpy():
+                all_rows.append({"Cell Line": cell_line, "Position": pos, "Bound Local SHAP": val})
+
+        # Save the entire data as a DataFrame for downstream usage (using polars for speed)
+        all_shap_df = pl.DataFrame(all_rows)
+        all_shap_df.write_csv("bound_local_shap_by_position.csv")
+
+        # Load the saved DataFrame for plotting (using polars, then convert to pandas)
+        loaded_shap_df = pl.read_csv("bound_local_shap_by_position.csv").to_pandas()
+        # Plot: 2 subplots, one per cell line (as two rows, sharing x and y axes)
+            fig, axes = plt.subplots(2, 1, figsize=(7, 8), dpi=300, sharex=True, sharey=True)
+            for ax, cell_line in zip(axes, self.cell_lines):
+
+                plot_df = loaded_shap_df[loaded_shap_df["Cell Line"] == cell_line]
+                position_order = sorted(plot_df["Position"].unique())
+                sns.violinplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Bound Local SHAP",
+                    ax=ax,
+                    inner=None,
+                    cut=0,
+                    density_norm="width",
+                    color="lightsteelblue",
+                    linewidth=1,
+                    alpha=0.5,
+                    order=position_order
+                )
+
+                sns.boxplot(
+                    data=plot_df,
+                    x="Position",
+                    y="Bound Local SHAP",
+                    ax=ax,
+                    width=0.3,
+                    boxprops={"facecolor": "none", "edgecolor": "black"},
+                    showcaps=True,
+                    showfliers=True,
+                    flierprops={
+                        "marker": "o",
+                        "color": "yellow",
+                        "markersize": 0.3,
+                        "alpha": 0.05
+                    },
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "gold", "linewidth": 1},
+                    order=position_order
+                )
+
+                # Increase y-axis limit 
+                ymin, ymax = ax.get_ylim()
+                ax.set_ylim(ymin, ymax + 0.1)
+
+                # Annotate above each position in the order of position_order
+                for i, pos in enumerate(position_order):
+                    vals = plot_df[plot_df["Position"] == pos]["Bound Local SHAP"]
+                    n_points = len(vals)
+                    avg_val = np.mean(vals)
+                    median_val = np.median(vals)
+
+                    ax.text(
+                        i, 
+                        ymax + (0.015 if cell_line == "HepG2" else -0.1),
+                        f"Points: {n_points:,}\nAvg: {avg_val:.2g}\nMed:{median_val:.2g}",
+                        ha="center", va="bottom", fontsize=8, color="black"
+                    )
+
+                ax.set_title(cell_line, fontsize=16)
+                ax.set_xlabel("Position", fontsize=12)
+                ax.set_ylabel("Bound Local SHAP", fontsize=12)
+                ax.tick_params(axis='x', labelsize=12)
+                ax.tick_params(axis='y', labelsize=12)
+
+            plt.suptitle("Unique-Binding: Bound Local SHAP values across Features by Position & Cell Line", fontsize=12)
+            plt.tight_layout()
+            plt.show()
+
+
+
+
 
 
 
