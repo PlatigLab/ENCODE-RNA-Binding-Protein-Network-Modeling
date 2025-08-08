@@ -852,7 +852,7 @@ class ShapNetworkInvestigator:
             ax.tick_params(axis='y', labelsize=8)
 
             plt.tight_layout()
-            plt.savefig(self.FIGURES["global_SHAP_distribution"][mode], dpi=300, bbox_inches='tight')
+            plt.savefig(self.FIGURES["global_SHAP_distribution"][mode], dpi=600, bbox_inches='tight')
             plt.show()
 
             for iteration, log_scale in enumerate([False, True]):
@@ -919,7 +919,7 @@ class ShapNetworkInvestigator:
                 plt.tight_layout()
 
                 if not log_scale: 
-                    plt.savefig(self.FIGURES["global_SHAP_heatmap"][mode], dpi=300, bbox_inches='tight')
+                    plt.savefig(self.FIGURES["global_SHAP_heatmap"][mode], dpi=600, bbox_inches='tight')
 
                 plt.show()
 
@@ -1944,7 +1944,7 @@ class ShapNetworkInvestigator:
                     median_difference = plot_df[plot_df['Position']=='3, 4']['Value'].median() - plot_df[plot_df['Position']=='1, 2, 5, 6']['Value'].median()
                     ax.text(
                         0.5, 0.6,
-                        f"Δ Median =\n{median_difference:.2f}",
+                        f"Δ Median =\n{median_difference:.2e}",
                         ha="center", va="center", fontsize=16, color="green", transform=ax.transAxes
                     )
 
@@ -1974,7 +1974,7 @@ class ShapNetworkInvestigator:
                 fontsize=16, y=1.025)
             plt.tight_layout()
 
-            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["grouped_positions"][shap_key], dpi=300, bbox_inches='tight')
+            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["grouped_positions"][shap_key], dpi=600, bbox_inches='tight')
             plt.show()
 
             # New figure: violinplot and boxplot for each position (1-6) per cell line and model
@@ -2044,7 +2044,7 @@ class ShapNetworkInvestigator:
             )
             plt.tight_layout()
 
-            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["separated_positions"][shap_key], dpi=300, bbox_inches='tight')
+            plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["separated_positions"][shap_key], dpi=600, bbox_inches='tight')
             plt.show()
         
 
@@ -4886,7 +4886,7 @@ class ShapNetworkInvestigator:
 
         for metric in ["ARBS", "NARBS"]:
             for cutoff in shared_cutoffs:
-                fig, axes = plt.subplots(2, 2, figsize=(14, 13), dpi=300, sharex=True, sharey=True)
+                fig, axes = plt.subplots(2, 2, figsize=(14, 13), dpi=50, sharex=True, sharey=True)
 
                 for row_idx, cell_line in enumerate(self.cell_lines):
                     for col_idx, (mode, df, percent_dict) in enumerate([
@@ -5308,7 +5308,7 @@ class ShapNetworkInvestigator:
         fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
         plt.tight_layout()
 
-        plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=300, bbox_inches='tight')
+        plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
         plt.show()
 
         del dfs 
@@ -5435,7 +5435,7 @@ class ShapNetworkInvestigator:
         ax.spines['right'].set_visible(False)
 
         plt.tight_layout()
-        plt.savefig(self.FIGURES["global_SHAP_distribution"]["All Together"], dpi=300, bbox_inches='tight')
+        plt.savefig(self.FIGURES["global_SHAP_distribution"]["All Together"], dpi=600, bbox_inches='tight')
         plt.show()
 
 
@@ -5577,7 +5577,7 @@ class ShapNetworkInvestigator:
 
             plt.tight_layout(pad=2)
 
-            plt.savefig(self.FIGURES["global_shap_position_highlighting_bar_plots"][group["type"]], dpi=300, bbox_inches='tight')
+            plt.savefig(self.FIGURES["global_shap_position_highlighting_bar_plots"][group["type"]], dpi=600, bbox_inches='tight')
             plt.show()
 
 
@@ -5802,7 +5802,7 @@ class ShapNetworkInvestigator:
 
                 plt.tight_layout()
                 if cutoff == .1 and x_axis == "Cell Line" and hue == "Unit":
-                    plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_and_percentage_bound_local_SHAP_greater_than_0.1"], dpi=300, bbox_inches='tight')
+                    plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_and_percentage_bound_local_SHAP_greater_than_0.1"], dpi=600, bbox_inches='tight')
                 plt.show()
 
 
@@ -5927,7 +5927,7 @@ class ShapNetworkInvestigator:
                 )
 
                 plt.tight_layout()
-                plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_bound_vs_num_bound_gt_cutoff"][col_type][f"{'log' if log_norm else 'linear'}"], dpi=300, bbox_inches='tight')
+                plt.savefig(self.FIGURES["per_row_num_bound_and_percent_greater_than_cutoff"]["num_bound_vs_num_bound_gt_cutoff"][col_type][f"{'log' if log_norm else 'linear'}"], dpi=600, bbox_inches='tight')
                 plt.show()
 
 
