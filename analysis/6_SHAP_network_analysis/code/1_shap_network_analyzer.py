@@ -3325,7 +3325,7 @@ class ShapNetworkInvestigator:
         
         else:
             logger.info(f"Calculating percent positive and negative local SHAP for mode {mode}")
-            POSITIVE_NEGATIVE_CUTOFFS = [1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 0.1]
+            POSITIVE_NEGATIVE_CUTOFFS = [1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 0.05, 0.1]
 
             # Get local SHAP values for the entire dataset with the specified binding_value based on mode
             if mode == "NOT-Bound-Only":
@@ -3400,7 +3400,7 @@ class ShapNetworkInvestigator:
         not_bound_data = self.calculate_percent_positive_and_negative_local_SHAP_per_feature(mode="NOT-Bound-Only", underlying_data=underlying_data)
 
         # CUTOFFS = bound_data.keys()
-        CUTOFFS = [.01]
+        CUTOFFS = [.01, .05, .1]
 
         for cell_line in self.cell_lines:
             for cutoff in CUTOFFS:
