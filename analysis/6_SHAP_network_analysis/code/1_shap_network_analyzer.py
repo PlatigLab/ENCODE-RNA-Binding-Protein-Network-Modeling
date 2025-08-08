@@ -81,6 +81,20 @@ class ShapNetworkInvestigator:
                                 "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
                             }
                     },
+                "Signed-Local-SHAP-Mean-Bound-Only":
+                    {
+                        None:
+                            {
+                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                            }
+                    }, 
+                "Signed-Local-SHAP-Mean-NOT-Bound-Only":
+                    {   
+                        None:
+                            {
+                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
+                            }
+                    },
             },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
@@ -143,14 +157,14 @@ class ShapNetworkInvestigator:
     }
 
     latex_symbols = {
-        "Unique-Binding": 
-            {
+        "Unique-Binding": {
                 "5_dfs_average": r"$\Phi_{i}$", 
                 "Bound-Only": r"$\Phi_{i}[{b}=1]$", 
                 "NOT-Bound-Only": r"$\Phi_{i}[{b}=0]$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
                 "local_SHAP_bound": r"$\varphi_{i,j}[{b}=1]$",
-
+                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi_{i,j}[{b}=1]}$",
+                "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi_{i,j}[{b}=0]}$",
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
@@ -169,16 +183,22 @@ class ShapNetworkInvestigator:
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_distribution_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_distribution_unique_binding.png",
             "All Together": "../outputs/publication_figures/global_shap/ALL_TOGETHER_global_SHAP_distribution_unique_binding.png",
+            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_distribution_unique_binding.png",
+            "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_distribution_unique_binding.png",
         }, 
         "global_SHAP_heatmap": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_heatmap_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_heatmap_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_heatmap_unique_binding.png",
+            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_heatmap_unique_binding.png",
+            "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_heatmap_unique_binding.png",
         },
         "global_shap_matching_features_scatter": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_matching_features_scatter_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_matching_features_scatter_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_matching_features_scatter_unique_binding.png",
+            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_matching_features_scatter_unique_binding.png",
+            "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_matching_features_scatter_unique_binding.png",
         },
         "position_3_4_global_shap_beta_coeff_violinplot": {
             "grouped_positions": {
@@ -3051,7 +3071,7 @@ class ShapNetworkInvestigator:
 
     
     def calculate_specialized_global_SHAP(self, mode=None, condition=None, underlying_data=None): 
-        VALID_MODES = ["Bound-Only", "NOT-Bound-Only"]
+        VALID_MODES = ["Bound-Only", "NOT-Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
         assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position'], "Condition must be None, 'CTRL', 'RBP_KD', or 'RBP_KD_at_position'"
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
@@ -3069,15 +3089,21 @@ class ShapNetworkInvestigator:
             logger.info(f"Calculating specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data}.")
             specialized_global_SHAP = {}
 
-            if mode == "Bound-Only":
+            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"]:
                 binding_value = 1
-            elif mode == "NOT-Bound-Only":
+            elif mode in ["NOT-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]:
                 binding_value = 0
 
             # Use the generator to collect mean SHAP values for each feature at the given binding value
             cell_line_feature_dict = {cell_line: {} for cell_line in self.cell_lines}
             for yielded_cell_line, shap_col, series in self.get_local_SHAP_based_on_binding_and_covariates(binding_value, binding_pattern_type=underlying_data):
-                cell_line_feature_dict[yielded_cell_line][shap_col] = series.abs().mean()
+                
+                if mode.startswith("Signed-Local-SHAP-Mean"):
+                    tmp_mean = series.mean()
+                else: 
+                    tmp_mean = series.abs().mean()
+
+                cell_line_feature_dict[yielded_cell_line][shap_col] = tmp_mean
 
             for cell_line in self.cell_lines:
                 results = cell_line_feature_dict[cell_line]
@@ -6882,6 +6908,9 @@ if __name__ == "__main__":
         "pct_pos_neg_local_SHAP_per_feature_unbound", 
         "arbs_narbs_bound", 
         "arbs_narbs_unbound", 
+        "is_position_3_4_activating_and_others_repressing", 
+        "signed_local_SHAP_mean_bound",
+        "signed_local_SHAP_mean_unbound",
     ]
 
     parser.add_argument(
@@ -6950,9 +6979,25 @@ if __name__ == "__main__":
             analyzer.calculate_activator_repressor_behavior_score(
                 underlying_data="Unique-Binding",
                 binding_mode = "Bound-Only" if args.job_type.endswith("_bound") else "NOT-Bound-Only",
-
             )
 
+        elif args.job_type == "is_position_3_4_activating_and_others_repressing": 
+            analyzer.is_position_3_4_activating_and_others_repressing()
 
+        elif args.job_type.startswith("signed_local_SHAP_mean_"): 
+            
+            if args.job_type.endswith("_bound"):
+                mode = "Signed-Local-SHAP-Mean-Bound-Only"
+            elif args.job_type.endswith("_unbound"):
+                mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+            else:
+                raise ValueError(f"Unknown job type: {args.job_type}")
+
+            analyzer.calculate_specialized_global_SHAP(
+                mode=mode, 
+                condition=None,
+                underlying_data="Unique-Binding"
+            )
+            
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
