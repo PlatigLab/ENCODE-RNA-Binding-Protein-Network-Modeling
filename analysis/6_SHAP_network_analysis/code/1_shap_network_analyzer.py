@@ -5521,8 +5521,8 @@ class ShapNetworkInvestigator:
 
         # Prepare plotting data for both groups
         rbp_groups = [
-            {"rbps": rbps_other, "type": "pos_other_highlight", 'supylabel_y_position': -0.08},
-            {"rbps": rbps_3_4, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015},
+            {"rbps": rbps_other, "type": "pos_other_highlight", 'supylabel_y_position': -0.08, 'sharey': True},
+            {"rbps": rbps_3_4, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015, 'sharey': True},
         ]
 
         for group in rbp_groups:
@@ -5533,7 +5533,7 @@ class ShapNetworkInvestigator:
 
             fig, axes = plt.subplots(
                 nrows=nrows, ncols=ncols, figsize=(1.8 * ncols, 1 * nrows),
-                sharex=True, sharey=True, squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=150
+                sharex=True, sharey=group['sharey'], squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=150
             )
 
             for row_idx, rbp in enumerate(rbps):
