@@ -29,4 +29,8 @@ analysis/6_ayan_rbp_ppi/output/ppi/ols_lin_reg_ppi_results/all_term/prediction_m
 analysis/6_SHAP_network_analysis/outputs/SHAP_cv/local_SHAP_cv.pkl.gz
 analysis/6_SHAP_network_analysis/outputs/SHAP_std/local_SHAP_std.pkl.gz
 
+# ignore model variation rapid testing side project
 analysis/6_model_variation_rapid_testing/*
+
+# all bound local shap values 
+analysis/6_SHAP_network_analysis/outputs/position_3_4_activating_others_repressing/*
