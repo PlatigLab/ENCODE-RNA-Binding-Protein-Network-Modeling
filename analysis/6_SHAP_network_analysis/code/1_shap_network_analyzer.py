@@ -166,8 +166,8 @@ class ShapNetworkInvestigator:
                 "NOT-Bound-Only": r"$\Phi_{i}[{b}=0]$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
                 "local_SHAP_bound": r"$\varphi_{i,j}[{b}=1]$",
-                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi_{i,j}[{b}=1]}$",
-                "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi_{i,j}[{b}=0]}$",
+                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i,j}[{b}=1]$",
+                "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i,j}[{b}=0]$",
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
@@ -761,365 +761,372 @@ class ShapNetworkInvestigator:
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
             
+            # Create a figure with 2 columns: left for histograms, right for boxplots
+            fig, axes = plt.subplots(len(global_SHAP), 2, figsize=(11, 7), dpi=200, sharex=True, sharey=False)
+            bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
 
-            # # Create a figure with 2 columns: left for histograms, right for boxplots
-            # fig, axes = plt.subplots(len(global_SHAP), 2, figsize=(11, 7), dpi=200, sharex=True, sharey=False)
-            # bins = np.linspace(all_values.min(), all_values.max(), 21)  # Define 20 equal-width bins
+            for row_idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
+                # Flatten the heatmap values into a single array
+                global_shap_values = heatmap.to_numpy().flatten()
+                global_shap_values = global_shap_values[~np.isnan(global_shap_values)]
+                num_points = len(global_shap_values)
 
-            # for row_idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
-            #     # Flatten the heatmap values into a single array
-            #     global_shap_values = heatmap.to_numpy().flatten()
-            #     global_shap_values = global_shap_values[~np.isnan(global_shap_values)]
-            #     num_points = len(global_shap_values)
+                # Left subplot: histogram
+                sns.histplot(
+                    global_shap_values,
+                    bins=bins,
+                    stat="percent",
+                    color="deepskyblue",
+                    edgecolor="black",
+                    alpha=0.7,
+                    ax=axes[row_idx, 0]
+                )
+                axes[row_idx, 0].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+                axes[row_idx, 0].set_xlabel("")
+                axes[row_idx, 0].set_ylabel("")
+                axes[row_idx, 0].tick_params(axis="both", labelsize=12)
 
-            #     # Left subplot: histogram
-            #     sns.histplot(
-            #         global_shap_values,
-            #         bins=bins,
-            #         stat="percent",
-            #         color="deepskyblue",
-            #         edgecolor="black",
-            #         alpha=0.7,
-            #         ax=axes[row_idx, 0]
-            #     )
-            #     axes[row_idx, 0].set_title(f"{cell_line} (n={num_points})", fontsize=12)
-            #     axes[row_idx, 0].set_xlabel("")
-            #     axes[row_idx, 0].set_ylabel("")
-            #     axes[row_idx, 0].tick_params(axis="both", labelsize=12)
+                # Right subplot: boxplot with dots
+                sns.boxplot(
+                    data=global_shap_values,
+                    orient="h",
+                    color="deepskyblue",
+                    ax=axes[row_idx, 1],
+                    width=0.5,
+                    showmeans=True,
+                    meanline=True,
+                    meanprops={"color": "red", "linewidth": 1.5}
+                )
+                sns.stripplot(
+                    data=global_shap_values,
+                    orient="h",
+                    color="black",
+                    size=5,
+                    alpha=0.1,
+                    ax=axes[row_idx, 1]
+                )
+                axes[row_idx, 1].set_title(f"{cell_line} (n={num_points})", fontsize=12)
+                axes[row_idx, 1].set_xlabel("")
+                axes[row_idx, 1].set_ylabel("")
+                axes[row_idx, 1].tick_params(axis="both", labelsize=12)
 
-            #     # Right subplot: boxplot with dots
-            #     sns.boxplot(
-            #         data=global_shap_values,
-            #         orient="h",
-            #         color="deepskyblue",
-            #         ax=axes[row_idx, 1],
-            #         width=0.5,
-            #         showmeans=True,
-            #         meanline=True,
-            #         meanprops={"color": "red", "linewidth": 1.5}
-            #     )
-            #     sns.stripplot(
-            #         data=global_shap_values,
-            #         orient="h",
-            #         color="black",
-            #         size=5,
-            #         alpha=0.1,
-            #         ax=axes[row_idx, 1]
-            #     )
-            #     axes[row_idx, 1].set_title(f"{cell_line} (n={num_points})", fontsize=12)
-            #     axes[row_idx, 1].set_xlabel("")
-            #     axes[row_idx, 1].set_ylabel("")
-            #     axes[row_idx, 1].tick_params(axis="both", labelsize=12)
+            plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=16, y=0.98)
+            fig.supxlabel("Global SHAP Value", fontsize=16)
+            fig.supylabel("Percentage", fontsize=16)
+            plt.tight_layout()
+            plt.show()
 
-            # plt.suptitle(f"{prefix}: Global SHAP per Cell Line from Avg. 5 Models' Local SHAP", fontsize=16, y=0.98)
-            # fig.supxlabel("Global SHAP Value", fontsize=16)
-            # fig.supylabel("Percentage", fontsize=16)
-            # plt.tight_layout()
-            # plt.show()
+            # Prepare data for violinplot: melt global_SHAP into long format
+            violin_data = []
+            for cell_line, heatmap in global_SHAP.items():
+                for pos in heatmap.index:
+                    for rbp in heatmap.columns:
+                        value = heatmap.at[pos, rbp]
+                        violin_data.append({"Cell Line": cell_line, "Global SHAP": value})
+            violin_df = pd.DataFrame(violin_data)
 
-            # # Prepare data for violinplot: melt global_SHAP into long format
-            # violin_data = []
-            # for cell_line, heatmap in global_SHAP.items():
-            #     for pos in heatmap.index:
-            #         for rbp in heatmap.columns:
-            #             value = heatmap.at[pos, rbp]
-            #             violin_data.append({"Cell Line": cell_line, "Global SHAP": value})
-            # violin_df = pd.DataFrame(violin_data)
+            plt.figure(figsize=(5,3), dpi=300)
+            ax = plt.gca()
 
-            # plt.figure(figsize=(5,3), dpi=300)
-            # ax = plt.gca()
-
-            # # Violinplot with boxplot inside, grouped by cell line
-            # # Use light orange for HepG2 and light blue for K562
-            # palette = {"HepG2": "#FFD580", "K562": "#ADD8E6"}
-            # sns.violinplot(
-            #     data=violin_df,
-            #     x="Cell Line",
-            #     y="Global SHAP",
-            #     inner=None,
-            #     palette=palette,
-            #     cut=0,
-            #     linewidth=1,
-            #     edgecolor="black",
-            #     density_norm="width",
-            #     ax=ax
-            # )
+            # Violinplot with boxplot inside, grouped by cell line
+            # Use light orange for HepG2 and light blue for K562
+            palette = {"HepG2": "#FFD580", "K562": "#ADD8E6"}
+            sns.violinplot(
+                data=violin_df,
+                x="Cell Line",
+                y="Global SHAP",
+                inner=None,
+                palette=palette,
+                cut=0,
+                linewidth=1,
+                edgecolor="black",
+                density_norm="width",
+                ax=ax
+            )
             
-            # sns.boxplot(
-            #     data=violin_df,
-            #     x="Cell Line",
-            #     y="Global SHAP",
-            #     width=0.2,
-            #     showcaps=True,
-            #     showfliers=True,
-            #     boxprops={"facecolor": "none", "edgecolor": "black", "zorder": 2},
-            #     meanline=True,
-            #     showmeans=True,
-            #     meanprops={"color": "red", "linestyle": "--", "linewidth": 1.5},
-            #     flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "gray", "alpha": 0.5},
-            #     ax=ax
-            # )
+            sns.boxplot(
+                data=violin_df,
+                x="Cell Line",
+                y="Global SHAP",
+                width=0.2,
+                showcaps=True,
+                showfliers=True,
+                boxprops={"facecolor": "none", "edgecolor": "black", "zorder": 2},
+                meanline=True,
+                showmeans=True,
+                meanprops={"color": "red", "linestyle": "--", "linewidth": 1.5},
+                flierprops={"marker": "o", "markersize": 2, "markerfacecolor": "gray", "alpha": 0.5},
+                ax=ax
+            )
 
-            # # Set y-axis limit to be 0 to 20% larger than the current max
-            # _, ymax = ax.get_ylim()
-            # ax.set_ylim(-0.02, ymax * 1.25)
+            # Set y-axis limit to be 0 to 20% larger than the current max
+            _, ymax = ax.get_ylim()
+            ax.set_ylim(-0.02, ymax * 1.25)
 
-            # # Draw dashed line for the mean per cell line
-            # for i, cell_line in enumerate(sorted(violin_df["Cell Line"].unique())):
-            #     vals = violin_df[violin_df["Cell Line"] == cell_line]["Global SHAP"].dropna()
-            #     # mean_val = vals.mean()
-            #     # ax.hlines(mean_val, i - 0.3, i + 0.3, colors="red", linestyles="--", linewidth=2, zorder=3)
-            #     n_points = len(vals)
-            #     median_val = np.median(vals)
-            #     pct_zero = (vals == 0).mean() * 100
-            #     # Place annotation inside the plot area, just below the top y-limit
-            #     ax.text(
-            #         i, ax.get_ylim()[1] - 0.04 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
-            #         f"# Values: {n_points}\nMedian: {median_val:.3g}\n% Zero: {pct_zero:.1f}",
-            #         ha="center", va="top", fontsize=7, color="black"
-            #     )
+            # Draw dashed line for the mean per cell line
+            for i, cell_line in enumerate(sorted(violin_df["Cell Line"].unique())):
+                vals = violin_df[violin_df["Cell Line"] == cell_line]["Global SHAP"].dropna()
+                # mean_val = vals.mean()
+                # ax.hlines(mean_val, i - 0.3, i + 0.3, colors="red", linestyles="--", linewidth=2, zorder=3)
+                n_points = len(vals)
+                median_val = np.median(vals)
+                pct_zero = (vals == 0).mean() * 100
+                # Place annotation inside the plot area, just below the top y-limit
+                ax.text(
+                    i, ax.get_ylim()[1] - 0.04 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+                    f"# Values: {n_points}\nMedian: {median_val:.3g}\n% Zero: {pct_zero:.1f}",
+                    ha="center", va="top", fontsize=7, color="black"
+                )
 
-            # ax.set_title(f"{binding_unique} - {mode}: Global SHAP Value Distribution per Cell Line", fontsize=6, y=1.05)
-            # ax.set_xlabel("Cell Line", fontsize=10)
-            # ax.set_ylabel(self.latex_symbols[binding_unique][mode], fontsize=14)
-            # ax.tick_params(axis='x', labelsize=8)
-            # ax.tick_params(axis='y', labelsize=8)
+            ax.set_title(f"{binding_unique} - {mode}: Global SHAP Value Distribution per Cell Line", fontsize=6, y=1.05)
+            ax.set_xlabel("Cell Line", fontsize=10)
+            ax.set_ylabel(self.latex_symbols[binding_unique][mode], fontsize=14)
+            ax.tick_params(axis='x', labelsize=8)
+            ax.tick_params(axis='y', labelsize=8)
 
-            # plt.tight_layout()
-            # plt.savefig(self.FIGURES["global_SHAP_distribution"][mode], dpi=600, bbox_inches='tight')
-            # plt.show()
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["global_SHAP_distribution"][mode], dpi=600, bbox_inches='tight')
+            plt.show()
 
-            # for iteration, log_scale in enumerate([False, True]):
-            #     fig, axes = plt.subplots(2, 1, figsize=(35, 17), dpi=200, sharey=True)
+            for iteration, log_scale in enumerate([False, True]):
+                fig, axes = plt.subplots(2, 1, figsize=(35, 17), dpi=200, sharey=True)
 
-            #     for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
-            #         # Perform hierarchical clustering on the columns
-            #         linkage = sch.linkage(heatmap.T.fillna(0), method="ward")
-            #         dendrogram = sch.dendrogram(linkage, no_plot=True)
-            #         ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
-            #         # Reorder the heatmap columns based on the clustering
-            #         ordered_heatmap = heatmap[ordered_columns]
+                for ax, (cell_line, heatmap) in zip(axes, global_SHAP.items()):
+                    # Perform hierarchical clustering on the columns
+                    linkage = sch.linkage(heatmap.T.fillna(0), method="ward")
+                    dendrogram = sch.dendrogram(linkage, no_plot=True)
+                    ordered_columns = [heatmap.columns[i] for i in dendrogram["leaves"]]
+                    # Reorder the heatmap columns based on the clustering
+                    ordered_heatmap = heatmap[ordered_columns]
 
-            #         # Set norm for log scale if needed
-            #         if log_scale:
-            #             # norm = LogNorm(vmin=max(heatmap.min().min(), 1e-6), vmax=heatmap.max().max())
-            #             norm=LogNorm()
-            #         else:
-            #             norm = None
+                    # Set norm for log scale if needed
+                    if log_scale:
+                        # norm = LogNorm(vmin=max(heatmap.min().min(), 1e-6), vmax=heatmap.max().max())
+                        norm=LogNorm()
+                    else:
+                        norm = None
 
-            #         heatmap_kwargs = dict(
-            #             data=ordered_heatmap,
-            #             ax=ax,
-            #             cmap= "seismic" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues",
-            #             cbar=True,
-            #             linewidths=0.01,  # Add black border around each cell
-            #             linecolor="gray",
-            #             cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},  # Adjust colorbar position and size
-            #             vmin=None,
-            #             center= 0 if mode.startswith("Signed-Local-SHAP-Mean") else None,
-            #             norm=norm,
-            #             annot=True,
-            #             fmt=".3f",  # Default annotation format
-            #             annot_kws={"size": 14, "rotation": 90},
-            #         )
+                    heatmap_kwargs = dict(
+                        data=ordered_heatmap,
+                        ax=ax,
+                        cmap= "seismic" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues",
+                        cbar=True,
+                        linewidths=0.01,  # Add black border around each cell
+                        linecolor="gray",
+                        cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},  # Adjust colorbar position and size
+                        vmin=None,
+                        center= 0 if mode.startswith("Signed-Local-SHAP-Mean") else None,
+                        norm=norm,
+                        annot=True,
+                        fmt=".3f",  # Default annotation format
+                        annot_kws={"size": 14, "rotation": 90},
+                    )
                     
-            #         set_bad_color=False
-            #         if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]: 
-            #             heatmap_kwargs["mask"] = ordered_heatmap.isnull()
-            #             set_bad_color = True
+                    set_bad_color=False
+                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]: 
+                        heatmap_kwargs["mask"] = ordered_heatmap.isnull()
+                        set_bad_color = True
 
-            #         sns.heatmap(**heatmap_kwargs)
+                    sns.heatmap(**heatmap_kwargs)
 
-            #         if set_bad_color:
-            #             ax.set_facecolor("black")
+                    if set_bad_color:
+                        ax.set_facecolor("black")
 
-            #         cbar = ax.collections[0].colorbar
-            #         cbar.ax.tick_params(labelsize=26)  # Make colorbar tick labels larger
-            #         ax.set_title(f"{cell_line}", fontsize=35, pad=15)
-            #         ax.set_xlabel("")
-            #         ax.set_ylabel("")
-            #         ax.tick_params(axis='y', labelsize=30)  # Make y-axis tick labels larger
-            #         ax.tick_params(axis='x', labelsize=13)
+                    cbar = ax.collections[0].colorbar
+                    cbar.ax.tick_params(labelsize=26)  # Make colorbar tick labels larger
+                    ax.set_title(f"{cell_line}", fontsize=35, pad=15)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    ax.tick_params(axis='y', labelsize=30)  # Make y-axis tick labels larger
+                    ax.tick_params(axis='x', labelsize=13)
 
-            #     # Add a caption for the log scale iteration
-            #     caption = ""
-            #     if log_scale:
-            #         caption = "\nNOTE 2: colorbar is log-scaled and only shows values > 0."
+                # Add a caption for the log scale iteration
+                caption = ""
+                if log_scale:
+                    caption = "\nNOTE 2: colorbar is log-scaled and only shows values > 0."
 
-            #     fig.suptitle(
-            #         f"{prefix}: Global SHAP w/ Ward Hierarchical Clustering Order\n"
-            #         f"NOTE: after averaging all local SHAP values across 5 models per cell line{caption}",
-            #         fontsize=40, y=1.01, x=0.45
-            #     )
-            #     fig.supxlabel("RBP", fontsize=40, x=0.43)
-            #     fig.supylabel("Position", fontsize=40, x=-0.005)
-            #     plt.tight_layout()
+                fig.suptitle(
+                    f"{prefix}: Global SHAP w/ Ward Hierarchical Clustering Order\n"
+                    f"NOTE: after averaging all local SHAP values across 5 models per cell line{caption}",
+                    fontsize=40, y=1.01, x=0.45
+                )
+                fig.supxlabel("RBP", fontsize=40, x=0.43)
+                fig.supylabel("Position", fontsize=40, x=-0.005)
+                plt.tight_layout()
 
-            #     if not log_scale: 
-            #         plt.savefig(self.FIGURES["global_SHAP_heatmap"][mode], dpi=600, bbox_inches='tight')
+                if not log_scale: 
+                    plt.savefig(self.FIGURES["global_SHAP_heatmap"][mode], dpi=600, bbox_inches='tight')
 
-            #     plt.show()
+                plt.show()
 
-            # # Plot dendrograms for hierarchical clustering of rows (positions) using Ward linkage, all in one figure
-            # n_cell_lines = len(global_SHAP)
-            # fig, axes = plt.subplots(1, n_cell_lines, figsize=(4* n_cell_lines, 3), dpi=300, squeeze=False)
-            # for idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
-            #     # Perform hierarchical clustering on the rows (positions)
-            #     linkage_rows = sch.linkage(heatmap.fillna(0), method="ward")
-            #     ax = axes[0, idx]
-            #     sch.dendrogram(linkage_rows, labels=heatmap.index, orientation="top", color_threshold=None, ax=ax)
-            #     ax.set_title(f"{cell_line}", fontsize=14)
-            #     ax.set_xlabel("")
-            #     ax.set_ylabel("")
+            # Plot dendrograms for hierarchical clustering of rows (positions) using Ward linkage, all in one figure
+            n_cell_lines = len(global_SHAP)
+            fig, axes = plt.subplots(1, n_cell_lines, figsize=(4* n_cell_lines, 3), dpi=300, squeeze=False)
+            for idx, (cell_line, heatmap) in enumerate(global_SHAP.items()):
+                # Perform hierarchical clustering on the rows (positions)
+                linkage_rows = sch.linkage(heatmap.fillna(0), method="ward")
+                ax = axes[0, idx]
+                sch.dendrogram(linkage_rows, labels=heatmap.index, orientation="top", color_threshold=None, ax=ax)
+                ax.set_title(f"{cell_line}", fontsize=14)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
             
-            # plt.suptitle(f"{prefix} {binding_unique}: Ward Clustering of Positions\nNOTE 1: Null values replaced with 0 for clustering", fontsize=12, y=1.1) 
-            # fig.supxlabel("Position", fontsize=12)
-            # fig.supylabel("Distance", fontsize=12)
+            plt.suptitle(f"{prefix} {binding_unique}: Ward Clustering of Positions\nNOTE 1: Null values replaced with 0 for clustering", fontsize=12, y=1.1) 
+            fig.supxlabel("Position", fontsize=12)
+            fig.supylabel("Distance", fontsize=12)
             
-            # plt.tight_layout()
-            # plt.show()
+            plt.tight_layout()
+            plt.show()
 
-            # # Convert global_SHAP data into pandas DataFrames
-            # hepg2_df = global_SHAP["HepG2"].copy()
-            # k562_df = global_SHAP["K562"].copy()
+            # Convert global_SHAP data into pandas DataFrames
+            hepg2_df = global_SHAP["HepG2"].copy()
+            k562_df = global_SHAP["K562"].copy()
 
-            # # Extract intersecting RBPs and positions
-            # intersecting_rbps = hepg2_df.columns.intersection(k562_df.columns)
-            # intersecting_positions = hepg2_df.index.intersection(k562_df.index)
+            # Extract intersecting RBPs and positions
+            intersecting_rbps = hepg2_df.columns.intersection(k562_df.columns)
+            intersecting_positions = hepg2_df.index.intersection(k562_df.index)
 
-            # # Subset the DataFrames to intersecting RBPs and positions using a for loop
-            # hepg2_values = []
-            # k562_values = []
-            # features = []
+            # Subset the DataFrames to intersecting RBPs and positions using a for loop
+            hepg2_values = []
+            k562_values = []
+            features = []
 
-            # for position in intersecting_positions:
-            #     for rbp in intersecting_rbps:
-            #         hepg2_values.append(hepg2_df.at[position, rbp])
-            #         k562_values.append(k562_df.at[position, rbp])
-            #         features.append(f"{rbp}_{position}")
+            for position in intersecting_positions:
+                for rbp in intersecting_rbps:
+                    hepg2_values.append(hepg2_df.at[position, rbp])
+                    k562_values.append(k562_df.at[position, rbp])
+                    features.append(f"{rbp}_{position}")
 
-            # # Create a combined DataFrame for plotting
-            # combined_df = pd.DataFrame({
-            #     "HepG2": hepg2_values,
-            #     "K562": k562_values,
-            #     "Feature": features
-            # })
-            # if "Bound-Only" in mode: 
-            #     combined_df = combined_df.dropna(axis = 0, how = 'any')
-            # # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
+            # Create a combined DataFrame for plotting
+            combined_df = pd.DataFrame({
+                "HepG2": hepg2_values,
+                "K562": k562_values,
+                "Feature": features
+            })
+            if "Bound-Only" in mode: 
+                combined_df = combined_df.dropna(axis = 0, how = 'any')
+            # Identify the top 5 features with the highest global SHAP values in HepG2 and K562
 
-            # if "Bound-Only" in mode:
-            #     n_largest = 25
-            #     fontsize= 3
-            #     x_offset = 0.05
-            #     y_offset = 0.04
+            if mode == "Bound-Only" or mode.startswith("Signed-Local-SHAP-Mean-"): 
 
-            # else: 
-            #     n_largest = 10
-            #     fontsize= 5
+                if mode == "Signed-Local-SHAP-Mean-Bound-Only": 
+                    n_largest_smallest = 20
+                elif mode == "Signed-Local-SHAP-Mean-NOT-Bound-Only": 
+                    n_largest_smallest = 10
+                elif mode == "Bound-Only": 
+                    n_largest = 25
 
-            #     if mode == "5_dfs_average":
-            #         x_offset = 0.01
-            #         y_offset = 0.006
-            #     elif mode == "NOT-Bound-Only":
-            #         x_offset = 0.004
-            #         y_offset = 0.002
+                fontsize= 3
 
-            # top_hepg2_features = combined_df.nlargest(n_largest, "HepG2")
-            # top_k562_features = combined_df.nlargest(n_largest, "K562")
-            # top_features = pd.concat([top_hepg2_features, top_k562_features]).drop_duplicates()
+            else: 
+                n_largest = 10
+                fontsize= 5
 
-            # fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=300)
-            # plot_types = [("Linear", None, None), ("Log-Log", "log", "log")]
+            if mode.startswith("Signed-Local-SHAP-Mean-"): 
 
-            # for i, (label, xscale, yscale) in enumerate(plot_types):
-            #     ax = axes[i]
+                highest_hepg2_features = combined_df.nlargest(n_largest_smallest, "HepG2")
+                highest_k562_features = combined_df.nlargest(n_largest_smallest, "K562")
+
+                lowest_hepg2_features = combined_df.nsmallest(n_largest_smallest, "HepG2")
+                lowest_k562_features = combined_df.nsmallest(n_largest_smallest, "K562")
+                top_features = pd.concat([highest_k562_features, highest_hepg2_features, lowest_hepg2_features, lowest_k562_features]).drop_duplicates()
+
+            else: 
+                top_hepg2_features = combined_df.nlargest(n_largest, "HepG2")
+                top_k562_features = combined_df.nlargest(n_largest, "K562")
+                top_features = pd.concat([top_hepg2_features, top_k562_features]).drop_duplicates()
+
+            fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=300)
+            plot_types = [("Linear", None, None), ("Log-Log", "log", "log")]
+
+            for i, (label, xscale, yscale) in enumerate(plot_types):
+                ax = axes[i]
                 
-            #     if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]:
-            #         combined_df = combined_df.dropna(subset=["HepG2", "K562"])
+                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]:
+                    combined_df = combined_df.dropna(subset=["HepG2", "K562"])
 
-            #     x = combined_df["HepG2"]
-            #     y = combined_df["K562"]
+                x = combined_df["HepG2"]
+                y = combined_df["K562"]
 
-            #     # For log-log, filter out non-positive values
-            #     if xscale == "log" and yscale == "log":
-            #         mask = (x > 0) & (y > 0)
-            #         x = x[mask]
-            #         y = y[mask]
-            #         features = combined_df["Feature"][mask]
-            #     else:
-            #         features = combined_df["Feature"]
+                # For log-log, filter out non-positive values
+                if xscale == "log" and yscale == "log":
+                    mask = (x > 0) & (y > 0)
+                    x = x[mask]
+                    y = y[mask]
+                    features = combined_df["Feature"][mask]
+                else:
+                    features = combined_df["Feature"]
 
-            #     # Calculate correlations
-            #     pearson_corr, _ = pearsonr(x, y)
-            #     spearman_corr, _ = spearmanr(x, y)
+                # Calculate correlations
+                pearson_corr, _ = pearsonr(x, y)
+                spearman_corr, _ = spearmanr(x, y)
 
-            #     sns.scatterplot(
-            #         x=x,
-            #         y=y,
-            #         alpha=0.7,
-            #         edgecolor="black",
-            #         color="deepskyblue",
-            #         s=20,
-            #         ax=ax
-            #     )
+                sns.scatterplot(
+                    x=x,
+                    y=y,
+                    alpha=0.7,
+                    edgecolor="black",
+                    color="deepskyblue",
+                    s=20,
+                    ax=ax
+                )
 
-            #     # Add y=x line
-            #     min_val = min(x.min(), y.min())
-            #     max_val = max(x.max(), y.max())
-            #     ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1, label="y=x")
-            #     ax.legend(loc = "upper center", fontsize=10)
+                # Add y=x line
+                min_val = min(x.min(), y.min())
+                max_val = max(x.max(), y.max())
+                ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1, label="y=x")
+                ax.legend(loc = "upper center", fontsize=10)
 
-            #     if xscale:
-            #         ax.set_xscale(xscale)
-            #     if yscale:
-            #         ax.set_yscale(yscale)
+                if xscale:
+                    ax.set_xscale(xscale)
+                if yscale:
+                    ax.set_yscale(yscale)
 
-            #     ax.set_title(f"{label} Scale", fontsize=14)
-            #     ax.set_xlabel("")
-            #     ax.set_ylabel("")
-            #     ax.text(
-            #         0.02, 0.95,
-            #         f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(x)}",
-            #         transform=ax.transAxes,
-            #         fontsize=10,
-            #         verticalalignment='top',
-            #         horizontalalignment='left'
-            #     )
+                ax.set_title(f"{label} Scale", fontsize=14)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.text(
+                    0.02, 0.95,
+                    f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(x)}",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='top',
+                    horizontalalignment='left'
+                )
 
-            #     # Annotate top features (only on linear plot for clarity)
-            #     if i == 0:
-            #         texts = []
-            #         for _, row in top_features.iterrows():
-            #             texts.append(
-            #                 ax.text(
-            #                     row["HepG2"],
-            #                     row["K562"],
-            #                     row["Feature"],
-            #                     fontsize=fontsize,
-            #                     color="brown",
-            #                     alpha=0.7
-            #                 )
-            #             )
+                # Annotate top features (only on linear plot for clarity)
+                if i == 0:
+                    texts = []
+                    for _, row in top_features.iterrows():
+                        texts.append(
+                            ax.text(
+                                row["HepG2"],
+                                row["K562"],
+                                row["Feature"],
+                                fontsize=fontsize,
+                                color="#A34C00",
+                                alpha=0.7
+                            )
+                        )
                     
-            #         adjustText.adjust_text(
-            #             texts,
-            #             ax=ax,
-            #             arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
-            #             force_points=2.0,
-            #             force_text=2.0,
-            #             expand_points=(1.2, 1.2),
-            #             expand_text=(1.2, 1.2),
-            #             only_move={'points': 'y', 'text': 'y'}
-            #         )
+                    adjustText.adjust_text(
+                        texts,
+                        ax=ax,
+                        arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+                        force_points=2.0,
+                        force_text=2.0,
+                        expand_points=(1.2, 1.2),
+                        expand_text=(1.2, 1.2),
+                        only_move={'points': 'y', 'text': 'y'}
+                    )
 
-            # plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=14, y=1.02)
-            # fig.supxlabel(f"HepG2 {self.latex_symbols[binding_unique][mode]}", fontsize=14) 
-            # fig.supylabel(f"K562 {self.latex_symbols[binding_unique][mode]}", fontsize=14)
+            plt.suptitle(f"{prefix}: Global SHAP Values for Matching Features Across Cell Lines\nNOTE: log scale only includes values > 0", fontsize=14, y=1.02)
+            fig.supxlabel(f"HepG2 {self.latex_symbols[binding_unique][mode]}", fontsize=14) 
+            fig.supylabel(f"K562 {self.latex_symbols[binding_unique][mode]}", fontsize=14)
 
-            # plt.tight_layout()
-            # plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=600, bbox_inches='tight')
-            # plt.show()
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=600, bbox_inches='tight')
+            plt.show()
 
             # Alphabetical Glossary Global SHAP Heatmap (transposed: RBPs as rows, positions as columns)
             hepg2_df = global_SHAP["HepG2"].copy()
