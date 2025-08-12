@@ -1121,7 +1121,7 @@ class ShapNetworkInvestigator:
             # plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=600, bbox_inches='tight')
             # plt.show()
 
-            # Alphabetical Glossary Global SHAP Heatmap
+            # Alphabetical Glossary Global SHAP Heatmap (transposed: RBPs as rows, positions as columns)
             hepg2_df = global_SHAP["HepG2"].copy()
             k562_df = global_SHAP["K562"].copy()
 
@@ -1138,28 +1138,32 @@ class ShapNetworkInvestigator:
             dfs = {"HepG2": hepg2_df, "K562": k562_df}
 
             for cell_line, df in dfs.items():
-
-                heatmap = pd.DataFrame(np.nan, index=positions, columns=union_rbps)
-                null_type = pd.DataFrame("not-profiled", index=positions, columns=union_rbps)
+                # Transpose: RBPs as rows, positions as columns
+                heatmap = pd.DataFrame(np.nan, index=union_rbps, columns=positions)
+                null_type = pd.DataFrame("not-profiled", index=union_rbps, columns=positions)
 
                 for pos in df.index:
                     for rbp in df.columns:
-
                         val = df.at[pos, rbp]
-                        heatmap.at[pos, rbp] = val
-
-                        null_type.at[pos, rbp] = "not-bound" if pd.isnull(val) else "value"
+                        heatmap.at[rbp, pos] = val
+                        null_type.at[rbp, pos] = "not-bound" if pd.isnull(val) else "value"
 
                 heatmaps[cell_line] = heatmap
                 null_types[cell_line] = null_type
 
             # Predefine color scale for both cell lines
-            global_min = min(heatmap.min().min() for heatmap in heatmaps.values())
-            global_max = max(heatmap.max().max() for heatmap in heatmaps.values())
+            global_min = min(h.min().min() for h in heatmaps.values())
+            global_max = max(h.max().max() for h in heatmaps.values())
 
-            # Plot both cell lines in one figure with a single shared colorbar axis
-            fig, axes = plt.subplots(2, 1, figsize=(45, 20), dpi=300, sharex=True, sharey=True)
-            cbar_ax = fig.add_axes([0.92, 0.15, 0.01, 0.7])  # Position for the single colorbar
+            # Plot both cell lines in one figure with a single shared colorbar axis (side by side)
+            fig, axes = plt.subplots(
+                1, 2, figsize=(18, 45), dpi=300, sharex=True, sharey=True,
+                gridspec_kw={'wspace': 0.1}  # Increase space between columns
+            )
+            # Make colorbar wider and move further right
+            cbar_ax = fig.add_axes([0.93, 0.4, 0.025, 0.4])  # Wider colorbar
+            # Move null type legend further right to avoid overlap
+            legend_ax = fig.add_axes([1.05, 0.23, 0.04, 0.2])  # Further right
 
             for idx, cell_line in enumerate(["HepG2", "K562"]):
                 heatmap = heatmaps[cell_line]
@@ -1180,45 +1184,64 @@ class ShapNetworkInvestigator:
                     linecolor="black",
                     annot=annot,
                     fmt=".3f",
-                    annot_kws={"size": 14, "rotation": 90},
+                    annot_kws={"size": 14, "rotation": 0},  # Rotate annotation text to horizontal
                     mask=mask,
                     cbar=(idx == 0),  # Only add colorbar for the first plot
                     cbar_ax=(cbar_ax if idx == 0 else None),
-                    cbar_kws={"shrink": 1, "aspect": 20, "pad": 0.02},
+                    cbar_kws={"shrink": 1, "aspect": 30, "pad": 0.02},  # Wider colorbar
                     vmin=global_min,
                     vmax=global_max,
                 )
-                
-                # Overlay null squares
-                for i, pos in enumerate(positions):
-                    for j, rbp in enumerate(union_rbps):
 
-                        if mask.at[pos, rbp]:
-                            null_kind = null_type.at[pos, rbp]
-                            color = "#FFFFC5" if null_kind == "not-bound" else "#D1FFBD"
+                # Overlay null markers
+                for i, rbp in enumerate(union_rbps):
+                    for j, pos in enumerate(positions):
+                        if mask.at[rbp, pos]:
+                            null_kind = null_type.at[rbp, pos]
+                            color = "#FF991C"
+                            if null_kind == "not-bound":
+                                # Circle marker for "not bound"
+                                axes[idx].scatter(j + 0.5, i + 0.5, marker="D", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
+                            elif null_kind == "not-profiled":
+                                # Lowercase x marker
+                                axes[idx].scatter(j + 0.5, i + 0.5, marker="X", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
 
-                            axes[idx].add_patch(
-                                mpl.patches.Rectangle(
-                                    (j, i), 1, 1, fill=True, color=color, alpha=0.5, linewidth=0
-                                )
-                            )
-
-                axes[idx].set_title(f"{cell_line}", fontsize=40, pad=20)
+                axes[idx].set_title(f"{cell_line}", fontsize=50, pad=20)  # Smaller title font
                 axes[idx].set_xlabel("")
                 axes[idx].set_ylabel("")
-                axes[idx].tick_params(axis='y', labelsize=36)
-                axes[idx].tick_params(axis='x', labelsize=13)
+                axes[idx].tick_params(axis='y', labelsize=14)  # 50% smaller than 36
+                axes[idx].tick_params(axis='x', labelsize=45)  # Larger x-axis tick labels
 
-            cbar_ax.set_title(self.latex_symbols[binding_unique][mode], fontsize=25)
-            cbar_ax.tick_params(labelsize=25)
+            cbar_ax.set_title(self.latex_symbols[binding_unique][mode], fontsize=50, pad=20, loc="left")
+            cbar_ax.tick_params(labelsize=40)
 
-            fig.supxlabel("RBP\n(Alphabetically Sorted)", fontsize=50, x=0.43)
-            fig.supylabel("Position", fontsize=50, x=-0.005)
+            fig.supxlabel("Position", fontsize=60, x=.51, y=0.07)
+            fig.supylabel("RBP\n(Alphabetically Sorted)", fontsize=50, x=0.01, ha="center")
             plt.suptitle(
-                f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically\nYellow = Not Bound, Green = Not Profiled",
-                fontsize=40, y=1.01, x=0.45
+                f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
+                fontsize=18, y=0.92, x=0.51  # Smaller suptitle font
             )
-            plt.tight_layout(rect=[0, 0, 0.91, 1])
+
+            # Add legend for null types before tight_layout
+            legend_ax.axis("off")
+            
+            legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
+            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"]:
+                legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
+            
+            legend_ax = legend_ax.legend(
+                title="Null Type" if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"] else "",
+                loc="center",
+                fontsize=40,
+                title_fontsize=50,
+                frameon=True,
+                markerscale=12,
+                edgecolor="black",
+            )
+            legend_ax.get_frame().set_linewidth(2)  # Thicker border for the legend box
+
+            plt.tight_layout(rect=[0, 0, 0.89, 1])  # Call after legend, leave space for legend/colorbar
+
             plt.savefig(self.FIGURES["global_SHAP_alphabetical_glossary_heatmap"][mode], dpi=600, bbox_inches='tight')
             plt.show()
 
