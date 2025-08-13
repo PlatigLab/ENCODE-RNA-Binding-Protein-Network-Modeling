@@ -162,12 +162,12 @@ class ShapNetworkInvestigator:
     latex_symbols = {
         "Unique-Binding": {
                 "5_dfs_average": r"$\Phi_{i}$", 
-                "Bound-Only": r"$\Phi_{i}[{b}=1]$", 
-                "NOT-Bound-Only": r"$\Phi_{i}[{b}=0]$",
+                "Bound-Only": r"$\Phi_{i}^b$", 
+                "NOT-Bound-Only": r"$\Phi_{i}^{nb}$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
-                "local_SHAP_bound": r"$\varphi_{i,j}[{b}=1]$",
-                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i,j}[{b}=1]$",
-                "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i,j}[{b}=0]$",
+                "local_SHAP_bound": r"$\varphi_{i,j}^b$",
+                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i}^b$",
+                "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i}^{nb}$",
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
