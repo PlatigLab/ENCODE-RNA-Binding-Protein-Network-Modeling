@@ -6752,85 +6752,91 @@ class ShapNetworkInvestigator:
                 del local_shap, all_rows
                 gc.collect()
 
+    
+    def compare_bound_global_SHAP_and_signed_mean_bound_local_SHAP(self):
 
+        # Load Bound-Only Global SHAP and Signed Local SHAP Mean (Bound-Only)
+        bound_global = self.calculate_specialized_global_SHAP(
+            mode="Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+        signed_mean_bound = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
 
+        # Build long-form table with per-feature values per cell line
+        rows = []
+        for cell_line in self.cell_lines:
+            x_df = bound_global[cell_line].copy()         # index: Position, columns: RBP
+            y_df = signed_mean_bound[cell_line].copy()    # index: Position, columns: RBP
 
+            for pos in x_df.index:
+                for rbp in x_df.columns:
+                    x_val = x_df.at[pos, rbp]
+                    y_val = y_df.at[pos, rbp]
 
-        # # Load the saved DataFrame for plotting (using polars, then convert to pandas)
-        # loaded_shap_df = pl.read_csv("bound_local_shap_by_position.csv").to_pandas()
-        # # Plot: 2 subplots, one per cell line (as two rows, sharing x and y axes)
-        #     fig, axes = plt.subplots(2, 1, figsize=(7, 8), dpi=300, sharex=True, sharey=True)
-        #     for ax, cell_line in zip(axes, self.cell_lines):
+                    # Keep only rows where both are not NaN; take absolute value for signed mean
+                    if pd.notna(x_val) and pd.notna(y_val):
+                        rows.append({
+                            "Cell Line": cell_line,
+                            "RBP": rbp,
+                            "Position": pos,
+                            "Feature": f"{rbp}_{pos}",
+                            "Bound Global SHAP": float(x_val),
+                            "Signed Mean Bound Local SHAP (abs)": float(abs(y_val)),
+                        })
 
-        #         plot_df = loaded_shap_df[loaded_shap_df["Cell Line"] == cell_line]
-        #         position_order = sorted(plot_df["Position"].unique())
-        #         sns.violinplot(
-        #             data=plot_df,
-        #             x="Position",
-        #             y="Bound Local SHAP",
-        #             ax=ax,
-        #             inner=None,
-        #             cut=0,
-        #             density_norm="width",
-        #             color="lightsteelblue",
-        #             linewidth=1,
-        #             alpha=0.5,
-        #             order=position_order
-        #         )
+        combined_df = pd.DataFrame(rows)
 
-        #         sns.boxplot(
-        #             data=plot_df,
-        #             x="Position",
-        #             y="Bound Local SHAP",
-        #             ax=ax,
-        #             width=0.3,
-        #             boxprops={"facecolor": "none", "edgecolor": "black"},
-        #             showcaps=True,
-        #             showfliers=True,
-        #             flierprops={
-        #                 "marker": "o",
-        #                 "color": "yellow",
-        #                 "markersize": 0.3,
-        #                 "alpha": 0.05
-        #             },
-        #             showmeans=True,
-        #             meanline=True,
-        #             meanprops={"color": "gold", "linewidth": 1},
-        #             order=position_order
-        #         )
+        # Plot: 2 columns (one per cell line)
+        ncols = len(self.cell_lines)
+        fig, axes = plt.subplots(1, ncols, figsize=(7, 4), dpi=300, sharex=True, sharey=True)
 
-        #         # Increase y-axis limit 
-        #         ymin, ymax = ax.get_ylim()
-        #         ax.set_ylim(ymin, ymax + 0.1)
+        x_label = self.latex_symbols["Unique-Binding"]["Bound-Only"]
+        y_label = f"|{self.latex_symbols['Unique-Binding']['Signed-Local-SHAP-Mean-Bound-Only']}|"
 
-        #         # Annotate above each position in the order of position_order
-        #         for i, pos in enumerate(position_order):
-        #             vals = plot_df[plot_df["Position"] == pos]["Bound Local SHAP"]
-        #             n_points = len(vals)
-        #             avg_val = np.mean(vals)
-        #             median_val = np.median(vals)
+        for ax, cell_line in zip(axes, self.cell_lines):
+            plot_df = combined_df[combined_df["Cell Line"] == cell_line].copy()
 
-        #             ax.text(
-        #                 i, 
-        #                 ymax + (0.015 if cell_line == "HepG2" else -0.1),
-        #                 f"Points: {n_points:,}\nAvg: {avg_val:.2g}\nMed:{median_val:.2g}",
-        #                 ha="center", va="bottom", fontsize=8, color="black"
-        #             )
+            x = plot_df["Bound Global SHAP"].to_numpy()
+            y = plot_df["Signed Mean Bound Local SHAP (abs)"].to_numpy()
 
-        #         ax.set_title(cell_line, fontsize=16)
-        #         ax.set_xlabel("Position", fontsize=12)
-        #         ax.set_ylabel("Bound Local SHAP", fontsize=12)
-        #         ax.tick_params(axis='x', labelsize=12)
-        #         ax.tick_params(axis='y', labelsize=12)
+            pearson_corr, spearman_corr = pearsonr(x, y)[0], spearmanr(x, y)[0]
 
-        #     plt.suptitle("Unique-Binding: Bound Local SHAP values across Features by Position & Cell Line", fontsize=12)
-        #     plt.tight_layout()
-        #     plt.show()
+            sns.scatterplot(
+                x=x,
+                y=y,
+                ax=ax,
+                color="deepskyblue",
+                edgecolor="black",
+                alpha=0.6,
+                s=10
+            )
 
+            # y=x line
+            min_val = min(x.min(), y.min())
+            max_val = max(x.max(), y.max())
+            ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--", linewidth=1)
 
+            ax.set_title(f"{cell_line}", fontsize=12)
+            # Do not set individual axis labels since axes are shared
+            ax.text(
+                0.98, 0.02,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(plot_df)}",
+                transform=ax.transAxes,
+                fontsize=10,
+                verticalalignment='bottom',
+                horizontalalignment='right'
+            )
 
-
-
+        fig.suptitle("Bound-Only Global SHAP vs |Signed Mean Bound-Only Local SHAP|", fontsize=10, y=1.02)
+        fig.supxlabel(x_label, fontsize=12)
+        fig.supylabel(y_label, fontsize=12)
+        plt.tight_layout()
+        plt.show()
 
 
 ###############################################################
