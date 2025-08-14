@@ -226,8 +226,14 @@ class ShapNetworkInvestigator:
             }, 
         },
         "global_shap_position_highlighting_bar_plots": {
-            "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
-            "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
+            "Bound-Only": {
+                "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
+                "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_global_shap_highlight_bar_plot.png",
+            },
+            "Signed-Local-SHAP-Mean-Bound-Only": {
+                "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_signed_mean_bound_local_SHAP_highlight_bar_plot.png",
+                "pos_3_4_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/POS_3_4_signed_mean_bound_local_SHAP_highlight_bar_plot.png",
+            }
         }, 
         "per_row_num_bound_and_percent_greater_than_cutoff": {
             "num_and_percentage_bound_local_SHAP_greater_than_0.1": "../outputs/publication_figures/per_row_local_shap_greater_than_cutoff/per_row_bound_local_SHAP_num_bound_and_percent_greater_than_0.1.png",
@@ -5622,148 +5628,306 @@ class ShapNetworkInvestigator:
 
     def plot_global_SHAP_examples_as_bar_plots(self, mode=None, underlying_data=None):
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
-        assert mode in ["5_dfs_average", "Bound-Only", "NOT-Bound-Only"], "mode must be '5_dfs_average', 'Bound-Only', or 'NOT-Bound-Only'"
+        assert mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"], "mode must be 'Bound-Only' or 'Signed-Local-SHAP-Mean-Bound-Only'"
 
         hand_selected_rbps = {
             "TARDBP": [1],
-            "DDX55": [2, 4],
             "RBFOX2": [4],
             "FTO": [5],
-            "DDX3X": [5, 6],
+            "DDX55": [2, 4],
+            "RPS3": [3, 4, 6],
+            "GRWD1": [3, 4, 6],
+            "DDX3X": [3, 4, 5, 6],
 
             "HNRNPM": [3, 4],
             "IGF2BP1": [3, 4],
             "LIN28B": [3, 4],
             "SND1": [3, 4],
-            "GRWD1": [3, 4],
-            "RPS3": [3, 4],
             "FXR2": [3, 4],
+
         }
 
-        # Load the appropriate global SHAP data based on mode and underlying_data
-        if mode == "5_dfs_average":
-            global_shap = self.calculate_global_SHAP(mode=mode, binding_unique=underlying_data)
-        else:
-            global_shap = self.calculate_specialized_global_SHAP(
-                mode=mode, condition=None, underlying_data=underlying_data
-            )
 
-        for rbp in hand_selected_rbps:
-            fig, axes = plt.subplots(2, 1, figsize=(4,4.5), dpi=150, sharex=True)
-            for idx, cell_line in enumerate(self.cell_lines):
-                heatmap = global_shap[cell_line]
-                ax = axes[idx]
-                y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
-                x = np.arange(1, 7)
-                # Plot the main stem plot for all positions
-                markerline, stemlines, baseline = ax.stem(
-                    x, y, basefmt=" ", markerfmt="o",
-                )
-                plt.setp(markerline, markersize=5, color="#7570b3")
-                plt.setp(stemlines, color="#7570b3", linestyle=":")  # Make the stem lines dotted
+        global_shap = self.calculate_specialized_global_SHAP(
+            mode=mode, condition=None, underlying_data=underlying_data
+        )
 
-                # Plot a second stem plot for highlighted positions using color #1b9e77
-                highlight_positions = hand_selected_rbps[rbp]
-                highlight_x = np.array(highlight_positions)
-                highlight_y = [heatmap.at[pos, rbp] for pos in highlight_x]
-                markerline2, stemlines2, baseline2 = ax.stem(
-                    highlight_x, highlight_y, basefmt=" ", markerfmt="o",
-                )
-                plt.setp(markerline2, markersize=7, color="#00ffb3")
-                plt.setp(stemlines2, color="#00ffb3", linestyle=":")  # Make the stem lines dotted
-
-                for xi, yi in zip(x, y):
-                    ax.text(
-                        xi, yi + 0.08 * np.nanmax(y),
-                        f"{yi:.2f}", ha="center", va="bottom", fontsize=8, color ="#fc6f03"
-
-                    )
-
-                ax.set_title(
-                    cell_line,
-                    fontsize=10
-                )
-                ymin, ymax = ax.get_ylim()
-                ax.set_ylim(0- (0.1*(ymax-ymin)), ymax + 0.25 * (ymax - ymin))
-
-            fig.supxlabel("Position", fontsize=12, x=0.6, y=0.05)
-            fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=14, x=0.07)
-            fig.suptitle(
-                f"{rbp}: {self.latex_symbols[underlying_data][mode]} Across Positions\nNOTE 1: {underlying_data} data\nNOTE 2: hand-selected positions highlighted in green",
-                fontsize=8, y=0.97
-            )
-
-            plt.tight_layout()
-            plt.show()
-        
         # Separate RBPs into two groups: those with [3, 4] and those with other highlighted positions
         rbps_3_4 = [rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list == [3, 4]]
         rbps_other = [rbp for rbp, pos_list in hand_selected_rbps.items() if pos_list != [3, 4]]
-
-        # Prepare plotting data for both groups
-        rbp_groups = [
-            {"rbps": rbps_other, "type": "pos_other_highlight", 'supylabel_y_position': -0.08, 'sharey': True},
-            {"rbps": rbps_3_4, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015, 'sharey': True},
-        ]
-
-        for group in rbp_groups:
-            rbps = group["rbps"]
     
-            nrows = len(rbps)
-            ncols = 2  # One for each cell line
+        if mode == "Bound-Only":
+            # for rbp in hand_selected_rbps:
+            #     fig, axes = plt.subplots(2, 1, figsize=(4,4.5), dpi=150, sharex=True)
+            #     for idx, cell_line in enumerate(self.cell_lines):
+            #         heatmap = global_shap[cell_line]
+            #         ax = axes[idx]
+            #         y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
+            #         x = np.arange(1, 7)
+            #         # Plot the main stem plot for all positions
+            #         markerline, stemlines, baseline = ax.stem(
+            #             x, y, basefmt=" ", markerfmt="o",
+            #         )
+            #         plt.setp(markerline, markersize=5, color="#7570b3")
+            #         plt.setp(stemlines, color="#7570b3", linestyle=":")  # Make the stem lines dotted
 
-            fig, axes = plt.subplots(
-                nrows=nrows, ncols=ncols, figsize=(1.8 * ncols, 1 * nrows),
-                sharex=True, sharey=group['sharey'], squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=150
-            )
+            #         # Plot a second stem plot for highlighted positions using color #1b9e77
+            #         highlight_positions = hand_selected_rbps[rbp]
+            #         highlight_x = np.array(highlight_positions)
+            #         highlight_y = [heatmap.at[pos, rbp] for pos in highlight_x]
+            #         markerline2, stemlines2, baseline2 = ax.stem(
+            #             highlight_x, highlight_y, basefmt=" ", markerfmt="o",
+            #         )
+            #         plt.setp(markerline2, markersize=7, color="#00ffb3")
+            #         plt.setp(stemlines2, color="#00ffb3", linestyle=":")  # Make the stem lines dotted
 
-            for row_idx, rbp in enumerate(rbps):
-                highlight_positions = hand_selected_rbps[rbp]
+            #         for xi, yi in zip(x, y):
+            #             ax.text(
+            #                 xi, yi + 0.08 * np.nanmax(y),
+            #                 f"{yi:.2f}", ha="center", va="bottom", fontsize=8, color ="#fc6f03"
+
+            #             )
+
+            #         ax.set_title(
+            #             cell_line,
+            #             fontsize=10
+            #         )
+            #         ymin, ymax = ax.get_ylim()
+            #         ax.set_ylim(0- (0.1*(ymax-ymin)), ymax + 0.25 * (ymax - ymin))
+
+            #     fig.supxlabel("Position", fontsize=12, x=0.6, y=0.05)
+            #     fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=14, x=0.07)
+            #     fig.suptitle(
+            #         f"{rbp}: {self.latex_symbols[underlying_data][mode]} Across Positions\nNOTE 1: {underlying_data} data\nNOTE 2: hand-selected positions highlighted in green",
+            #         fontsize=8, y=0.97
+            #     )
+
+            #     plt.tight_layout()
+            #     plt.show()
+        
+
+            # Prepare plotting data for both groups
+            rbp_groups = [
+                {"rbps": rbps_other, "type": "pos_other_highlight", 'supylabel_y_position': -0.08, 'sharey': True},
+                {"rbps": rbps_3_4, "type": "pos_3_4_highlight", 'supylabel_y_position': 0.015, 'sharey': True},
+            ]
+
+            for group in rbp_groups:
+                rbps = group["rbps"]
+        
+                nrows = len(rbps)
+                ncols = 2  # One for each cell line
+
+                fig, axes = plt.subplots(
+                    nrows=nrows, ncols=ncols, figsize=(1.8 * ncols, 1 * nrows),
+                    sharex=True, sharey=group['sharey'], squeeze=False, gridspec_kw={'hspace': 0.05, 'wspace': 0.3}, dpi=300
+                )
+
+                for row_idx, rbp in enumerate(rbps):
+                    highlight_positions = hand_selected_rbps[rbp]
+                    for col_idx, cell_line in enumerate(self.cell_lines):
+                        ax = axes[row_idx, col_idx]
+                        heatmap = global_shap[cell_line]
+                        y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
+                        x = np.arange(1, 7)
+                        colors = ["#00ffb3" if (pos in highlight_positions) else "#7570b3" for pos in x]
+
+                        ax.bar(x, y, color=colors, width=0.5, edgecolor='black', linewidth=0.8)
+                        # Make y-axis tick labels smaller
+                        ax.tick_params(axis='y', labelsize=10, color='red')
+                    
+                        ax.set_yticklabels([f"{tick:.1f}" for tick in ax.get_yticks()], fontsize=8, )
+
+                        if col_idx == 0:
+                            ax.set_ylabel(f"$\\bf{{{rbp}}}$", fontsize=12, rotation=0, labelpad=10, va='center', y=0.3, ha='right')
+                        else:
+                            ax.set_ylabel("")
+                        ax.set_xlabel("")
+
+                        ax.spines['top'].set_visible(False)
+                        ax.spines['right'].set_visible(False)
+                        ax.spines['left'].set_visible(False)
+
+                # Set shared x-axis label only on the bottom row
+                for col_idx in range(ncols):
+                    axes[-1, col_idx].set_xticks(np.arange(1, 7))
+                    axes[-1, col_idx].set_xticklabels([str(i) for i in range(1, 7)], fontsize=7)
+
+                fig.supxlabel("Position", fontsize=14, y=group['supylabel_y_position'])
+                fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=20, x=-0.32)
+                for ax in axes.flat:
+                    ax.tick_params(axis='x', labelsize=10)
+
+                # Add cell line labels as column titles
                 for col_idx, cell_line in enumerate(self.cell_lines):
-                    ax = axes[row_idx, col_idx]
-                    heatmap = global_shap[cell_line]
-                    y = [heatmap.at[pos, rbp] for pos in range(1, 7)]
+                    axes[0, col_idx].set_title(cell_line, fontsize=13, pad=10)
+
+                plt.tight_layout(pad=2)
+
+                plt.savefig(self.FIGURES["global_shap_position_highlighting_bar_plots"][mode][group["type"]], dpi=600, bbox_inches='tight')
+                plt.show()
+            
+        elif mode == "Signed-Local-SHAP-Mean-Bound-Only":
+
+            # Prepare plotting data for both groups
+            # Move "HNRNPM" to the end of rbps_3_4 as it is the only negative one
+            rbps_3_4_ordered = [rbp for rbp in rbps_3_4 if rbp != "HNRNPM"] + ["HNRNPM"]
+            rbp_groups = [
+                {"rbps": rbps_other, "type": "pos_other_highlight", 'sharey': False},
+                {"rbps": rbps_3_4_ordered, "type": "pos_3_4_highlight", 'sharey': False},
+            ]
+
+            for group in rbp_groups:
+                rbps = group["rbps"]
+                nrows = len(rbps)
+                ncols = 1  # Only one column, both cell lines per subplot
+
+                # Gather all values to determine global min/max for y-axis
+                all_vals = []
+                for rbp in rbps:
+                    for pos in range(1, 7):
+                        for cell_line in self.cell_lines:
+                            val = global_shap[cell_line].at[pos, rbp]
+                            if not pd.isna(val):
+                                all_vals.append(val)
+
+                fig, axes = plt.subplots(
+                    nrows=nrows, ncols=ncols, figsize=(5.5, 1.5 * nrows),  # (1) increase x width
+                    sharex=True, sharey=group["sharey"], squeeze=False,
+                    gridspec_kw={'hspace': 0.2,}, dpi=300
+                )
+
+                for row_idx, rbp in enumerate(rbps):
+                    ax = axes[row_idx, 0]
+                    highlight_positions = hand_selected_rbps[rbp]
                     x = np.arange(1, 7)
-                    colors = ["#00ffb3" if (pos in highlight_positions) else "#7570b3" for pos in x]
+                    bar_width = 0.3
+                    gap = 0.15
 
-                    ax.bar(x, y, color=colors, width=0.5, edgecolor='black', linewidth=0.8)
-                    # Make y-axis tick labels smaller
-                    ax.tick_params(axis='y', labelsize=10, color='red')
-                
-                    ax.set_yticklabels([f"{tick:.1f}" for tick in ax.get_yticks()], fontsize=8, )
+                    # Gather all bar values for this subplot to determine y-range
+                    all_bar_vals = []
+                    for pos in x:
+                        for ci, cell_line in enumerate(self.cell_lines):
+                            val = global_shap[cell_line].at[pos, rbp]
+                            if not pd.isna(val):
+                                all_bar_vals.append(val)
+                    
+                    y_min = min(all_bar_vals)
+                    y_max = max(all_bar_vals)
+                    y_range = y_max - y_min
+                    y_expand = y_range * 0.25
+                    y_offset = y_range * 0.05
+                    ax.set_ylim(y_min - y_expand, y_max + y_expand)
 
-                    if col_idx == 0:
-                        ax.set_ylabel(f"$\\bf{{{rbp}}}$", fontsize=12, rotation=0, labelpad=10, va='center', y=0.3, ha='right')
-                    else:
-                        ax.set_ylabel("")
-                    ax.set_xlabel("")
+                    # Plot bars for both cell lines at each position
+                    for pos in x:
+                        for ci, cell_line in enumerate(self.cell_lines):
+                            val = global_shap[cell_line].at[pos, rbp]
+                            if pd.isna(val):
+                                continue
+                            offset = -bar_width/2 - gap/2 if ci == 0 else bar_width/2 + gap/2
+                            hatch = None if ci == 0 else 'x**'  # (3) change hatch pattern
+                            facecolor = "white"
+                            edgecolor = "black"
+                            linewidth = 1.5
+                            # Highlighted positions: fill with color if not white
+                            if pos in highlight_positions:
+                                if val > 0:
+                                    facecolor = "#c83a3cff"
+                                    txt_color = "#c83a3cff"
+                                elif val < 0:
+                                    facecolor = "#3a85bfff"
+                                    txt_color = "#3a85bfff"
+                                else:
+                                    txt_color = "black"
+                            else:
+                                txt_color = "black"
+                            # For hatches, do not set a color (2)
+                            if hatch:
+                                ax.bar(
+                                    pos + offset, val, width=bar_width,
+                                    color=facecolor, edgecolor=edgecolor, linewidth=linewidth,
+                                    hatch=hatch, zorder=2
+                                )
+                            else:
+                                ax.bar(
+                                    pos + offset, val, width=bar_width,
+                                    color=facecolor, edgecolor=edgecolor, linewidth=linewidth,
+                                    zorder=2
+                                )
+                            # (8) Only add text for highlighted bars
+                            if not pd.isna(val) and pos in highlight_positions:
+                                if val > 0:
+                                    y_txt = val + y_offset
+                                    va = "bottom"
+                                else:
+                                    y_txt = val - y_offset
+                                    va = "top"
+                                ax.text(
+                                    pos + offset, y_txt, f"{val:.2f}",
+                                    ha="center", va=va,
+                                    fontsize=9, color=txt_color
+                                )
 
+                    # Add a horizontal dotted line at y=0 with yellow-like color 
+                    ax.axhline(0, color="#bbbb62", linestyle=":", linewidth=2, zorder=1)
+
+                    # Row label: bold, right-aligned, centered vertically
+                    ax.set_ylabel(rbp, fontsize=20, fontweight="bold", rotation=0, labelpad=12, va='center', ha='right', y=0.5)
+                    ax.yaxis.set_label_coords(-0.03, 0.5)
+                    # Remove y-axis ticks and labels except for the first subplot
+                    ax.set_yticks([])
+                    # Remove spines except left and bottom
                     ax.spines['top'].set_visible(False)
                     ax.spines['right'].set_visible(False)
                     ax.spines['left'].set_visible(False)
+                    # Only show x-axis ticks on the bottom subplot
+                    if row_idx != nrows - 1:
+                        ax.set_xticklabels([])
+                    else:
+                        ax.set_xticks(x, )
+                        ax.set_xticklabels([str(i) for i in x], fontsize=25)
+                        ax.set_xlabel("")
 
-            # Set shared x-axis label only on the bottom row
-            for col_idx in range(ncols):
-                axes[-1, col_idx].set_xticks(np.arange(1, 7))
-                axes[-1, col_idx].set_xticklabels([str(i) for i in range(1, 7)], fontsize=7)
+                # Add shared y-axis label and adjust layout (moved outside the rbp loop)
+                fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=40, x=-0.3)
+                fig.supxlabel("Position", fontsize=30, y=-0.03 if group['type'] == "pos_3_4_highlight" else 0)
 
-            fig.supxlabel("Position", fontsize=14, y=group['supylabel_y_position'])
-            fig.supylabel(self.latex_symbols[underlying_data][mode], fontsize=20, x=-0.32)
-            for ax in axes.flat:
-                ax.tick_params(axis='x', labelsize=10)
+                # Add legend for cell lines with hatch patterns (moved outside the rbp loop)
+                legend_handles = []
+                for ci, cell_line in enumerate(self.cell_lines):
+                    hatch = None if ci == 0 else 'x**'
+                    patch = Patch(
+                        facecolor='white',
+                        edgecolor='black',
+                        hatch=hatch,
+                        label=cell_line,
+                        linewidth=1.8
+                    )
+                    legend_handles.append(patch)
 
-            # Add cell line labels as column titles
-            for col_idx, cell_line in enumerate(self.cell_lines):
-                axes[0, col_idx].set_title(cell_line, fontsize=13, pad=10)
+                legend = fig.legend(
+                    handles=legend_handles,
+                    labels=self.cell_lines,
+                    loc="center right",
+                    bbox_to_anchor=(1.32, 0.5),
+                    fontsize=18,
+                    frameon=True,
+                    borderaxespad=1.0,
+                )
 
-            plt.tight_layout(pad=2)
+                legend.get_frame().set_linewidth(1.5)
+                legend.get_frame().set_edgecolor('black')
 
-            plt.savefig(self.FIGURES["global_shap_position_highlighting_bar_plots"][group["type"]], dpi=600, bbox_inches='tight')
-            plt.show()
+                plt.tight_layout()
+                plt.savefig(
+                    self.FIGURES["global_shap_position_highlighting_bar_plots"][mode][group["type"]],
+                    dpi=600, bbox_inches='tight'
+                )
+                plt.show()
 
 
     def plot_binding_sum_distribution(self):
-
         lf = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
 
         # Prepare a DataFrame for violinplot (percentage)
@@ -5780,6 +5944,7 @@ class ShapNetworkInvestigator:
                 "Binding Sum (%)": binding_sum_pct,
                 "Binding Sum": binding_sum
             }))
+
         plot_df = pd.concat(plot_data, ignore_index=True)
 
         for col in ["Binding Sum", "Binding Sum (%)"]:
@@ -6681,7 +6846,7 @@ class ShapNetworkInvestigator:
                     Patch(facecolor="white", edgecolor="black", hatch=None, label="HepG2"),
                     Patch(facecolor="white", edgecolor="black", hatch="xx", label="K562"),
                 ]
-                
+
                 fig.legend(
                     handles=legend_handles,
                     labels=[h.get_label() for h in legend_handles],
