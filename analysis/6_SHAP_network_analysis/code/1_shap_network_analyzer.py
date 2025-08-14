@@ -16,7 +16,9 @@ from matplotlib.legend import Legend
 from sklearn.metrics import r2_score
 from statannotations.Annotator import Annotator
 from pathlib import Path
-from matplotlib.colors import ListedColormap
+from matplotlib import collections as mcoll
+from matplotlib.patches import Patch
+
 
 
 @dataclass
@@ -166,6 +168,7 @@ class ShapNetworkInvestigator:
                 "NOT-Bound-Only": r"$\Phi_{i}^{nb}$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
                 "local_SHAP_bound": r"$\varphi_{i,j}^b$",
+                "local_SHAP_NOT_bound": r"$\varphi_{i,j}^{nb}$",
                 "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i}^b$",
                 "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i}^{nb}$",
             },
@@ -243,6 +246,10 @@ class ShapNetworkInvestigator:
         "pct_positive_minus_negative_local_SHAP": {
             "heatmap_bound": "../outputs/publication_figures/local_SHAP_percent_positive_negative/local_SHAP_pct_pos_minus_neg_bound_heatmap.png",
             "matching_features_bound_scatter": "../outputs/publication_figures/local_SHAP_percent_positive_negative/local_SHAP_pct_pos_minus_neg_bound_matching_features_scatter.png",
+        },
+        "position_3_4_activating_and_others_repressing": {
+            "Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_bound_local_SHAP.png",
+            "NOT Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_NOT_bound_local_SHAP.png",
         },
     }
 
@@ -6328,10 +6335,371 @@ class ShapNetworkInvestigator:
 
         if Path(BOUND_LOCAL_SHAP).exists() and Path(NOT_BOUND_LOCAL_SHAP).exists():
 
-            pass
+            logger.info("FROM CACHE: loading dataframes and plotting...")
             
-            
+            for file_path, col_name in [(BOUND_LOCAL_SHAP, "Bound Local SHAP"), (NOT_BOUND_LOCAL_SHAP, "NOT Bound Local SHAP")]:
+                df = pl.read_csv(file_path, separator="\t").to_pandas()
+
+                position_order = sorted(df["Position"].unique())
+                position_group_order = sorted(df["Position Group"].unique())
+                cell_line_order = sorted(df["Cell Line"].unique()) 
+
+                latex_symbol_key = "local_SHAP_bound" if col_name == "Bound Local SHAP" else "local_SHAP_NOT_bound"
+                latex_symbol = self.latex_symbols["Unique-Binding"][latex_symbol_key]
+
+                # Helper color mapping (slightly lighter red/blue)
+                def color_for_position(pos: int):
+                    return "#ff9999" if pos in (3, 4) else "#99ccff"
+
+                def color_for_group(group: str):
+                    return "#ff9999" if group.strip() in ("3, 4", "3,4", "3 4") else "#99ccff"
+
+                # Prepare figure (slightly increased wspace and tighter row spacing)
+                fig = plt.figure(figsize=(14, 10), dpi=300)
+                gs = gridspec.GridSpec(
+                    2, 2,
+                    width_ratios=[7, 3],
+                    height_ratios=[1, 1],
+                    wspace=0.08,
+                    hspace=0.06
+                )
+
+                # Axes with shared x per column and shared y per row
+                ax1 = fig.add_subplot(gs[0, 0])
+                ax2 = fig.add_subplot(gs[0, 1], sharey=ax1)
+                ax3 = fig.add_subplot(gs[1, 0], sharex=ax1)
+                ax4 = fig.add_subplot(gs[1, 1], sharex=ax2, sharey=ax3)
+
+                # ---------------- Violinplots using seaborn (color by position, hatch by cell line) ---------------- #
+                # Ax1: by Position with hue=Cell Line
+                sns.violinplot(
+                    data=df,
+                    x="Position",
+                    y=col_name,
+                    hue="Cell Line",
+                    order=position_order,
+                    hue_order=cell_line_order,
+                    cut=0,
+                    linewidth=1,
+                    density_norm="width",
+                    inner="box",
+                    inner_kws={"color": "black"},  # ensure inner box is black
+                    palette=["white", "white"],  # set neutral; recolor bodies below by position
+                    ax=ax1
+                )
+
+                # Apply hatches and position-based facecolors to violins
+                n_pos = len(position_order)
+                n_hue = len(cell_line_order)
+                coll_list = [c for c in ax1.collections if isinstance(c, mcoll.PolyCollection)]
+                coll_list = coll_list[: n_pos * n_hue]  # only the violin bodies
+                
+                # annotate counts above each individual violin using its polygon center
+                if len(coll_list) == n_pos * n_hue:
+                    ymin, ymax = ax1.get_ylim()
+                    new_ymax = ymax + 0.1 * (ymax - ymin)
+                    ax1.set_ylim(ymin, new_ymax)
+                    
+                    text_y_label = new_ymax - (.1 * new_ymax)
+
+                    for i_pos in range(n_pos):
+                        for i_hue in range(n_hue):
+                            idx = i_pos * n_hue + i_hue
+                            coll = coll_list[idx]
+                            # set facecolor by position (constant across cell lines)
+                            coll.set_facecolor(color_for_position(position_order[i_pos]))
+                            
+                            # hatch mapping: HepG2 -> '', K562 -> 'xx'
+                            if cell_line_order[i_hue] == "K562":
+                                coll.set_hatch('xx')
+                            else:
+                                coll.set_hatch(None)
+
+                            # edge color for visibility
+                            coll.set_edgecolor('black')
+
+                            # compute annotation position
+                            try:
+                                verts = coll.get_paths()[0].vertices
+                                x_center = float(np.mean(verts[:, 0]))
+                            except Exception:
+                                # fallback if vertices not accessible
+                                x_center = i_pos
+
+                            # count points
+                            n_points = int(
+                                df[(df["Position"] == position_order[i_pos]) & (df["Cell Line"] == cell_line_order[i_hue])][col_name].dropna().shape[0]
+                            )
+                            ax1.text(
+                                x_center,
+                                text_y_label,
+                                f"{n_points:.1e}",
+                                ha="center",
+                                va="bottom",
+                                fontsize=6,
+                                color="black"
+                            )
+                # remove per-subplot labels; shared labels handled later
+                ax1.set_xlabel("")
+                ax1.set_ylabel("")
+
+                # Ax2: by Position Group with hue=Cell Line
+                sns.violinplot(
+                    data=df,
+                    x="Position Group",
+                    y=col_name,
+                    hue="Cell Line",
+                    order=position_group_order,
+                    hue_order=cell_line_order,
+                    cut=0,
+                    linewidth=1,
+                    density_norm="width",
+                    inner="box",
+                    inner_kws={"color": "black"},  # ensure inner box is black
+                    palette=["white", "white"],  # set neutral; recolor bodies below by group
+                    ax=ax2
+                )
+                coll_list2 = [c for c in ax2.collections if isinstance(c, mcoll.PolyCollection)]
+                coll_list2 = coll_list2[: len(position_group_order) * n_hue]
+
+                if len(coll_list2) == len(position_group_order) * n_hue:
+                    ymin2, ymax2 = ax2.get_ylim()
+                    new_ymax2 = ymax2 + 0.05 * (ymax2 - ymin2)
+                    ax2.set_ylim(ymin2, new_ymax2)
+                    # Define a constant y offset for annotation, similar to ax1
+                    text_y_label2 = new_ymax2 - (0.17 * new_ymax2)
+
+                    for i_grp in range(len(position_group_order)):
+                        for i_hue in range(n_hue):
+                            idx = i_grp * n_hue + i_hue
+                            coll = coll_list2[idx]
+                            # set facecolor by position group
+                            coll.set_facecolor(color_for_group(position_group_order[i_grp]))
+                            
+                            if cell_line_order[i_hue] == "K562":
+                                coll.set_hatch('xx')
+                            else:
+                                coll.set_hatch(None)
+
+                            coll.set_edgecolor('black')
+                            
+                            try:
+                                verts = coll.get_paths()[0].vertices
+                                x_center = float(np.mean(verts[:, 0]))
+
+                            except Exception:
+                                x_center = i_grp
+
+                            n_points = int(
+                                df[(df["Position Group"] == position_group_order[i_grp]) & (df["Cell Line"] == cell_line_order[i_hue])][col_name].dropna().shape[0]
+                            )
+                            ax2.text(
+                                x_center,
+                                text_y_label2,
+                                f"{n_points:.2e}",
+                                ha="center",
+                                va="bottom",
+                                fontsize=8,
+                                color="black"
+                            )
+                ax2.set_xlabel("")
+                ax2.set_ylabel("")
+
+                # ---------------- Bar plots (custom) ---------------- #
+                bar_data = df.groupby(["Position", "Cell Line"], as_index=False)[col_name].mean()
+                bar_data_group = df.groupby(["Position Group", "Cell Line"], as_index=False)[col_name].mean()
+
+                # Ax3: by Position
+                x_pos = np.arange(len(position_order))
+                bar_width = 0.4
+                gap = 0.03  
+
+                for ci, cell_line in enumerate(cell_line_order):
+                    offset = (-bar_width / 2 - gap) if ci == 0 else (bar_width / 2 + gap)  # increased gap
+                    hatch = None if cell_line == "HepG2" else "xx"
+                    
+                    for i, pos in enumerate(position_order):
+                        
+                        row = bar_data[(bar_data["Position"] == pos) & (bar_data["Cell Line"] == cell_line)]
+                        
+                        assert len(row)==1, f"Expected exactly 1 row for Position {pos} and Cell Line {cell_line}, but got {len(row)} rows."
+                        val = row[col_name].values[0]
+
+                        c = color_for_position(pos)
+                        ax3.bar(
+                            x_pos[i] + offset,
+                            val,
+                            width=bar_width,
+                            color=c,
+                            edgecolor="black",
+                            linewidth=1.5,
+                            hatch=hatch
+                        )
+                        
+                        # Calculate a constant offset as 5% of the y-axis range for ax3 (like ax4)
+                        ymin_ax3, ymax_ax3 = ax3.get_ylim()
+                        y_offset = 0.05 * (ymax_ax3 - ymin_ax3)
+                        # Annotation with increased distance, larger size, and 3f formatting, color by sign
+                        if val >= 0:
+                            ax3.text(
+                                x_pos[i] + offset,
+                                val + y_offset,
+                                f"{val:.3f}",
+                                ha="center",
+                                va="bottom",
+                                fontsize=11,
+                                color="red"
+                            )
+                        else:
+                            ax3.text(
+                                x_pos[i] + offset,
+                                val - y_offset,
+                                f"{val:.3f}",
+                                ha="center",
+                                va="top",
+                                fontsize=11,
+                                color="blue"
+                            )
+
+                ax3.set_xticks(x_pos)
+                ax3.set_xticklabels([str(p) for p in position_order], color="black")
+                
+                # Do not color x tick labels; always black
+                for tick in ax3.get_xticklabels():
+                    tick.set_color("black")
+
+                ax3.set_xlabel("")  # shared label later
+                ax3.set_ylabel("")  # shared label later
+
+                # Ax4: by Position Group
+                x_grp = np.arange(len(position_group_order))
+                for ci, cell_line in enumerate(cell_line_order):
+
+                    offset = (-bar_width / 2 - gap) if ci == 0 else (bar_width / 2 + gap)
+                    hatch = None if cell_line == "HepG2" else "xx"
+
+                    for i, group in enumerate(position_group_order):
+                        row = bar_data_group[(bar_data_group["Position Group"] == group) & (bar_data_group["Cell Line"] == cell_line)]
+
+                        val = row[col_name].values[0]
+                        c = color_for_group(group)
+
+                        ax4.bar(
+                            x_grp[i] + offset,
+                            val,
+                            width=bar_width,
+                            color=c,
+                            edgecolor="black",
+                            linewidth=1.5,
+                            hatch=hatch
+                        )
+
+                        # Calculate a constant offset as 3% of the y-axis range for ax4
+                        ymin_ax4, ymax_ax4 = ax4.get_ylim()
+                        y_offset = 0.03 * (ymax_ax4 - ymin_ax4)
+
+                        if val >= 0:
+                            ax4.text(
+                                x_grp[i] + offset,
+                                val + y_offset,
+                                f"{val:.3f}",
+                                ha="center",
+                                va="bottom",
+                                fontsize=11,
+                                color="red"
+                            )
+                        else:
+                            ax4.text(
+                                x_grp[i] + offset,
+                                val - y_offset,
+                                f"{val:.3f}",
+                                ha="center",
+                                va="top",
+                                fontsize=11,
+                                color="blue"
+                            )
+
+                ax4.set_xticks(x_grp)
+                ax4.set_xticklabels(position_group_order, color="black")
+
+                for tick in ax4.get_xticklabels():
+                    tick.set_color("black")
+
+                ax4.set_xlabel("")  # shared label later
+                ax4.set_ylabel("")  # shared label later
+
+                # Expand y-limits for bar plots (±10%)
+                for ax in (ax3, ax4):
+                    ymin_b, ymax_b = ax.get_ylim()
+                    span_b = (ymax_b - ymin_b)
+                    ax.set_ylim(ymin_b - 0.10 * span_b, ymax_b + 0.10 * span_b)
+
+                # Horizontal y=0 line (all subplots): orange, dotted, thicker by 50%
+                for ax in (ax1, ax2, ax3, ax4):
+                    ax.axhline(0, color="orange", linestyle=":", linewidth=2, zorder=10)
+
+                # Remove subplot titles (explicitly ensure none)
+                for ax in (ax1, ax2, ax3, ax4):
+                    ax.set_title("")
+
+                # Shared labels: one y label per row, one x label per column
+                ax1.set_ylabel(latex_symbol, fontsize=26)
+                ax2.set_ylabel("")
+                ax3.set_ylabel(f"Mean({latex_symbol})", fontsize=26)
+                ax4.set_ylabel("")
+                # Place y-axis labels further left and aligned at the same x coordinate
+                shared_ylabel_x = -0.10
+                ax1.yaxis.set_label_coords(shared_ylabel_x, 0.5)
+                ax3.yaxis.set_label_coords(shared_ylabel_x, 0.5)
+                
+                ax3.set_xlabel("Position", fontsize=26, y=-0.01)
+                ax4.set_xlabel("Position Group", fontsize=22, y=-0.01)
+
+                # Ticks visibility rules:
+                # - Keep tick markers on all subplots
+                # - Remove y tick text labels for second column (ax2, ax4)
+                # - Remove x tick text labels for first row (ax1, ax2)
+                ax2.tick_params(labelleft=False)
+                ax4.tick_params(labelleft=False)
+                ax1.tick_params(labelbottom=False)
+                ax2.tick_params(labelbottom=False)
+
+                # Increase tick label sizes for all subplots
+                for _ax in (ax1, ax2, ax3, ax4):
+                    _ax.tick_params(axis='x', labelsize=22)
+                    _ax.tick_params(axis='y', labelsize=18)
+
+                # Remove legends inside subplots
+                for ax in (ax1, ax2, ax3, ax4):
+                    leg = ax.get_legend()
+                    if leg:
+                        leg.remove()
+                    
+                # Single, simplified legend outside (to the right):
+                # White rectangles; HepG2 (no hatch), K562 ('xx' hatch)
+                legend_handles = [
+                    Patch(facecolor="white", edgecolor="black", hatch=None, label="HepG2"),
+                    Patch(facecolor="white", edgecolor="black", hatch="xx", label="K562"),
+                ]
+                
+                fig.legend(
+                    handles=legend_handles,
+                    labels=[h.get_label() for h in legend_handles],
+                    loc="center left",
+                    bbox_to_anchor=(0.9, 0.55),
+                    fontsize=22,
+                    title="Cell Line",
+                    title_fontsize=26,
+                    frameon=False
+                )
+
+                fig.suptitle(f"{latex_symbol}: Distributions by Position and Cell Line", fontsize=16, y=0.93)
+                plt.tight_layout(rect=[0, 0, 0.85, 1])
+                plt.savefig(self.FIGURES["position_3_4_activating_and_others_repressing"][col_name], dpi=600, bbox_inches='tight')
+                plt.show()
+
         else: 
+        
             logger.info("No cache found. Compiling dataframe with local SHAP values by binding value, per position, per cell line...")
             
             file_to_binding_value = {
@@ -6345,6 +6713,11 @@ class ShapNetworkInvestigator:
                     binding_value=file_to_binding_value[key],
                     binding_pattern_type = "Unique-Binding",
                 )
+
+                if key == BOUND_LOCAL_SHAP:
+                    col_name = "Bound Local SHAP"
+                elif key == NOT_BOUND_LOCAL_SHAP:
+                    col_name = "NOT Bound Local SHAP"
         
                 # Accumulate all cell line/position/SHAP values into a single DataFrame
                 all_rows = []
@@ -6355,10 +6728,10 @@ class ShapNetworkInvestigator:
                     for val in series.to_numpy():
                         all_rows.append({
                             "Cell Line": cell_line,
-                            "Bound Local SHAP": val,
                             "RBP": rbp,
                             "Position": pos,
-                            "Position Group": grouped_positions
+                            "Position Group": grouped_positions,
+                            col_name: val
                         })
                 
                 file_prefix = key.replace(".gz", "")
@@ -6366,6 +6739,9 @@ class ShapNetworkInvestigator:
                 # Save the entire data as a DataFrame for downstream usage (using polars for speed)
                 pl.DataFrame(all_rows).with_columns(
                         pl.col("Position").cast(pl.UInt8)
+                    ).sort(
+                        ["Cell Line", "RBP", "Position"], 
+                        maintain_order=True
                     ).write_csv(
                         file_prefix, 
                         separator="\t"
