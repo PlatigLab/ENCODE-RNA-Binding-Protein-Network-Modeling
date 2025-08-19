@@ -1,9 +1,9 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, tqdm, copy, sys, concurrent.futures, argparse, random
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent.futures, argparse, random
 
 import pandas as pd, polars as pl, numpy as np
 import matplotlib.pyplot as plt, matplotlib as mpl, seaborn as sns, matplotlib.gridspec as gridspec
 import scipy.cluster.hierarchy as sch
-import adjustText
+import adjustText, shap, tqdm 
 
 from dataclasses import dataclass
 from IPython.display import display, Video
