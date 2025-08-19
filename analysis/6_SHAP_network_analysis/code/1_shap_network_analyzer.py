@@ -138,7 +138,9 @@ class ShapNetworkInvestigator:
             "position_3_4_activating_and_others_repressing": {
                 "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
                 "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
-            }
+            }, 
+            "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
+
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -543,6 +545,16 @@ class ShapNetworkInvestigator:
             assert hasattr(self, 'SHAP_std'), "SHAP_std attribute does not exist"
             del self.SHAP_std
             logger.success("Deleted SHAP_std attribute")
+        
+        elif data_type == 'Final SHAP Data All Data': 
+            assert hasattr(self, 'final_all_data_SHAP_data'), "final_all_data_SHAP_data attribute does not exist"
+            del self.final_all_data_SHAP_data
+            logger.success("Deleted final_all_data_SHAP_data attribute")
+            
+        elif data_type == 'Final SHAP Data Unique Binding': 
+            assert hasattr(self, 'final_unique_binding_SHAP_data'), "final_unique_binding_SHAP_data attribute does not exist"
+            del self.final_unique_binding_SHAP_data
+            logger.success("Deleted final_unique_binding_SHAP_data attribute")
 
         gc.collect()
 
@@ -6414,7 +6426,7 @@ class ShapNetworkInvestigator:
         
         PSI_THRESHOLDS = [0.1, 0.9]
         BINDING_SUM_THRESHOLD = 5
-        PREDICTION_ERROR_THRESHOLD = 0.1
+        PREDICTION_ERROR_THRESHOLD = 0.2
 
         # Efficiently collect unique RBP_KD_Target values for each cell line
         rbp_kd_targets = {
@@ -6432,9 +6444,12 @@ class ShapNetworkInvestigator:
         base_filtering = {}
         for cell_line in self.cell_lines:
             base_filtering[cell_line] = self.final_all_data_SHAP_data[cell_line].filter(
+                (pl.col("has_RBP_KD") == True) &
+                (pl.col("Partition") == "Test") &
                 (pl.col("Target_PSI") < PSI_THRESHOLDS[1]) & 
                 (pl.col("Target_PSI") > PSI_THRESHOLDS[0]) &
-                (pl.col("has_RBP_KD") == True) &
+                (pl.col("Averaged Prediction (Probability)") < PSI_THRESHOLDS[1]) &
+                (pl.col("Averaged Prediction (Probability)") > PSI_THRESHOLDS[0]) &
                 ((pl.col("Target_PSI") - pl.col("Averaged Prediction (Probability)")).abs() < PREDICTION_ERROR_THRESHOLD) & 
                 (pl.col("Binding Sum") > BINDING_SUM_THRESHOLD) &
                 (pl.col("RBP_KD_Target").is_in(rbps_both)) 
@@ -6463,7 +6478,10 @@ class ShapNetworkInvestigator:
 
         for cell_line in self.cell_lines:
             df = base_filtering[cell_line]
+            
             shap_cols = [col for col in df.columns if col.endswith("_shap")]
+            binding_cols = [col for col in df.columns if col.endswith("_binding")]
+            remaining_cols = [col for col in df.columns if col not in shap_cols and col not in binding_cols]
 
             # Calculate average non-zeroness per row (mean absolute value across SHAP columns)
             avg_non_zeroness = df.select([pl.col(col).abs() for col in shap_cols]).sum_horizontal() / len(shap_cols)
@@ -6482,7 +6500,7 @@ class ShapNetworkInvestigator:
             ]).sort("diff_nonzeroness_signed", descending=True)
 
             # Select the three new columns first, then all shap columns
-            ordered_cols = ["avg_non_zeroness", "avg_row_shap", "diff_nonzeroness_signed", "Binding Sum"] + shap_cols
+            ordered_cols = ["avg_non_zeroness", "avg_row_shap", "diff_nonzeroness_signed"] + remaining_cols + binding_cols 
             filtered_df = filtered_df.select(ordered_cols)
 
             base_filtering[cell_line] = filtered_df
@@ -6490,7 +6508,14 @@ class ShapNetworkInvestigator:
         del indices_per_cell_line, matching_indices,
         gc.collect()
 
-        return base_filtering
+        # Convert base_filtering to pandas DataFrames and save as a pickle file
+        output_dict = {cell_line: base_filtering[cell_line].to_pandas() for cell_line in base_filtering}
+
+        with open(self.CACHE_INFO["waterfall_plot_data"], "wb") as f:
+            pickle.dump(output_dict, f)
+        
+        self.delete_data(data_type='Final SHAP Data All Data')
+
 
 
     def is_position_3_4_activating_and_others_repressing(self): 
