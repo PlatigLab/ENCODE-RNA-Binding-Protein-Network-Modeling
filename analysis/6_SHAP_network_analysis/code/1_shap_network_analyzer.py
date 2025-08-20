@@ -6519,6 +6519,118 @@ class ShapNetworkInvestigator:
         self.delete_data(data_type='Final SHAP Data All Data')
 
 
+    def plot_shap_waterfall_examples(self):
+
+        if not hasattr(self, "final_all_data_SHAP_data"):
+            self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
+
+        with open(self.CACHE_INFO["waterfall_plot_data"], "rb") as f:
+            candidates = pickle.load(f)
+        
+        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+
+        waterfall_plot_data = {}
+        for cell_line in candidates:
+            binding_cols = [col for col in lazyframes[cell_line].collect_schema().names() if col.endswith("_binding")]
+            
+            # Select background data: only rows from Train or Validate partitions and unique binding patterns
+            background_data = (
+                lazyframes[cell_line]
+                .filter(pl.col("Partition").is_in(["Train", "Validate"]))
+                .unique(subset = binding_cols, keep='first', maintain_order=True)
+                .select(binding_cols)
+                .collect()
+                .to_pandas()
+            )
+
+            logger.info(f"Background data shape: {background_data.shape}")
+            assert len(background_data) > 50_000, f"Background data must have more than 50K rows. You have {background_data.shape}."
+
+            model_file = f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{self.XGBOOST_BEST_MODEL_HASHES[cell_line]}.pkl.gz"
+            with gzip.open(model_file, "rb") as f:
+                model = pickle.load(f)
+
+            explainer = shap.TreeExplainer(
+                model, 
+                data = background_data, 
+                model_output="probability",
+                feature_perturbation="interventional",
+            )
+
+            assert list(model.column_order_when_fitting) == list(binding_cols)
+
+            for i in range(0, candidates[cell_line].shape[0]):
+
+                row = candidates[cell_line].iloc[i]
+                idx = str(row["index"])
+
+                # Build the CTRL index string
+                idx_parts = idx.split("_")
+                ctrl_idx = "_".join(idx_parts[:8]) + "_" + str(row["Associated Experiment"]) + "_CTRL-"
+
+                # Get the KD explanation
+                kd_explanation = explainer(row[binding_cols].to_frame().T)
+                # Get the CTRL explanation if available
+                ctrl_row_df = self.final_all_data_SHAP_data[cell_line].filter(pl.col("index").str.starts_with(ctrl_idx))
+                
+                if ctrl_row_df.height ==0: 
+                    logger.warning(f"No CTRL row found for index {idx}. Skipping...")
+                    continue
+
+                else: 
+                    assert ctrl_row_df.height in [1, 2], f"Expected 1 or 2 CTRL rows, found {ctrl_row_df.height} for index {ctrl_idx}"
+
+                    if ctrl_row_df.height == 2: 
+                        ctrl_row_df = ctrl_row_df[0]
+
+                ctrl_row_pd = ctrl_row_df.select(binding_cols).to_pandas()
+                ctrl_explanation = explainer(ctrl_row_pd)
+
+                # Populate the nested dictionary
+                if idx not in waterfall_plot_data:
+                    waterfall_plot_data[idx] = {}
+
+                if cell_line not in waterfall_plot_data[idx]:
+                    waterfall_plot_data[idx][cell_line] = {}
+
+                waterfall_plot_data[idx][cell_line]["KD"] = kd_explanation
+                waterfall_plot_data[idx][cell_line]["CTRL"] = ctrl_explanation
+
+        # Remove all indices (top-level keys) that don't have all expected sub-dictionaries
+        expected_conditions = ["CTRL", "KD"]
+        expected_cell_lines = set(self.cell_lines)
+
+        for idx in list(waterfall_plot_data.keys()):
+            cell_line_dict = waterfall_plot_data[idx]
+            # Check if all expected cell lines are present
+            if set(cell_line_dict.keys()) != expected_cell_lines:
+                del waterfall_plot_data[idx]
+                continue
+
+            # For each cell line, check if all expected conditions are present
+            if any(set(cell_line_dict[cell_line].keys()) != set(expected_conditions) for cell_line in expected_cell_lines):
+                del waterfall_plot_data[idx]
+        
+        for idx in waterfall_plot_data:
+            fig, axes = plt.subplots(2, 2, figsize=(5, 5), dpi=50)
+
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                for col_idx, condition in enumerate(["CTRL", "KD"]):
+
+                    ax = axes[row_idx, col_idx]
+                    plt.sca(ax)
+
+                    explanation = waterfall_plot_data[idx][cell_line][condition]
+
+                    waterfall(explanation[0], max_display=10, show=False)
+                    ax.set_title(f"{cell_line} - {condition}", fontsize=10)
+            
+            fig.subplots_adjust(wspace=0.2, hspace=0.2)
+            fig.set_size_inches(15, 10)
+            fig.suptitle(idx, fontsize=10)
+            plt.tight_layout()
+            plt.show()
+            
 
     def is_position_3_4_activating_and_others_repressing(self): 
 
