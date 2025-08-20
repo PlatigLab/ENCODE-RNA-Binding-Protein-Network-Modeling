@@ -19,6 +19,8 @@ from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
 
+from waterfall_plot import waterfall
+
 
 
 @dataclass
