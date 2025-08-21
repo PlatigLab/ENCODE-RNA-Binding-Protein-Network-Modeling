@@ -102,6 +102,13 @@ class ShapNetworkInvestigator:
                                 "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
                             }
                     },
+                "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": 
+                    {
+                        None:
+                            {
+                                "Unique-Binding": "../outputs/specialized_global_SHAP/log_odds_signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                            }
+                    },
             },
             "local_SHAP_mean_vs_variance": {
                 "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
@@ -175,6 +182,7 @@ class ShapNetworkInvestigator:
                 "local_SHAP_NOT_bound": r"$\varphi_{i,j}^{nb}$",
                 "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i}^b$",
                 "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i}^{nb}$",
+                "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": r"$\overline{\varphi}_{i}^{b,LOG-ODDS}$",
             },
         "ElasticNet Coefficients": {
             "Absolute Value": r"$|\beta_{i}|$",
@@ -195,6 +203,7 @@ class ShapNetworkInvestigator:
             "All Together": "../outputs/publication_figures/global_shap/ALL_TOGETHER_global_SHAP_distribution_unique_binding.png",
             "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_distribution_unique_binding.png",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_distribution_unique_binding.png",
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_distribution_unique_binding.png",
         }, 
         "global_SHAP_heatmap": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_heatmap_unique_binding.png",
@@ -202,6 +211,7 @@ class ShapNetworkInvestigator:
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_heatmap_unique_binding.png",
             "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_heatmap_unique_binding.png",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_heatmap_unique_binding.png",
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_heatmap_unique_binding.png",
         },
         "global_shap_matching_features_scatter": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_matching_features_scatter_unique_binding.png",
@@ -209,6 +219,7 @@ class ShapNetworkInvestigator:
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_matching_features_scatter_unique_binding.png",
             "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_matching_features_scatter_unique_binding.png",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_matching_features_scatter_unique_binding.png",
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_matching_features_scatter_unique_binding.png",
         },
         "global_SHAP_alphabetical_glossary_heatmap": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_alphabetical_glossary_heatmap_unique_binding.png",
@@ -216,6 +227,7 @@ class ShapNetworkInvestigator:
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_alphabetical_glossary_heatmap_unique_binding.png",
             "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
         },
         "position_3_4_global_shap_beta_coeff_violinplot": {
             "grouped_positions": {
@@ -719,7 +731,7 @@ class ShapNetworkInvestigator:
 
 
     def plot_global_SHAP(self, mode=None, binding_unique=None):
-        VALID_MODES = ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position', "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]
+        VALID_MODES = ['5_dfs', '5_dfs_average', 'Bound-Only', 'NOT-Bound-Only', 'NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position', "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]
         assert mode in VALID_MODES, f"mode should be one of {VALID_MODES}"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
         
@@ -727,7 +739,7 @@ class ShapNetworkInvestigator:
             global_SHAP = self.calculate_global_SHAP(mode, binding_unique)
         else: 
 
-            if mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only']:
+            if mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only', "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                 global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None, underlying_data = binding_unique)
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 global_SHAP = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=mode.split('-')[-1], underlying_data = binding_unique)
@@ -783,7 +795,7 @@ class ShapNetworkInvestigator:
                 
             if mode == '5_dfs_average':
                 prefix = binding_unique.replace('-', ' ')
-            elif mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only']:
+            elif mode in ['Bound-Only', 'NOT-Bound-Only', 'Signed-Local-SHAP-Mean-Bound-Only', 'Signed-Local-SHAP-Mean-NOT-Bound-Only', "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                 prefix = mode.replace('-', ' ')
             elif mode in ['NOT-Bound-Only-CTRL', 'NOT-Bound-Only-RBP_KD', 'NOT-Bound-Only-RBP_KD_at_position']:
                 prefix = f"{' '.join(mode.split('-')[:-1])} ({mode.split('-')[-1]})"
@@ -950,7 +962,7 @@ class ShapNetworkInvestigator:
                     )
                     
                     set_bad_color=False
-                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]: 
+                    if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                         heatmap_kwargs["mask"] = ordered_heatmap.isnull()
                         set_bad_color = True
 
@@ -1036,7 +1048,7 @@ class ShapNetworkInvestigator:
 
             if mode == "Bound-Only" or mode.startswith("Signed-Local-SHAP-Mean-"): 
 
-                if mode == "Signed-Local-SHAP-Mean-Bound-Only": 
+                if mode == "Signed-Local-SHAP-Mean-Bound-Only" or mode == "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only":
                     n_largest_smallest = 20
                 elif mode == "Signed-Local-SHAP-Mean-NOT-Bound-Only": 
                     n_largest_smallest = 10
@@ -1069,7 +1081,7 @@ class ShapNetworkInvestigator:
             for i, (label, xscale, yscale) in enumerate(plot_types):
                 ax = axes[i]
                 
-                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only"]:
+                if mode in ["Bound-Only", "NOT-Bound-Only-RBP_KD", "NOT-Bound-Only-RBP_KD_at_position", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                     combined_df = combined_df.dropna(subset=["HepG2", "K562"])
 
                 x = combined_df["HepG2"]
@@ -1260,7 +1272,7 @@ class ShapNetworkInvestigator:
             legend_ax.axis("off")
             
             legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
-            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"]:
+            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                 legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
             
             legend_ax = legend_ax.legend(
@@ -3242,7 +3254,7 @@ class ShapNetworkInvestigator:
 
     
     def calculate_specialized_global_SHAP(self, mode=None, condition=None, underlying_data=None): 
-        VALID_MODES = ["Bound-Only", "NOT-Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]
+        VALID_MODES = ["Bound-Only", "NOT-Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]
         assert mode in VALID_MODES, f"Invalid mode. Choose from {VALID_MODES}"
         assert condition in [None, "CTRL", "RBP_KD", 'RBP_KD_at_position'], "Condition must be None, 'CTRL', 'RBP_KD', or 'RBP_KD_at_position'"
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
@@ -3260,7 +3272,7 @@ class ShapNetworkInvestigator:
             logger.info(f"Calculating specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data}.")
             specialized_global_SHAP = {}
 
-            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"]:
+            if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
                 binding_value = 1
             elif mode in ["NOT-Bound-Only", "Signed-Local-SHAP-Mean-NOT-Bound-Only"]:
                 binding_value = 0
