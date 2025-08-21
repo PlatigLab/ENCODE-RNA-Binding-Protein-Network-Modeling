@@ -6425,6 +6425,8 @@ class ShapNetworkInvestigator:
 
         if not hasattr(self, "final_all_data_SHAP_data"):
             self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
+
+        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
         
         PSI_THRESHOLDS = [0.1, 0.9]
         BINDING_SUM_THRESHOLD = 5
@@ -6503,36 +6505,18 @@ class ShapNetworkInvestigator:
 
             # Select the three new columns first, then all shap columns
             ordered_cols = ["avg_non_zeroness", "avg_row_shap", "diff_nonzeroness_signed"] + remaining_cols + binding_cols 
-            filtered_df = filtered_df.select(ordered_cols)
+            filtered_df = filtered_df.select(ordered_cols).to_pandas()
 
             base_filtering[cell_line] = filtered_df
-            
+
         del indices_per_cell_line, matching_indices,
         gc.collect()
-
-        # Convert base_filtering to pandas DataFrames and save as a pickle file
-        output_dict = {cell_line: base_filtering[cell_line].to_pandas() for cell_line in base_filtering}
-
-        with open(self.CACHE_INFO["waterfall_plot_data"], "wb") as f:
-            pickle.dump(output_dict, f)
         
-        self.delete_data(data_type='Final SHAP Data All Data')
+        explanations = {}
+        for cell_line in self.cell_lines:
+            filtered_df = base_filtering[cell_line]
+            binding_cols = [col for col in filtered_df.columns if col.endswith("_binding")]
 
-
-    def plot_shap_waterfall_examples(self):
-
-        if not hasattr(self, "final_all_data_SHAP_data"):
-            self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
-
-        with open(self.CACHE_INFO["waterfall_plot_data"], "rb") as f:
-            candidates = pickle.load(f)
-        
-        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
-
-        waterfall_plot_data = {}
-        for cell_line in candidates:
-            binding_cols = [col for col in lazyframes[cell_line].collect_schema().names() if col.endswith("_binding")]
-            
             # Select background data: only rows from Train or Validate partitions and unique binding patterns
             background_data = (
                 lazyframes[cell_line]
@@ -6559,9 +6543,8 @@ class ShapNetworkInvestigator:
 
             assert list(model.column_order_when_fitting) == list(binding_cols)
 
-            for i in range(0, candidates[cell_line].shape[0]):
-
-                row = candidates[cell_line].iloc[i]
+            for i in range(filtered_df.shape[0]):
+                row = filtered_df.iloc[i]            
                 idx = str(row["index"])
 
                 # Build the CTRL index string
@@ -6570,49 +6553,81 @@ class ShapNetworkInvestigator:
 
                 # Get the KD explanation
                 kd_explanation = explainer(row[binding_cols].to_frame().T)
-                # Get the CTRL explanation if available
-                ctrl_row_df = self.final_all_data_SHAP_data[cell_line].filter(pl.col("index").str.starts_with(ctrl_idx))
                 
-                if ctrl_row_df.height ==0: 
+                # Get the CTRL row if available
+                ctrl_row_df = self.final_all_data_SHAP_data[cell_line].filter(pl.col("index").str.starts_with(ctrl_idx))
+
+                if ctrl_row_df.height == 0:
                     logger.warning(f"No CTRL row found for index {idx}. Skipping...")
                     continue
-
-                else: 
+                else:
                     assert ctrl_row_df.height in [1, 2], f"Expected 1 or 2 CTRL rows, found {ctrl_row_df.height} for index {ctrl_idx}"
-
-                    if ctrl_row_df.height == 2: 
+                    if ctrl_row_df.height == 2:
                         ctrl_row_df = ctrl_row_df[0]
 
                 ctrl_row_pd = ctrl_row_df.select(binding_cols).to_pandas()
                 ctrl_explanation = explainer(ctrl_row_pd)
 
-                # Populate the nested dictionary
-                if idx not in waterfall_plot_data:
-                    waterfall_plot_data[idx] = {}
+                # Prepare highlight_features list (only once per index)
+                highlight_features = []
+                rbp_target = row["RBP_KD_Target"]
+                
+                for pos in range(1, 7):
+                    has_kd_col = f"has_RBP_KD_{pos}"
+                    
+                    if row[has_kd_col]:
+                        highlight_features.append(f"{rbp_target}_{pos}_binding")
 
-                if cell_line not in waterfall_plot_data[idx]:
-                    waterfall_plot_data[idx][cell_line] = {}
+                assert len(highlight_features) > 0, f"No highlight features found for index {idx} and cell line {cell_line}. Check has_RBP_KD columns."
 
-                waterfall_plot_data[idx][cell_line]["KD"] = kd_explanation
-                waterfall_plot_data[idx][cell_line]["CTRL"] = ctrl_explanation
+                # Populate the nested dictionary in explanations
+                if idx not in explanations:
+                    explanations[idx] = {}
+                
+                if cell_line not in explanations[idx]:
+                    explanations[idx][cell_line] = {}
+                
+                explanations[idx][cell_line]["original_kd_row"] = row 
+                # Save explanations and highlight_features for both KD and CTRL
+                explanations[idx][cell_line]["KD"] = {
+                    "explanations": kd_explanation,
+                    "highlight_features": highlight_features
+                }
+                explanations[idx][cell_line]["CTRL"] = {
+                    "explanations": ctrl_explanation,
+                    "highlight_features": highlight_features
+                }
 
         # Remove all indices (top-level keys) that don't have all expected sub-dictionaries
-        expected_conditions = ["CTRL", "KD"]
         expected_cell_lines = set(self.cell_lines)
+        expected_sub_info = ["CTRL", "KD", 'original_kd_row']
 
-        for idx in list(waterfall_plot_data.keys()):
-            cell_line_dict = waterfall_plot_data[idx]
+        deleted_indices = []
+        for idx in list(explanations.keys()):
+            cell_line_dict = explanations[idx]
+            
             # Check if all expected cell lines are present
             if set(cell_line_dict.keys()) != expected_cell_lines:
-                del waterfall_plot_data[idx]
+                del explanations[idx]
+                deleted_indices.append(idx)
                 continue
 
             # For each cell line, check if all expected conditions are present
-            if any(set(cell_line_dict[cell_line].keys()) != set(expected_conditions) for cell_line in expected_cell_lines):
-                del waterfall_plot_data[idx]
+            if any(set(cell_line_dict[cell_line].keys()) != set(expected_sub_info) for cell_line in expected_cell_lines):
+                del explanations[idx]
+                deleted_indices.append(idx)
+
+        if deleted_indices:
+            logger.warning(f"Deleted {len(deleted_indices)} indices that did not have all expected cell lines and sub-dictionaries: {deleted_indices}")
+
+        with open(self.CACHE_INFO["waterfall_plot_data"], "wb") as f:
+            pickle.dump(explanations, f)
         
-        for idx in waterfall_plot_data:
-            fig, axes = plt.subplots(2, 2, figsize=(5, 5), dpi=50)
+        del base_filtering
+        gc.collect()
+
+        self.delete_data(data_type='Final SHAP Data All Data')
+
 
             for row_idx, cell_line in enumerate(self.cell_lines):
                 for col_idx, condition in enumerate(["CTRL", "KD"]):
