@@ -52,36 +52,7 @@ def format_value(s, format_str):
     return s
 
 
-def waterfall(shap_values, max_display=10, show=True):
-    """Plots an explanation of a single prediction as a waterfall plot.
-
-    The SHAP value of a feature represents the impact of the evidence provided by that feature on the model's
-    output. The waterfall plot is designed to visually display how the SHAP values (evidence) of each feature
-    move the model output from our prior expectation under the background data distribution, to the final model
-    prediction given the evidence of all the features.
-
-    Features are sorted by the magnitude of their SHAP values with the smallest
-    magnitude features grouped together at the bottom of the plot when the number of
-    features in the models exceeds the ``max_display`` parameter.
-
-    Parameters
-    ----------
-    shap_values : Explanation
-        A one-dimensional :class:`.Explanation` object that contains the feature values and SHAP values to plot.
-
-    max_display : int
-        The maximum number of features to display (default is 10).
-
-    show : bool
-        Whether :external+mpl:func:`matplotlib.pyplot.show()` is called before returning.
-        Setting this to ``False`` allows the plot to be customized further after it
-        has been created, returning the current axis via plt.gca().
-
-    Examples
-    --------
-    See `waterfall plot examples <https://shap.readthedocs.io/en/latest/example_notebooks/api_examples/plots/waterfall.html>`_.
-
-    """
+def waterfall(shap_values, max_display=10, show=True, highlight_features=None):
 
     style = StyleConfig(
         primary_color_positive="#F74D4D",
@@ -147,11 +118,36 @@ def waterfall(shap_values, max_display=10, show=True):
     if feature_names is None:
         feature_names = np.array([labels["FEATURE"] % str(i) for i in range(len(values))])
 
+    assert all(input_feature in feature_names for input_feature in highlight_features), (
+        "All highlight_features must be present in feature_names. "
+        f"Provided: {highlight_features}, Available: {feature_names}"
+    )
+
     # init variables we use for tracking the plot locations
-    num_features = min(max_display, len(values))
+    # If highlight_features is provided, ensure those features are always included in the plot
+    if highlight_features is not None:
+        # Convert feature_names to list for easier indexing
+        feature_names_list = list(feature_names) 
+        
+        # Get top features by absolute SHAP value
+        abs_order = np.argsort(-np.abs(values))
+        top_indices = list(abs_order[:max_display])
+        
+        # Find indices for highlight_features not already in top_indices
+        highlight_indices = [feature_names_list.index(f) for f in highlight_features if f in feature_names_list and feature_names_list.index(f) not in top_indices]
+        # Sort highlight_indices by absolute SHAP value (descending)
+        highlight_indices_sorted = sorted(highlight_indices, key=lambda idx: -abs(values[idx]))
+        
+        # Combine top_indices and sorted highlight_indices (preserving order: top first, then highlights)
+        order = np.array(top_indices + highlight_indices_sorted)
+        num_features = len(order) + 1
+    
+    else:
+        num_features = min(max_display, len(values))
+        order = np.argsort(-np.abs(values))
+
     row_height = 0.5
     rng = range(num_features - 1, -1, -1)
-    order = np.argsort(-np.abs(values))
     pos_lefts = []
     pos_inds = []
     pos_widths = []
@@ -172,7 +168,7 @@ def waterfall(shap_values, max_display=10, show=True):
     if num_features == len(values):
         num_individual = num_features
     else:
-        num_individual = num_features - 1
+        num_individual = num_features - 1 
 
     # compute the locations of the individual features and plot the dashed connecting lines
     for i in range(num_individual):
@@ -201,15 +197,17 @@ def waterfall(shap_values, max_display=10, show=True):
                 linewidth=0.5,
                 zorder=-1,
             )
+
+        no_binding_suffix_name = feature_names[order[i]].replace("_binding", "")
         if features is None:
-            yticklabels[rng[i]] = feature_names[order[i]]
+            yticklabels[rng[i]] = no_binding_suffix_name
         else:
             if np.issubdtype(type(features[order[i]]), np.number):
                 yticklabels[rng[i]] = (
-                    format_value(float(features[order[i]]), "%0.03f") + " = " + feature_names[order[i]]
+                    format_value(float(features[order[i]]), "%0.03f") + " = " + no_binding_suffix_name
                 )
             else:
-                yticklabels[rng[i]] = str(features[order[i]]) + " = " + str(feature_names[order[i]])
+                yticklabels[rng[i]] = str(features[order[i]]) + " = " + no_binding_suffix_name
 
     # add a last grouped feature to represent the impact of all the features we didn't show
     if num_features < len(values):
