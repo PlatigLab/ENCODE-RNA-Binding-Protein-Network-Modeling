@@ -6429,8 +6429,8 @@ class ShapNetworkInvestigator:
         lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
         
         PSI_THRESHOLDS = [0.1, 0.9]
-        BINDING_SUM_THRESHOLD = 5
-        PREDICTION_ERROR_THRESHOLD = 0.2
+        BINDING_SUM_THRESHOLD = 3
+        PREDICTION_ERROR_THRESHOLD = 0.3
 
         # Efficiently collect unique RBP_KD_Target values for each cell line
         rbp_kd_targets = {
@@ -6450,8 +6450,8 @@ class ShapNetworkInvestigator:
             base_filtering[cell_line] = self.final_all_data_SHAP_data[cell_line].filter(
                 (pl.col("has_RBP_KD") == True) &
                 (pl.col("Partition") == "Test") &
-                (pl.col("Target_PSI") < PSI_THRESHOLDS[1]) & 
-                (pl.col("Target_PSI") > PSI_THRESHOLDS[0]) &
+                # (pl.col("Target_PSI") < PSI_THRESHOLDS[1]) & 
+                # (pl.col("Target_PSI") > PSI_THRESHOLDS[0]) &
                 (pl.col("Averaged Prediction (Probability)") < PSI_THRESHOLDS[1]) &
                 (pl.col("Averaged Prediction (Probability)") > PSI_THRESHOLDS[0]) &
                 ((pl.col("Target_PSI") - pl.col("Averaged Prediction (Probability)")).abs() < PREDICTION_ERROR_THRESHOLD) & 
@@ -6511,7 +6511,30 @@ class ShapNetworkInvestigator:
 
         del indices_per_cell_line, matching_indices,
         gc.collect()
-        
+
+        # For each cell line, filter base_filtering to keep only rows with duplicated first 9 parts of 'index', keeping the one ending with "KD-1"
+        for cell_line in base_filtering:
+            df = base_filtering[cell_line]
+            # Extract first 9 parts of 'index'
+            idx_prefix = df["index"].astype(str).apply(lambda x: "_".join(x.split("_")[:9]))
+            df["_idx_prefix"] = idx_prefix
+
+            # Find duplicated prefixes
+            duplicated_prefixes = df["_idx_prefix"][df["_idx_prefix"].duplicated(keep=False)]
+            # For each duplicated prefix, keep only the row where index ends with "KD-1"
+            mask = df["_idx_prefix"].isin(duplicated_prefixes)
+            
+            df_dup = df[mask].copy()
+            # Keep only rows where index ends with "KD-1"
+            df_dup = df_dup[df_dup["index"].astype(str).str.endswith("KD-1")]
+
+            assert len(df_dup) == len(duplicated_prefixes)/2, f"Expected {len(duplicated_prefixes)/2} rows with 'KD-1' suffix, found {len(df_dup)} for cell line {cell_line}"
+            # For non-duplicated prefixes, keep all rows
+            df_nondup = df[~mask].copy()
+
+            # Concatenate back
+            base_filtering[cell_line] = pd.concat([df_nondup, df_dup], ignore_index=True).drop(columns=["_idx_prefix"]).sort_values("diff_nonzeroness_signed", ascending=False)
+
         explanations = {}
         for cell_line in self.cell_lines:
             filtered_df = base_filtering[cell_line]
