@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt, numpy as np, pandas as pd
 from typing import Union
 from shap import Explanation
 
+format_str = "%+0.03f"
+
 # Type hints, adapted from matplotlib.typing
 RGBColorType = Union[tuple[float, float, float], str]
 RGBAColorType = Union[
@@ -285,7 +287,7 @@ def waterfall(shap_values, max_display=10, show=True):
         txt_obj = plt.text(
             pos_lefts[i] + 0.5 * dist,
             pos_inds[i],
-            format_value(pos_widths[i], "%+0.02f"),
+            format_value(pos_widths[i], format_str),
             horizontalalignment="center",
             verticalalignment="center",
             color=style.text_color,
@@ -301,7 +303,7 @@ def waterfall(shap_values, max_display=10, show=True):
             txt_obj = plt.text(
                 pos_lefts[i] + (5 / 72) * bbox_to_xscale + dist,
                 pos_inds[i],
-                format_value(pos_widths[i], "%+0.02f"),
+                format_value(pos_widths[i], format_str),
                 horizontalalignment="left",
                 verticalalignment="center",
                 color=style.primary_color_positive,
@@ -334,7 +336,7 @@ def waterfall(shap_values, max_display=10, show=True):
         txt_obj = plt.text(
             neg_lefts[i] + 0.5 * dist,
             neg_inds[i],
-            format_value(neg_widths[i], "%+0.02f"),
+            format_value(neg_widths[i], format_str),
             horizontalalignment="center",
             verticalalignment="center",
             color=style.text_color,
@@ -350,7 +352,7 @@ def waterfall(shap_values, max_display=10, show=True):
             txt_obj = plt.text(
                 neg_lefts[i] - (5 / 72) * bbox_to_xscale + dist,
                 neg_inds[i],
-                format_value(neg_widths[i], "%+0.02f"),
+                format_value(neg_widths[i], format_str),
                 horizontalalignment="right",
                 verticalalignment="center",
                 color=style.primary_color_negative,
