@@ -6652,20 +6652,73 @@ class ShapNetworkInvestigator:
         self.delete_data(data_type='Final SHAP Data All Data')
 
 
+    def plot_shap_waterfall_examples(self):
+
+        # do not care about plotting these RBPs
+        RBP_BLACKLIST = ["AQR", "SF3B4"]
+
+        with open(self.CACHE_INFO["waterfall_plot_data"], "rb") as f:
+            candidates = pickle.load(f)
+        
+        figsize_horizontal = 20
+        figsize_vertical = 14
+
+        for idx in candidates.keys():
+            
+            # Skip indices that have RBPs in the blacklist
+            if any(rbp in idx for rbp in RBP_BLACKLIST):
+                logger.info(f"Skipping index {idx} due to RBP blacklist.")
+                continue
+
+            fig, axes = plt.subplots(2, 2, figsize=(figsize_horizontal, figsize_vertical), dpi=50, sharex="row")
+
             for row_idx, cell_line in enumerate(self.cell_lines):
                 for col_idx, condition in enumerate(["CTRL", "KD"]):
 
                     ax = axes[row_idx, col_idx]
                     plt.sca(ax)
 
-                    explanation = waterfall_plot_data[idx][cell_line][condition]
+                    explanation = candidates[idx][cell_line][condition]['explanations']
+                    waterfall(
+                        explanation[0],
+                        max_display=5,
+                        show=False,
+                        highlight_features=candidates[idx][cell_line][condition]['highlight_features']
+                    )
 
-                    waterfall(explanation[0], max_display=10, show=False)
-                    ax.set_title(f"{cell_line} - {condition}", fontsize=10)
+            # Set row labels (cell lines) on the outside left edge and column labels (conditions) on the topmost edge, both in bold font
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                axes[row_idx, 0].set_ylabel(f"$\mathbf{{{cell_line}}}$", fontsize=30, fontweight="bold", rotation=0, ha="right", va="center", labelpad=20)
+
+            for col_idx, condition in enumerate(["CTRL", "KD"]):
+                axes[0, col_idx].set_title(f"$\mathbf{{{condition}}}$", fontsize=30, fontweight="bold", pad=20, ha="center", va="bottom")
+    
+            fig.subplots_adjust(wspace=0.4, hspace=0.4)
+            fig.set_size_inches(figsize_horizontal, figsize_vertical)
             
-            fig.subplots_adjust(wspace=0.2, hspace=0.2)
-            fig.set_size_inches(15, 10)
-            fig.suptitle(idx, fontsize=10)
+            kd_rbp = idx.split("_")[8]
+            # Before doing the join, format so that each value that's an integer number is formatted as a string with "," for every 3 decimal places
+            idx_parts = idx.split("_")[0:8]
+            formatted_parts = []
+            
+            for part in idx_parts:
+
+                try:
+                    # Try to convert to int, if possible
+                    int_val = int(part)
+                    formatted_parts.append(f"{int_val:,}")
+                
+                except (ValueError, TypeError):
+                    formatted_parts.append(part)
+            
+            idx = "  ".join(formatted_parts)
+
+            fig.suptitle(
+                f"$\mathbf{{{kd_rbp}}}$ Knockdown\n\n"
+                f"{idx}",
+                fontsize=20, y=1.04
+            )
+
             plt.tight_layout()
             plt.show()
             

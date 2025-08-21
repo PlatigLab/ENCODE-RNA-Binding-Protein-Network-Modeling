@@ -451,7 +451,7 @@ def waterfall(shap_values, max_display=10, show=True, highlight_features=None):
     if highlight_features is not None:
         # Find the yticklabels that correspond to highlight_features, including the last label
         for i, label in enumerate(yticklabels):
-           
+            
             # The feature name is after the '=' if present, else the whole label
             if "=" in label:
                 feature_name = label.split("=")[-1].strip()
@@ -463,7 +463,7 @@ def waterfall(shap_values, max_display=10, show=True, highlight_features=None):
                     
                     if i < len(tick_labels):
                         tick_label = tick_labels[i]
-                        tick_label.set_bbox(dict(facecolor='none', edgecolor='orange', boxstyle='round,pad=1', linewidth=5))
+                        tick_label.set_bbox(dict(facecolor='none', edgecolor='orange', linewidth=5,))# boxstyle='round,pad=1',))
 
                         finished_highlighting.append(feature_name)    
 
