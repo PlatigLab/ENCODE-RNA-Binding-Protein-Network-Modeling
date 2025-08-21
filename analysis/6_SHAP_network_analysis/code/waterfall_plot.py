@@ -431,6 +431,47 @@ def waterfall(shap_values, max_display=10, show=True, highlight_features=None):
     for i in range(num_features):
         tick_labels[i].set_color(style.tick_labels_color)
 
+    # Draw a thin dotted black line between the last displayed feature and the grouped "other features" row
+    if max_display < len(values):
+        # The y-tick positions are from num_features-1 (top) to 0 (bottom, "other features")
+        # The line should be between the last displayed feature and the grouped row, i.e., between y=0 and y=1
+        # So, draw at y=0.5 if "other features" is at y=0, or more generally between the first two y-ticks
+        plt.axhline(
+            y=0.5,
+            color="black",
+            linestyle=":",
+            linewidth=1,
+            zorder=0,
+        )
+    
+
+    finished_highlighting = []
+    
+    # Highlight y-tick labels for features in highlight_features
+    if highlight_features is not None:
+        # Find the yticklabels that correspond to highlight_features, including the last label
+        for i, label in enumerate(yticklabels):
+           
+            # The feature name is after the '=' if present, else the whole label
+            if "=" in label:
+                feature_name = label.split("=")[-1].strip()
+                feature_name = feature_name + "_binding" 
+
+                if feature_name in highlight_features:
+                    # Get the tick label object (the second set are just feature names, so use the first set)
+                    tick_labels = ax.yaxis.get_majorticklabels()
+                    
+                    if i < len(tick_labels):
+                        tick_label = tick_labels[i]
+                        tick_label.set_bbox(dict(facecolor='none', edgecolor='orange', boxstyle='round,pad=1', linewidth=5))
+
+                        finished_highlighting.append(feature_name)    
+
+    assert set(finished_highlighting) == set(highlight_features), (
+        "Not all highlight_features were found in the plot. "
+        f"Provided: {highlight_features}, Highlighted: {finished_highlighting}"
+    )
+
     if show:
         plt.show()
     else:
