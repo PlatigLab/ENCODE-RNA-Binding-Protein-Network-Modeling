@@ -7246,6 +7246,96 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def compare_signed_mean_bound_local_SHAP_between_probability_and_log_odds_units(self): 
+        # Calculate Signed-Local-SHAP-Mean-Bound-Only for both probability and log-odds units
+        signed_mean_prob = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+        signed_mean_logodds = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+
+        # Prepare long-form DataFrame for scatterplot
+        rows = []
+        for cell_line in self.cell_lines:
+            df_prob = signed_mean_prob[cell_line]
+            df_logodds = signed_mean_logodds[cell_line]
+            
+            for pos in df_prob.index:
+                for rbp in df_prob.columns:
+                    
+                    v_prob = df_prob.at[pos, rbp]
+                    v_logodds = df_logodds.at[pos, rbp]
+                    
+                    # Assert that both are NaN or both are not NaN
+                    assert (pd.isna(v_prob) and pd.isna(v_logodds)) or (pd.notna(v_prob) and pd.notna(v_logodds)), \
+                        f"Mismatch: v_prob={v_prob}, v_logodds={v_logodds} for {cell_line}, {rbp}, {pos}"
+                    
+                    if pd.notna(v_prob) and pd.notna(v_logodds):
+                        rows.append({
+                            "Cell Line": cell_line,
+                            "RBP": rbp,
+                            "Position": pos,
+                            "Feature": f"{rbp}_{pos}",
+                            "Signed Mean Bound Local SHAP (prob)": float(v_prob), 
+                            "Signed Mean Bound Local SHAP (logodds)": float(v_logodds)
+                        })
+                    
+        df = pd.DataFrame(rows)
+
+        # Plot: one subplot per cell line
+        fig, axes = plt.subplots(1, len(self.cell_lines), figsize=(5,3), dpi=300, sharex=True, sharey=True)
+
+        for ax, cell_line in zip(axes, self.cell_lines):
+            
+            plot_df = df[df["Cell Line"] == cell_line]
+            x = plot_df["Signed Mean Bound Local SHAP (prob)"].to_numpy()
+            y = plot_df["Signed Mean Bound Local SHAP (logodds)"].to_numpy()
+            
+            pearson_corr, spearman_corr = pearsonr(x, y)[0], spearmanr(x, y)[0]
+            
+            ax.scatter(x, y, color="deepskyblue", edgecolor="black", alpha=0.2, s=3, linewidths=0.2)
+            
+            ax.set_title(f"{cell_line}", fontsize=8)
+            
+            # Remove all spines
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            
+            # Move axes to cross at (0,0) and make left/bottom spines visible
+            ax.spines['left'].set_position('zero')
+            ax.spines['left'].set_visible(True)
+            ax.spines['bottom'].set_position('zero')
+            ax.spines['bottom'].set_visible(True)
+            ax.spines['right'].set_color('none')
+            ax.spines['top'].set_color('none')
+            
+            ax.xaxis.set_ticks_position('bottom')
+            ax.yaxis.set_ticks_position('left')
+            
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+
+            ax.text(
+                0.1, 0.95,
+                f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {len(plot_df)}",
+                transform=ax.transAxes,
+                fontsize=6,
+                verticalalignment='top',
+                horizontalalignment='left'
+            )
+
+        fig.suptitle("Signed Mean Bound-Only Local SHAP: Probability vs Log-Odds Units", fontsize=8, y=0.98)
+        fig.supxlabel(self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=12)
+        fig.supylabel(self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"], fontsize=12)
+        plt.tight_layout()
+        plt.show()
+
+
 ###############################################################
 ###############################################################
 ###############################################################
