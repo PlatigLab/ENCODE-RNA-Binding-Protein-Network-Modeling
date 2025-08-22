@@ -6442,7 +6442,7 @@ class ShapNetworkInvestigator:
         
         PSI_THRESHOLDS = [0.1, 0.9]
         BINDING_SUM_THRESHOLD = 3
-        PREDICTION_ERROR_THRESHOLD = 0.3
+        PREDICTION_ERROR_THRESHOLD = 0.2
 
         # Efficiently collect unique RBP_KD_Target values for each cell line
         rbp_kd_targets = {
@@ -6461,7 +6461,7 @@ class ShapNetworkInvestigator:
         for cell_line in self.cell_lines:
             base_filtering[cell_line] = self.final_all_data_SHAP_data[cell_line].filter(
                 (pl.col("has_RBP_KD") == True) &
-                (pl.col("Partition") == "Test") &
+                # (pl.col("Partition") == "Test") &
                 # (pl.col("Target_PSI") < PSI_THRESHOLDS[1]) & 
                 # (pl.col("Target_PSI") > PSI_THRESHOLDS[0]) &
                 (pl.col("Averaged Prediction (Probability)") < PSI_THRESHOLDS[1]) &
