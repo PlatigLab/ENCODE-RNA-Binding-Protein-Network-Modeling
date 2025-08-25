@@ -7289,7 +7289,6 @@ class ShapNetworkInvestigator:
 
         # Plot: one subplot per cell line
         fig, axes = plt.subplots(1, len(self.cell_lines), figsize=(5,3), dpi=300, sharex=True, sharey=True)
-
         for ax, cell_line in zip(axes, self.cell_lines):
             
             plot_df = df[df["Cell Line"] == cell_line]
@@ -7334,6 +7333,93 @@ class ShapNetworkInvestigator:
         fig.supylabel(self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"], fontsize=12)
         plt.tight_layout()
         plt.show()
+
+
+    def feature_PSI_distributions_by_binding(self, feature=None): 
+        assert feature is not None, "feature must be provided"
+        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+
+        # Extract RBP and position from feature
+        rbp, pos = self.get_RBP_position(feature)
+        binding_col = f"{rbp}_{pos}_binding"
+
+        # Prepare cell line and binding mode order
+        cell_line_order = self.cell_lines
+        binding_mode_order = ["All Bound", "All Not Bound", "Only Bound", "Position Knockdown"]
+
+        # Define binding mode logic as a list of (mode, filter function)
+        binding_modes = [
+            ("All Bound", lambda lf: lf.filter(pl.col(binding_col) == 1)),
+            ("All Not Bound", lambda lf: lf.filter(pl.col(binding_col) == 0)),
+            ("Only Bound", lambda lf: lf.filter((pl.col(binding_col) == 1) & (pl.col("Binding Sum") == 1))),
+            ("Position Knockdown", lambda lf: lf.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col(f"has_RBP_KD_{pos}") == True))),
+        ]
+
+        # Collect data for plotting (fast, polars-based)
+        plot_dfs = []
+        for cell_line in cell_line_order:
+            lf = lazyframes[cell_line]
+            schema = lf.collect_schema().names()
+            
+            if binding_col not in schema:
+                continue  # Feature not present in this cell line
+
+            for mode, filter_fn in binding_modes:
+                filtered = filter_fn(lf).select("Target_PSI").collect()
+                filtered = filtered.with_columns([
+                    pl.lit(cell_line).alias("Cell Line"),
+                    pl.lit(mode).alias("Binding Mode")
+                ])
+                plot_dfs.append(filtered)
+    
+        plot_df = pl.concat(plot_dfs, how="vertical").to_pandas()
+
+        plt.figure(figsize=(8,4), dpi=200)
+        ax = plt.gca()
+
+        sns.violinplot(
+            data=plot_df,
+            x="Cell Line",
+            y="Target_PSI",
+            hue="Binding Mode",
+            order=cell_line_order,
+            hue_order=binding_mode_order,
+            cut=0,
+            density_norm="width",
+            inner="box",
+            ax=ax
+        )
+
+        # Increase y-axis limit by 10%
+        ymin, ymax = ax.get_ylim()
+        ax.set_ylim(ymin, ymax * 1.1)
+
+        # Annotate number of points above each distribution
+        for i, cell_line in enumerate(cell_line_order):
+            for j, binding_mode in enumerate(binding_mode_order):
+                subset = plot_df[(plot_df["Cell Line"] == cell_line) & (plot_df["Binding Mode"] == binding_mode)]
+                n_points = len(subset)
+                if n_points == 0:
+                    continue
+                # Find the position of the violin
+                # Violinplot positions: x = i, hue offset = j / len(binding_mode_order) - 0.5
+                x_pos = i + (j - (len(binding_mode_order) - 1) / 2) * 0.2
+                y_pos = ymax * 1.03
+                ax.text(
+                    x_pos, y_pos,
+                    f"{n_points:.2e}",
+                    ha="center", va="bottom", fontsize=6, color="black"
+                )
+
+        ax.set_title(f"Actual PSI for {feature} by Binding Mode", fontsize=12)
+        ax.set_ylabel("Actual PSI", fontsize=10)
+        ax.set_xlabel("Cell Line", fontsize=10)
+        
+        ax.legend(title="Binding Mode", fontsize=8, title_fontsize=9, bbox_to_anchor=(1.3, 0.6))
+
+        plt.tight_layout()
+        plt.show()
+
 
 
 ###############################################################
@@ -7926,25 +8012,9 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def tmp(self, rbp=None): 
-        
-        bound_global_SHAP = self.calculate_specialized_global_SHAP(
-            mode="Bound-Only", 
-            underlying_data="Unique-Binding"
-        )
-        
-        # For the given rbp, build a DataFrame: rows = cell lines, columns = positions (1-6), values = global SHAP
-        df = pd.DataFrame(
-            {cell_line: bound_global_SHAP[cell_line][rbp] for cell_line in self.cell_lines}
-        ).T
-
-        plt.figure(figsize=(8, 3))
-        sns.heatmap(df, annot=True, fmt=".4f", cmap="Blues")
-        plt.title(f"{rbp}: Bound-Only Global SHAP Across Cell Lines and Positions")
-        plt.xlabel("Position")
-        plt.ylabel("Cell Line")
-        plt.tight_layout()
-        plt.show()
+    def tmp(self): 
+        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+        return lazyframes["K562"].collect_schema().names()
 
 
 if __name__ == "__main__":
