@@ -1,0 +1,11 @@
+cell_line,background_type,mean_prediction,num_rows
+HepG2,ubp_less_than_.5,0.31332186053652106,6702
+HepG2,ubp_less_than_.8,0.586402795727484,27768
+HepG2,top_20_percent_dense_UBPs,0.8879273231275476,20749
+HepG2,lowest_20_percent_dense_UBPs,0.8109195802108885,22480
+HepG2,all_data,0.8202926034655224,4713115
+K562,ubp_less_than_.5,0.2803870605337588,5858
+K562,ubp_less_than_.8,0.6166813650575231,29880
+K562,top_20_percent_dense_UBPs,0.9065840525508282,25830
+K562,lowest_20_percent_dense_UBPs,0.8323127172476251,28057
+K562,all_data,0.832414294353882,6478105
