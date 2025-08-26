@@ -7345,7 +7345,8 @@ class ShapNetworkInvestigator:
 
     def feature_PSI_distributions_by_binding(self, feature=None): 
         assert feature is not None, "feature must be provided"
-        lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+        if not hasattr(self, "final_all_data_SHAP_data"): 
+            self.load_final_SHAP_data(underlying_data = "All-Data", as_lazyframe=False)
 
         # Extract RBP and position from feature
         rbp, pos = self.get_RBP_position(feature)
@@ -7353,27 +7354,27 @@ class ShapNetworkInvestigator:
 
         # Prepare cell line and binding mode order
         cell_line_order = self.cell_lines
-        binding_mode_order = ["All Bound", "All Not Bound", "Only Bound", "Position Knockdown"]
 
         # Define binding mode logic as a list of (mode, filter function)
         binding_modes = [
-            ("All Bound", lambda lf: lf.filter(pl.col(binding_col) == 1)),
-            ("All Not Bound", lambda lf: lf.filter(pl.col(binding_col) == 0)),
-            ("Only Bound", lambda lf: lf.filter((pl.col(binding_col) == 1) & (pl.col("Binding Sum") == 1))),
-            ("Position Knockdown", lambda lf: lf.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col(f"has_RBP_KD_{pos}") == True))),
+            ("Graphs Bound", lambda lf: lf.filter(pl.col(binding_col) == 1)),
+            ("Graphs Not Bound", lambda lf: lf.filter(pl.col(binding_col) == 0)),
+            ("Graphs - Only Bound", lambda lf: lf.filter((pl.col(binding_col) == 1) & (pl.col("Binding Sum") == 1))),
+            ("Graphs w/ Position KD", lambda lf: lf.filter((pl.col("RBP_KD_Target") == rbp) & (pl.col(f"has_RBP_KD_{pos}") == True))),
         ]
+        binding_mode_order = [mode for mode, _ in binding_modes]
 
         # Collect data for plotting (fast, polars-based)
         plot_dfs = []
         for cell_line in cell_line_order:
-            lf = lazyframes[cell_line]
-            schema = lf.collect_schema().names()
+            df = self.final_all_data_SHAP_data[cell_line]
+            schema = df.columns
             
             if binding_col not in schema:
                 continue  # Feature not present in this cell line
 
             for mode, filter_fn in binding_modes:
-                filtered = filter_fn(lf).select("Target_PSI").collect()
+                filtered = filter_fn(df).select(["Target_PSI"])
                 filtered = filtered.with_columns([
                     pl.lit(cell_line).alias("Cell Line"),
                     pl.lit(mode).alias("Binding Mode")
@@ -7423,7 +7424,7 @@ class ShapNetworkInvestigator:
         ax.set_ylabel("Actual PSI", fontsize=10)
         ax.set_xlabel("Cell Line", fontsize=10)
         
-        ax.legend(title="Binding Mode", fontsize=8, title_fontsize=9, bbox_to_anchor=(1.3, 0.6))
+        ax.legend(title="Binding Mode", fontsize=8, title_fontsize=9, bbox_to_anchor=(1.35, 0.6))
 
         plt.tight_layout()
         plt.show()
