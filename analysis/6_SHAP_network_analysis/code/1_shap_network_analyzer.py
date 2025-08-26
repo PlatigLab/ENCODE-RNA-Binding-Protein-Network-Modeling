@@ -273,7 +273,12 @@ class ShapNetworkInvestigator:
             "Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_bound_local_SHAP.png",
             "NOT Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_NOT_bound_local_SHAP.png",
         },
+        "elasticnet_coefficients_heatmap": {
+            "All": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_all_features.png",
+            "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
+        }, 
     }
+
 
     def __post_init__(self):
 
@@ -1974,7 +1979,8 @@ class ShapNetworkInvestigator:
                 ax.set_title(f"{cell_line}", fontsize=24, pad=10)
                 ax.set_xlabel("")
                 # Make y-axis tick labels larger
-                ax.tick_params(axis='y', labelsize=24)
+                ax.tick_params(axis='y', labelsize=28)
+                ax.tick_params(axis='x', labelsize=12 if plot_type == "All" else 20, rotation=90)
                 ax.set_ylabel("")
 
             # Add colorbar title
@@ -1989,6 +1995,8 @@ class ShapNetworkInvestigator:
             plt.text(0.5, 1.3, "RBPs w/ eCLIP in both cell lines had 'Ward' clustering done in HepG2 and both cell lines data matches that ordering.\nRBPs that were unique to a cell line had their own 'Ward' clustering run to determine ordering.", ha='center', va='center', fontsize=20, transform=axes[0].transAxes)
 
             plt.tight_layout(rect=[0, 0, 0.91, 1])  # Adjust layout to make space for the colorbar
+            plt.savefig(self.FIGURES["elasticnet_coefficients_heatmap"][plot_type], dpi=600, bbox_inches='tight')
+
             plt.show()
             plt.close()
 
