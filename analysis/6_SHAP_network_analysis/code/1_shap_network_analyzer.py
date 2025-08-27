@@ -7430,6 +7430,57 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def sample_data_by_actual_PSI_bins(self, df, seed, columns=None): 
+        
+        assert type(df) == pl.DataFrame, "df must be a polars DataFrame"
+        assert type(seed) == int, "seed must be an integer"
+
+        if columns is not None: 
+            assert type(columns) == list, "columns must be a list of column names"
+            assert all([type(col) == str for col in columns]), "all column names must be strings"
+            
+            if "Target_PSI" not in columns:
+                columns.append("Target_PSI")  
+            df = df.select(columns)
+
+        assert "Target_PSI" in df.columns, "df must contain 'Target_PSI' column"
+
+        # Define PSI bins: [0, 0.1), [0.1, 0.2), ..., [0.9, 1.0]
+        bins = np.arange(0, 1.01, 0.1)
+        labels = [f"{round(bins[i], 1)} - {round(bins[i+1], 1)}" for i in range(len(bins)-1)]
+
+        # Prepare a list to collect sampled DataFrames
+        sampled_dfs = []
+        for i in range(len(bins) - 1):
+            lower = bins[i]
+            upper = bins[i + 1]
+        
+            # Subset to rows in this bin (left-inclusive, right-exclusive except last bin)
+            if i < len(bins) - 2:
+                bin_df = df.filter((pl.col("Target_PSI") >= lower) & (pl.col("Target_PSI") < upper))
+            else:
+                # Last bin: include right edge
+                bin_df = df.filter((pl.col("Target_PSI") >= lower) & (pl.col("Target_PSI") <= upper))
+            
+            count = bin_df.height
+            assert count > 0, f"No rows in bin {labels[i]}"
+            
+            sampled = bin_df.sample(n=count, with_replacement=False, shuffle=True, seed=seed)
+            assert sampled.height == count, f"Sampled count {sampled.height} does not match original count {count} in bin {labels[i]}"
+
+            sampled_dfs.append(sampled)
+
+        # Find the minimum count across all bins using the height of each sampled DataFrame
+        bin_counts = [s.height for s in sampled_dfs]
+        min_count = min(bin_counts)
+
+        # For each bin, take only min_count rows
+        sampled_dfs = [s.head(min_count) for s in sampled_dfs]
+        # Concatenate all sampled DataFrames
+        result = pl.concat(sampled_dfs, how="vertical")
+        
+        return result, min_count
+
 
 ###############################################################
 ###############################################################
