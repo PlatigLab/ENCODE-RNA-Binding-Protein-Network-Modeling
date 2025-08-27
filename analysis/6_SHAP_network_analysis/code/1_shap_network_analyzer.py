@@ -7445,15 +7445,23 @@ class ShapNetworkInvestigator:
         ax.set_ylabel("Actual PSI", fontsize=10)
         ax.set_xlabel("Cell Line", fontsize=10)
         
-        ax.legend(
+        # Remove the axes legend if present
+        legend = ax.get_legend()
+        if legend:
+            legend.remove()
+
+        # Add a single figure-level legend at a fixed position (e.g., right center)
+        fig = plt.gcf()
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(
+            handles, labels,
             title="Binding Mode",
             fontsize=8,
             title_fontsize=9,
-            loc="upper left",
-            bbox_to_anchor=(0.85, 0.6),
-            bbox_transform=plt.gcf().transFigure,  # ensures figure-relative coordinates
+            loc="center left",
+            bbox_to_anchor=(1, 0.5),
             borderaxespad=0.0,
-            alignment="left"
+            frameon=True
         )
 
         plt.tight_layout()
