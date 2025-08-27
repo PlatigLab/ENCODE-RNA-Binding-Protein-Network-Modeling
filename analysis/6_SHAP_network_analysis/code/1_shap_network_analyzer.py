@@ -7343,8 +7343,10 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def feature_PSI_distributions_by_binding(self, feature=None): 
+    def feature_PSI_distributions_by_binding(self, feature=None, sampling_seed=None): 
         assert feature is not None, "feature must be provided"
+        assert sampling_seed is None or type(sampling_seed) == int, "sampling_seed must be an integer or None"
+
         if not hasattr(self, "final_all_data_SHAP_data"): 
             self.load_final_SHAP_data(underlying_data = "All-Data", as_lazyframe=False)
 
@@ -7366,12 +7368,26 @@ class ShapNetworkInvestigator:
 
         # Collect data for plotting (fast, polars-based)
         plot_dfs = []
+
+        if sampling_seed is not None:
+            cell_line_min_sample_sizes = {}
+
         for cell_line in cell_line_order:
-            df = self.final_all_data_SHAP_data[cell_line]
+            
+            if sampling_seed is None: 
+                df = self.final_all_data_SHAP_data[cell_line]
+            elif sampling_seed is not None: 
+                df, min_count = self.sample_data_by_actual_PSI_bins(
+                    self.final_all_data_SHAP_data[cell_line],
+                    seed=sampling_seed, 
+                    columns=[binding_col, "Target_PSI", "Binding Sum", "RBP_KD_Target", f"has_RBP_KD_{pos}"]
+                )
+                cell_line_min_sample_sizes[cell_line] = min_count
+
             schema = df.columns
             
             if binding_col not in schema:
-                continue  # Feature not present in this cell line
+                continue  # Feature not present in thiss cell line
 
             for mode, filter_fn in binding_modes:
                 filtered = filter_fn(df).select(["Target_PSI"])
@@ -7383,7 +7399,7 @@ class ShapNetworkInvestigator:
     
         plot_df = pl.concat(plot_dfs, how="vertical").to_pandas()
 
-        plt.figure(figsize=(8,4), dpi=200)
+        plt.figure(figsize=(8,5), dpi=300)
         ax = plt.gca()
 
         sns.violinplot(
@@ -7406,10 +7422,13 @@ class ShapNetworkInvestigator:
         # Annotate number of points above each distribution
         for i, cell_line in enumerate(cell_line_order):
             for j, binding_mode in enumerate(binding_mode_order):
+                
                 subset = plot_df[(plot_df["Cell Line"] == cell_line) & (plot_df["Binding Mode"] == binding_mode)]
                 n_points = len(subset)
+                
                 if n_points == 0:
                     continue
+                
                 # Find the position of the violin
                 # Violinplot positions: x = i, hue offset = j / len(binding_mode_order) - 0.5
                 x_pos = i + (j - (len(binding_mode_order) - 1) / 2) * 0.2
@@ -7420,11 +7439,22 @@ class ShapNetworkInvestigator:
                     ha="center", va="bottom", fontsize=6, color="black"
                 )
 
-        ax.set_title(f"Actual PSI for {feature} by Binding Mode", fontsize=12)
+        title_suffix = f"\n\nNOTE 1: K562 Bin Sampling Size - {cell_line_min_sample_sizes['K562']} & HepG2 Bin Sampling Size - {cell_line_min_sample_sizes['HepG2']}\nNOTE 2: Seed - {sampling_seed}" if sampling_seed is not None else ""
+
+        ax.set_title(f"Actual PSI for {feature} by Binding Mode{title_suffix}", fontsize=10, va="bottom")
         ax.set_ylabel("Actual PSI", fontsize=10)
         ax.set_xlabel("Cell Line", fontsize=10)
         
-        ax.legend(title="Binding Mode", fontsize=8, title_fontsize=9, bbox_to_anchor=(1.35, 0.6))
+        ax.legend(
+            title="Binding Mode",
+            fontsize=8,
+            title_fontsize=9,
+            loc="upper left",
+            bbox_to_anchor=(0.85, 0.6),
+            bbox_transform=plt.gcf().transFigure,  # ensures figure-relative coordinates
+            borderaxespad=0.0,
+            alignment="left"
+        )
 
         plt.tight_layout()
         plt.show()
