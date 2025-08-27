@@ -292,7 +292,10 @@ class ShapBackgroundTester:
                 self.cell_line = cell_line
                 
                 if mode == "sampling_based_backgrounds":
-                    df = self.load_data_lazy(unique_binding=True)[cell_line].collect()
+                    df = self.load_data_lazy(unique_binding=False)[cell_line].filter(
+                        pl.col("Partition").is_in(["Train", "Validate"])
+                    )
+                    df = self.convert_data_to_unique_binding(df).collect()
                     assert df.height > 0, f"No data found for cell line {cell_line} with background {backgrounds}"
 
                 for background_type in tqdm(backgrounds, desc=f"Processing {cell_line}"): 
@@ -337,6 +340,33 @@ class ShapBackgroundTester:
             final_df = pd.DataFrame(results)
             final_df.to_csv(DATA_FILE, sep="\t", index=False)
 
+
+    def calculate_binding_frequency_difference_across_PSI_bin_sampling_seeds(self, seed = None): 
+        assert seed is not None, "seed must be provided"
+        self.seed = seed
+
+        binding_freq_dfs = []
+        for cell_line in XGBOOST_BEST_MODEL_HASHES.keys():
+            self.cell_line = cell_line
+            df = self.load_data_lazy(unique_binding=True)[cell_line].collect()
+            assert df.height > 0, f"No data found for cell line {cell_line} with background {self.shap_background_data_type}"
+
+            sampled_df = self.sample_binding_patterns_by_PSI_bin(df)
+            binding_cols = self.get_binding_columns(sampled_df)
+
+            # Calculate binding frequencies
+            binding_freq = {
+                col: sampled_df[col].mean() for col in binding_cols
+            }
+            binding_freq_df = pd.DataFrame(binding_freq, index=[0])
+            binding_freq_df["cell_line"] = cell_line
+            binding_freq_dfs.append(binding_freq_df)
+        
+        combined_df = pd.concat(binding_freq_dfs, ignore_index=True)
+        return combined_df
+
+
+    
 
 if __name__ == "__main__":
 
