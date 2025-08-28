@@ -343,40 +343,208 @@ class ShapBackgroundTester:
             final_df.to_csv(DATA_FILE, sep="\t", index=False)
 
 
-    def calculate_binding_frequency_difference_across_PSI_bin_sampling_seeds(self, seed = None): 
-        assert seed is not None, "seed must be provided"
-        self.seed = seed
+    def calculate_binding_frequency_difference_across_PSI_bin_sampling_seeds(self,): 
+        assert self.shap_background_data_type in BACKGROUND_TYPES["sampling_based_backgrounds"], f"shap_background_data_type must be one of {BACKGROUND_TYPES['sampling_based_backgrounds']}"
 
-        binding_freq_dfs = []
-        for cell_line in XGBOOST_BEST_MODEL_HASHES.keys():
-            self.cell_line = cell_line
-            df = self.load_data_lazy(unique_binding=True)[cell_line].collect()
-            assert df.height > 0, f"No data found for cell line {cell_line} with background {self.shap_background_data_type}"
-
-            sampled_df = self.sample_binding_patterns_by_PSI_bin(df)
-            binding_cols = self.get_binding_columns(sampled_df)
-
-            # Calculate binding frequencies
-            binding_freq = {
-                col: sampled_df[col].mean() for col in binding_cols
-            }
-            binding_freq_df = pd.DataFrame(binding_freq, index=[0])
-            binding_freq_df["cell_line"] = cell_line
-            binding_freq_dfs.append(binding_freq_df)
+        OUTPUT_FILE = f"../outputs/background_data_experiments/binding_freq_sampling_vs_ref/binding_freq_sampling_vs_ref_{self.shap_background_data_type}.feather"
         
-        combined_df = pd.concat(binding_freq_dfs, ignore_index=True)
-        return combined_df
+        if Path(OUTPUT_FILE).exists():
+            return pd.read_feather(OUTPUT_FILE)
+
+        else: 
+            for cell_line in tqdm(XGBOOST_BEST_MODEL_HASHES.keys(), desc="Cell lines"):
+                self.cell_line = cell_line
+
+                # Load the full training and validation data lazily
+                full_lf = self.load_data_lazy(unique_binding=False)[self.cell_line]
+                full_lf = full_lf.filter(pl.col("Partition").is_in(["Train", "Validate"]))
+                full_lf = self.convert_data_to_unique_binding(full_lf)
+
+                # Subset to binding columns
+                binding_cols = self.get_binding_columns(full_lf)
+                # For each binding column, calculate the mean (fraction of 1s)
+                ref_freq = full_lf.select(binding_cols).mean().collect()
+                # Overwrite ref_freq to be a dictionary: feature -> % of time it's 1
+                ref_freq = {col: float(ref_freq[col][0]) for col in binding_cols}
+
+                final_df = full_lf.select(binding_cols + ["Predictions", "index"]).collect()
+
+                seeds = list(range(0, 1000, 20))
+                for seed in tqdm(seeds, desc=f"Seeds for {self.cell_line}",):
+                    self.seed = int(seed)
+
+                    # Get sampled frequency as a dictionary in one command
+                    sampled_frequency = self.sample_binding_patterns_by_predicted_PSI_bin(
+                        final_df
+                    ).drop(["Predictions", "index"]).mean()
+                    sampled_frequency = {col: float(sampled_frequency[col][0]) for col in binding_cols}   
+
+                    # Prepare data for output
+                    output_rows = []
+                    for feature in binding_cols:
+
+                        sampled_value = sampled_frequency[feature]
+                        reference_value = ref_freq[feature]
+                        ratio = sampled_value / reference_value if reference_value != 0 else float('nan')
+
+                        output_rows.append({
+                            "shap_background_data_type": self.shap_background_data_type,
+                            "cell_line": self.cell_line,
+                            "seed": self.seed,
+                            "feature": feature,
+                            "feature_sampled_value": sampled_value,
+                            "reference_value": reference_value,
+                            "Ratio (Sample/Ref)": ratio,
+                            "Log10 Ratio (Sample/Ref)": np.log10(ratio) if not np.isnan(ratio) else float('nan'),
+                            "Difference (Sample - Ref)": sampled_value - reference_value,
+                        })
+                    
+                    output_df = pl.DataFrame(output_rows)
+                    output_path = f"FOR_AGGREGATION_{self.cell_line}_{self.shap_background_data_type}_seed_{self.seed}.feather"
+                    output_df.write_ipc(output_path)
+
+                del final_df
+                gc.collect()
+
+            # Find all aggregation files
+            agg_files = glob.glob("FOR_AGGREGATION_*.feather")
+            assert len(agg_files) == 100, f"Expected 100 aggregation files (2 cell lines & 50 seeds), found {len(agg_files)}"
+            
+            # Efficiently read all files into a list of polars DataFrames
+            agg_df = [pl.read_ipc(f) for f in agg_files]
+            # Concatenate all DataFrames
+            agg_df = pl.concat(agg_df, how="vertical")
+            agg_df.write_ipc(OUTPUT_FILE)
+            
+            # Delete all aggregation files
+            for f in agg_files:
+                Path(f).unlink()
+            
+            del agg_df
+            gc.collect()
 
 
-    
+    def plot_binding_frequency_difference_across_PSI_bin_sampling_seeds(self): 
+        assert self.shap_background_data_type in BACKGROUND_TYPES["sampling_based_backgrounds"], f"shap_background_data_type must be one of {BACKGROUND_TYPES['sampling_based_backgrounds']}"
+
+        df = self.calculate_binding_frequency_difference_across_PSI_bin_sampling_seeds()
+
+        # Ensure cell line and seed order
+        cell_line_order = sorted(df["cell_line"].unique())
+        seed_order = sorted(df["seed"].unique())
+        
+        # Prepare 5 groups of 10 seeds each
+        seed_groups = [seed_order[i:i+10] for i in range(0, len(seed_order), 10)]
+
+        metrics = ["Ratio (Sample/Ref)", "Log10 Ratio (Sample/Ref)", "Difference (Sample - Ref)"]
+        equality_reference = {
+            "Ratio (Sample/Ref)": 1,
+            "Log10 Ratio (Sample/Ref)": 0,
+            "Difference (Sample - Ref)": 0,
+        }
+        
+        for metric in metrics:
+
+            ################
+            # FIRST FIGURE #
+            ################
+        
+            fig, axes = plt.subplots(5, 1, figsize=(14, 14), sharex=True, sharey=True)
+
+            legend_handles = None
+            legend_labels = None
+
+            for i, seeds in enumerate(seed_groups):
+                ax = axes[i]
+                
+                ax.axhline(
+                    y=equality_reference[metric], 
+                    color='red', 
+                    linestyle='--', 
+                    linewidth=1.5,
+                    label='Sample = Reference'
+                )
+                
+                subset = df[df["seed"].isin(seeds)].copy()
+                # Use the actual seeds in this group for hue_order and legend
+                hue_seeds = list(seeds)
+                print(hue_seeds)
+
+                sns.violinplot(
+                    data=subset,
+                    x="cell_line",
+                    y=metric,
+                    hue="seed",
+                    order=cell_line_order,
+                    hue_order=hue_seeds,
+                    palette="viridis",
+                    ax=ax,
+                    linewidth=1.2,
+                    cut=0,
+                    density_norm="width",
+                )
+
+                # sns.swarmplot(
+                #     data=subset,
+                #     x="cell_line",
+                #     y=metric,
+                #     hue="seed",
+                #     order=cell_line_order,
+                #     hue_order=sorted_seeds,
+                #     palette="viridis",
+                #     ax=ax,
+                #     size=1,           # very small point size
+                #     linewidth=0.1,    # small linewidth
+                #     dodge=True,
+                # )
+
+                ax.set_title(f"Seeds {hue_seeds[0]}–{hue_seeds[-1]}")
+                
+                if i == 0:
+                    legend_handles, legend_labels = ax.get_legend_handles_labels()
+
+                print(legend_labels)
+                
+                ax.get_legend().remove()
+                ax.set_xlabel("Cell Line")
+                ax.set_ylabel(metric)
+
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                title="Seed",
+                bbox_to_anchor=(1.02, 0.5),
+                loc="center left",
+                borderaxespad=0.,
+                fontsize=18,
+                title_fontsize=20
+            )
+            
+            fig.suptitle(f"{metric}: Sampled vs Reference Binding Frequency per Feature\n{self.shap_background_data_type}\n", fontsize=16)
+            fig.tight_layout()
+            plt.show()
+            
+            #################
+            # SECOND FIGURE #
+            #################
+
+
+
+
+
+
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Vary background data for interventional probability SHAP.")
+    
     parser.add_argument("--cell_line", type=str, choices=XGBOOST_BEST_MODEL_HASHES.keys(), help="Cell line to use.")
     parser.add_argument("--shap_background_data_type", type=str, choices=VALID_BACKGROUND_DATA_TYPES, help="Type of background data for SHAP.")
-    parser.add_argument("--plot_command", type=str, choices=PLOT_COMMAND_OPTIONS, help="Plot command to execute.")
     parser.add_argument("--seed", type=int, help="Random seed.")
+
+    parser.add_argument("--plot_command", type=str, choices=PLOT_COMMAND_OPTIONS, help="Plot command to execute.")
+    parser.add_argument("--parallelize", type=str)
+
 
     args = parser.parse_args()
 
