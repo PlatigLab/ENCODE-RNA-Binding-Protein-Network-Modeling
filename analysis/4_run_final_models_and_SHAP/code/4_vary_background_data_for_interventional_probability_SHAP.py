@@ -1,10 +1,11 @@
-import pickle, argparse, gc
+import pickle, argparse, gc, glob
 
 import xgboost as xgb, polars as pl, numpy as np, pandas as pd, seaborn as sns, matplotlib.pyplot as plt
 
 from dataclasses import dataclass
 from pathlib import Path
 from tqdm import tqdm
+
 
 XGBOOST_BEST_MODEL_HASHES = {
     "HepG2": "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd",
@@ -40,7 +41,6 @@ PLOT_COMMAND_OPTIONS = [
     "plot_average_predictions_for_sampling_based_backgrounds",
 ]
 
-SEEDS = list(range(0, 1000, 10))
 
 
 @dataclass
@@ -160,8 +160,9 @@ class ShapBackgroundTester:
         return lf
         
 
-    def sample_binding_patterns_by_PSI_bin(self, df):
+    def sample_binding_patterns_by_predicted_PSI_bin(self, df):
         assert type(df) == pl.DataFrame, "df must be a polars DataFrame"
+        assert "Predictions" in df.columns and "index" in df.columns, "df must contain 'Predictions' and 'index' columns"
         assert self.shap_background_data_type.startswith("sample_"), "shap_background_data_type must start with 'sample_'"
         assert self.seed is not None, "seed must be set for sampling"
         
