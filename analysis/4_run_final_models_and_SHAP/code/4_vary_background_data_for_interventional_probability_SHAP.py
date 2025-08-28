@@ -319,10 +319,11 @@ class ShapBackgroundTester:
                         })
                         
                     elif mode == "sampling_based_backgrounds":
-                        
+                        SEEDS = list(range(0, 1000, 10))
+
                         for seed in tqdm(SEEDS, desc=f"Sampling seeds for {cell_line} with background {background_type}"):
                             self.seed = seed
-                            sampled_df = self.sample_binding_patterns_by_PSI_bin(df)
+                            sampled_df = self.sample_binding_patterns_by_predicted_PSI_bin(df)
                             
                             predictions = sampled_df["Predictions"]
                             assert len(predictions) > 0, f"No data found for cell line {cell_line} with background {background_type} and seed {seed}"
