@@ -12,4 +12,4 @@ Contains general input data that is useful across the entire repository. (e.g. E
 
 📂`miscellaneous_analysis/`:
 
-Contains analyses that were not part of the publication but answered highly important and specific questions.  
+Contains analyses that were not the main part of the publication but answered highly important and specific questions.  
