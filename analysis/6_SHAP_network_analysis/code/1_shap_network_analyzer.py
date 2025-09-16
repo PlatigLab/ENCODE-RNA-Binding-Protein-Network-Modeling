@@ -6760,13 +6760,13 @@ class ShapNetworkInvestigator:
     def plot_shap_waterfall_examples(self):
 
         # do not care about plotting these RBPs
-        RBP_BLACKLIST = ["AQR", "SF3B4"]
+        RBP_BLACKLIST = []#["AQR", "SF3B4"]
 
         with open(self.CACHE_INFO["waterfall_plot_data"], "rb") as f:
             candidates = pickle.load(f)
         
         figsize_horizontal = 20
-        figsize_vertical = 14
+        figsize_vertical = 15
 
         for idx in candidates.keys():
             
@@ -6775,7 +6775,22 @@ class ShapNetworkInvestigator:
                 logger.info(f"Skipping index {idx} due to RBP blacklist.")
                 continue
 
-            fig, axes = plt.subplots(2, 2, figsize=(figsize_horizontal, figsize_vertical), dpi=50, sharex="row")
+            # diff_nonzeroness_cutoff = 0.0008
+            # skip_flag = False
+
+            # for cell_line in self.cell_lines:
+            #     row = candidates[idx][cell_line]["original_kd_row"]
+            #     diff_nonzeroness = row["diff_nonzeroness_signed"]
+                
+            #     assert diff_nonzeroness > 0, f"Expected positive diff_nonzeroness_signed, found {diff_nonzeroness} for index {idx} in cell line {cell_line}"
+
+            #     if diff_nonzeroness < diff_nonzeroness_cutoff:
+            #         skip_flag = True
+            
+            # if skip_flag:
+            #     continue
+
+            fig, axes = plt.subplots(2, 2, figsize=(figsize_horizontal, figsize_vertical), dpi=600, sharex="row")
 
             for row_idx, cell_line in enumerate(self.cell_lines):
                 for col_idx, condition in enumerate(["CTRL", "KD"]):
@@ -6786,7 +6801,7 @@ class ShapNetworkInvestigator:
                     explanation = candidates[idx][cell_line][condition]['explanations']
                     waterfall(
                         explanation[0],
-                        max_display=5,
+                        max_display=7,
                         show=False,
                         highlight_features=candidates[idx][cell_line][condition]['highlight_features']
                     )
@@ -8218,7 +8233,6 @@ if __name__ == "__main__":
         "calculate_local_SHAP_percent_non_zero",
         "calculate_local_SHAP_mean_vs_variance_deciles_bound",
         "calculate_local_SHAP_mean_vs_variance_deciles_unbound", 
-        "calculate_percent_positive_and_negative_local_SHAP_per_feature", 
         "pct_pos_neg_local_SHAP_per_feature_bound",
         "pct_pos_neg_local_SHAP_per_feature_unbound", 
         "arbs_narbs_bound", 
