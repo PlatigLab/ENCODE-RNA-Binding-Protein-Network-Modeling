@@ -2,7 +2,7 @@ import os
 
 CELL_LINES = ["K562", "HepG2"]
 SCRIPT_DIR = "/scratch/jve4pt/platiglib/scripts"
-YAML_FILE_PREFIX= "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/3_choose_dataset_and_model_parameters/wandb_configs/model/2_sequential_sweeps/2_tree_splitting_parameters"
+YAML_FILE_PREFIX= "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/03_choose_dataset_and_model_parameters/wandb_configs/model/2_sequential_sweeps/2_tree_splitting_parameters"
 
 os.chdir(SCRIPT_DIR)
 

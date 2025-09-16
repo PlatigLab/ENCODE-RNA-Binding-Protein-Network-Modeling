@@ -1,7 +1,7 @@
 import os, glob
 
 SCRIPT_DIR = "/scratch/jve4pt/platiglib/scripts"
-ONE_DIM_CONFIG_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/4_choose_dataset_and_model_parameters/wandb_configs/model/1D-sweeps/"
+ONE_DIM_CONFIG_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/03_choose_dataset_and_model_parameters/wandb_configs/model/1D-sweeps/"
 
 os.chdir(SCRIPT_DIR)
 

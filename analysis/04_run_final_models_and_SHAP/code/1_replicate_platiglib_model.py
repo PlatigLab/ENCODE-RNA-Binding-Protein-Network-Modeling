@@ -9,7 +9,7 @@ from xgboost import XGBRegressor
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import r2_score
 
-CONFIGS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction"
+CONFIGS_DIR = "../../03_choose_dataset_and_model_parameters/output/model_reproduction"
 MODEL_DIR = "../outputs/pickled_models"
 PREDICTIONS_DIR = "../outputs/predictions"
 
@@ -17,7 +17,7 @@ PREDICTIONS_DIR = "../outputs/predictions"
 class YogiPlatigLibModelReplicator:
     config_file: str
 
-    DATA_DIR = "../../2_input_binding_exploration/__featherv2-cache__/"
+    DATA_DIR = "../../02_input_binding_exploration/__featherv2-cache__/"
     _REQUIRED_COLUMNS = ['index', 'Target_PSI']
 
 

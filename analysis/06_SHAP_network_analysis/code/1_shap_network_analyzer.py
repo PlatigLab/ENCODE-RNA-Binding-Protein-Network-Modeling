@@ -25,13 +25,13 @@ from waterfall_plot import waterfall
 
 @dataclass
 class ShapNetworkInvestigator:
-    PARAMS_DIR = "../../3_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
-    MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/pickled_models/"
-    CORRECTED_HAS_RBP_KD_DIR = "../../1_create_RBP_ML_input/4_create_num_peaks_ML_input/corrected_has_RBP_KD_output/"
-    PRED_DIR = "../../4_run_final_models_and_SHAP/outputs/predictions/"
+    PARAMS_DIR = "../../03_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
+    MODEL_PICKLE_DIR = "../../04_run_final_models_and_SHAP/outputs/pickled_models/"
+    CORRECTED_HAS_RBP_KD_DIR = "../../01_create_RBP_ML_input/4_create_num_peaks_ML_input/corrected_has_RBP_KD_output/"
+    PRED_DIR = "../../04_run_final_models_and_SHAP/outputs/predictions/"
 
-    SHAP_MODEL_PICKLE_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
-    SHAP_DIR = "../../4_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
+    SHAP_MODEL_PICKLE_DIR = "../../04_run_final_models_and_SHAP/outputs/SHAP/regular/normal/explainer_objects/"
+    SHAP_DIR = "../../04_run_final_models_and_SHAP/outputs/SHAP/regular/normal/shap_values/"
     SHAP_TYPE = "regular-observational"
 
     FDR_THRESHOLD = 0.1
