@@ -34,7 +34,7 @@ Steps are as follows:
 
 Contains input data and code to retrieve RBP-RBP protein interaction data from [Street et al. 2024 Molecular Cell](https://doi.org/10.1016/j.molcel.2024.08.030) and save as a `JSON` object for downstream analysis and as a lab resource.
 
-📂 `analysis/06_SHAP_network_analysis/`: 
+📂 `06_SHAP_network_analysis/`: 
 
 Too many analyses to list here but in summary, this contains the bulk of the `SHAP` analyses that went into the paper and most of the important figures in the paper. 
 
