@@ -7619,6 +7619,99 @@ class ShapNetworkInvestigator:
         
         return result, min_count
 
+    
+    def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None, local_shap_type=None): 
+        assert type(data) == pl.DataFrame, "data must be a polars DataFrame"
+        assert local_shap_type in ["diff(bound-unbound)", "bound-only"], "local_shap_type must be 'diff(bound-unbound)' or 'bound-only'"
+
+        logger.info(f"Creating dPSI vs Local SHAP scatterplot data for {data.height} rows w/ local_shap_type: {local_shap_type} ...")
+        # Filter rows where has_RBP_KD is True and get unique combinations of RBP_KD_Target and rMATS Event ID
+        unique_kd_rows = data.filter(
+            pl.col("has_RBP_KD") == True
+        ).unique(
+            subset=["RBP_KD_Target", "rMATS Event ID"], 
+            maintain_order=True, 
+            keep="first"
+        )
+
+        plot_rows = []
+        binding_cols = [col for col in data.columns if col.endswith("_binding")]
+
+        for row in unique_kd_rows.iter_rows(named=True):
+            rbp_kd_target = row["RBP_KD_Target"]
+            index = row["index"]
+
+            idx_prefix = index.split(f"_{rbp_kd_target}_")[0]
+            assert len(idx_prefix.split("_")) == 8, f"Index prefix split length != 8: {idx_prefix}"
+
+            assoc_exp = str(row["Associated Experiment"])
+            prefix_search = f"{idx_prefix}_{assoc_exp}_"
+
+            # Find all rows in original data that start with prefix_search
+            matching = data.filter(pl.col("index").str.starts_with(prefix_search))
+            if matching.height == 0:
+                continue
+
+            if matching.height == 2:
+                # Unique by binding columns
+                matching_unique = matching.unique(subset=binding_cols, maintain_order=True, keep="first")
+                assert matching_unique.height == 1, f"Unique binding rows != 1 for {prefix_search}"
+                chosen_row = matching_unique.row(0, named=True)
+            else:
+                chosen_row = matching.row(0, named=True)
+
+            assert chosen_row["RBP_KD_Target"] == "CTRL", f"Chosen row RBP_KD_Target != CTRL: {chosen_row['RBP_KD_Target']}"
+
+            for pos in range(1, 7):
+                has_kd_col = f"has_RBP_KD_{pos}"
+
+                if row[has_kd_col] == True:
+                    kd_rbp = rbp_kd_target
+                    binding_col = f"{kd_rbp}_{pos}_binding"
+                    shap_col = f"{kd_rbp}_{pos}_shap"
+
+                    # Get KD and CTRL rows
+                    kd_row = row
+                    ctrl_row = chosen_row
+
+                    # Assert binding values
+                    assert ctrl_row[binding_col] == 1, f"CTRL binding_col not 1: {binding_col}"
+                    assert kd_row[binding_col] == 0, f"KD binding_col not 0: {binding_col}"
+
+                    # Get local SHAP values
+                    ctrl_shap = ctrl_row[shap_col]
+                    kd_shap = kd_row[shap_col]
+
+                    # Get DeltaPSI and assert equality
+                    inc_diff_kd = kd_row["DeltaPSI"]
+
+                    if local_shap_type == "bound-only":
+                        local_shap_val = ctrl_shap
+                    elif local_shap_type == "diff(bound-unbound)":
+                        local_shap_val = ctrl_shap - kd_shap
+                    else:
+                        raise ValueError("Invalid local_shap_type")
+
+                    plot_rows.append({
+                        "dPSI": inc_diff_kd,
+                        "Bound Local SHAP" if local_shap_type =="bound-only" else "Diff(CTRL - KD)" : local_shap_val,
+                        "rMATS Event ID": kd_row["rMATS Event ID"],
+                        "RBP_KD_Target": kd_rbp,
+                        "Position": pos, 
+                        "Feature": binding_col
+
+                    })
+
+        plot_df = pd.DataFrame(plot_rows)
+        # multiply dPSI by -1 to match SHAP directionality
+        plot_df["dPSI"] = plot_df["dPSI"] * -1
+
+        # Assert that there are no duplicate rows for rMATS Event ID and RBP_KD_Target
+        assert not plot_df.duplicated(subset=["rMATS Event ID", "RBP_KD_Target", "Feature"]).any(), "Duplicate rows found for rMATS Event ID and RBP_KD_Target"
+        
+        return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
+
+    
 
 ###############################################################
 ###############################################################
