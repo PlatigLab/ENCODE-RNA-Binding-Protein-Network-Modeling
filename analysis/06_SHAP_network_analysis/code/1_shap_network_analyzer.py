@@ -3304,6 +3304,39 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def get_associated_control_row(self, index, df): 
+        # Assert index format and df type
+        assert isinstance(df, pl.DataFrame), "df must be a polars DataFrame"
+        assert isinstance(index, str) and "_KD-" in index, "Index must be a string containing '_KD-'"
+        
+        index_parts = str(index).split("_")
+        assert len(index_parts) == 10, f"Index must have 10 parts when split by '_', got {len(index_parts)}"
+
+        # Build the prefix to filter
+        prefix = "_".join(index_parts[:8]) + "_" + str(df.filter(pl.col("index") == index)["Associated Experiment"].item()) + "_"
+
+        # Filter rows where index starts with the prefix
+        filtered = df.filter(pl.col("index").str.starts_with(prefix))
+
+        if filtered.height == 0:
+            return None
+
+        elif filtered.height == 1:
+            return filtered
+
+        elif filtered.height == 2:
+            indices = filtered["index"].to_list()
+            ends = [i.split("_")[-1] for i in indices]
+            
+            assert "CTRL-1" in ends and "CTRL-2" in ends, "Expected one row ending with 'CTRL-1' and one with 'CTRL-2'"
+            
+            # Return the row ending with "CTRL-1"
+            return filtered.filter(pl.col("index").str.ends_with("CTRL-1"))
+
+        else:
+            raise AssertionError(f"Expected 0, 1, or 2 rows, got {filtered.height}")
+
+
     def get_matching_features(self):
 
         if not hasattr(self, 'feature_metric_summary_table'):
