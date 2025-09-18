@@ -18,6 +18,8 @@ from statannotations.Annotator import Annotator
 from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
+from scipy.stats import fisher_exact
+from statsmodels.stats.multitest import multipletests
 
 from waterfall_plot import waterfall
 
@@ -152,7 +154,8 @@ class ShapNetworkInvestigator:
             "dpsi_vs_local_SHAP_scatterplot_data": {
                 "test_partition": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
             }, 
-        }
+            "fishers_exact_association_between_binding_and_differential_splicing": "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_significant_splicing.tsv",  
+    }
 
     non_normalized_differential_plotting_columns_info = {
         "# Diff. Events": "RBP-specific",
@@ -3302,6 +3305,112 @@ class ShapNetworkInvestigator:
         plt.suptitle("% Diff. Splicing Metrics for Matching Features\nNOTE: when plotting percentages")
         plt.tight_layout()
         plt.show()
+
+
+    def calculate_binding_vs_diff_events_fishers_association(self): 
+
+        OUTPUT_FILE = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.info(f"FROM CACHE: Loading Fisher's Exact test for binding vs significant splicing from {OUTPUT_FILE}")
+            return pd.read_csv(OUTPUT_FILE, sep="\t")
+
+        else:
+
+            logger.info("Calculating Fisher's Exact test for binding vs significant splicing... ")
+            lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+
+            results = []
+            for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell Lines"):
+                
+                schema = lazyframes[cell_line].collect_schema().names()
+                non_shap_cols = [col for col in schema if not col.endswith("_shap")]
+
+                df = lazyframes[cell_line].select(non_shap_cols).collect()
+
+                non_ctrl_df = df.filter(pl.col("RBP_KD_Target") != "CTRL")
+                unique_rows = non_ctrl_df.unique(subset=["RBP_KD_Target", "rMATS Event ID"], maintain_order=True, keep="first")
+                
+                # Efficiently create control_dict: subset to CTRL, subset to binding cols, convert to dict
+                control_df = df.filter(pl.col("RBP_KD_Target") == "CTRL")
+                binding_cols = [col for col in control_df.columns if col.endswith("_binding")]
+                
+                control_dict = control_df.to_pandas().set_index("index")[binding_cols].to_dict(orient="index")
+
+                for rbp_kd_target in tqdm.tqdm(unique_rows["RBP_KD_Target"].unique().to_list(), desc=f"{cell_line} KD RBPs"):
+                    subset = unique_rows.filter(pl.col("RBP_KD_Target") == rbp_kd_target)
+                    
+                    fishers_test_contingency_tables = {
+                        position: {
+                            "FDR <= 0.05": {"Binding": 0, "No Binding": 0},
+                            "FDR > 0.05": {"Binding": 0, "No binding": 0}
+                        }
+                        for position in range(1, 7)
+                    }
+
+                    for kd_row in subset.iter_rows(named=True):
+                        associated_experiment = kd_row["Associated Experiment"]
+                        ctrl_row_index_prefix = "_".join(kd_row["index"].split("_")[0:8]) + f"_{associated_experiment}_CTRL-"
+                        
+                        ctrl_1 = ctrl_row_index_prefix + "1"
+                        ctrl_2 = ctrl_row_index_prefix + "2"
+
+                        if ctrl_1 not in control_dict and ctrl_2 not in control_dict:
+                            continue
+                        elif ctrl_1 in control_dict: 
+                            ctrl_row = control_dict[ctrl_1]
+                        elif ctrl_2 in control_dict:
+                            ctrl_row = control_dict[ctrl_2]
+                        else:
+                            raise ValueError("Logic error in finding control row")
+
+                        for position in range(1, 7):
+                            binding_col = f"{rbp_kd_target}_{position}_binding"
+
+                            if kd_row["FDR"] <= 0.05:
+                                
+                                if ctrl_row[binding_col] == 1:
+                                    fishers_test_contingency_tables[position]["FDR <= 0.05"]["Binding"] += 1
+                                elif ctrl_row[binding_col] == 0:
+                                    fishers_test_contingency_tables[position]["FDR <= 0.05"]["No Binding"] += 1
+                            
+                            elif kd_row["FDR"] > 0.05:
+                                
+                                if ctrl_row[binding_col] == 1:
+                                    fishers_test_contingency_tables[position]["FDR > 0.05"]["Binding"] += 1
+                                elif ctrl_row[binding_col] == 0:
+                                    fishers_test_contingency_tables[position]["FDR > 0.05"]["No binding"] += 1  
+
+                    for position, table in fishers_test_contingency_tables.items():
+                        
+                        contingency = [
+                            [table["FDR <= 0.05"]["Binding"], table["FDR <= 0.05"]["No Binding"]],
+                            [table["FDR > 0.05"]["Binding"], table["FDR > 0.05"]["No binding"]]
+                        ]
+                        
+                        odds_ratio, p_value = fisher_exact(contingency)
+
+                        results.append({
+                            "Cell Line": cell_line,
+                            "Feature": f"{rbp_kd_target}_{position}_binding",
+                            "RBP": rbp_kd_target,
+                            "Position": position,
+                            "(A) Significant & Bound": contingency[0][0],
+                            "(B) Significant & Not Bound": contingency[0][1],
+                            "(C) Not Significant & Bound": contingency[1][0],
+                            "(D) Not Significant & Not Bound": contingency[1][1],
+                            "(A*D / B*C) Odds Ratio": odds_ratio,
+                            "Log-Odds Ratio": np.log10(odds_ratio),
+                            "Fisher's Exact Test P-Value": p_value
+                        })  
+
+            results_df = pd.DataFrame(results)
+            results_df["FDR BH"] = multipletests(results_df["Fisher's Exact Test P-Value"], method="fdr_bh")[1]
+            
+            results_df = results_df.sort_values(by=["Cell Line", "Feature"]) 
+
+            results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Fisher's Exact test between binding and differential splicing results saved to {OUTPUT_FILE}")
 
 
     def get_associated_control_row(self, index, df): 
