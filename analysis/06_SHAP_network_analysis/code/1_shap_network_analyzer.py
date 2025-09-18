@@ -7934,18 +7934,27 @@ class ShapNetworkInvestigator:
             
             logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")            
             combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
-
+            
             for plot_metric in ["Bound Local SHAP", "CTRL - KD Local SHAP"]:
-                logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition ...")
-                
-                fig, axes = plt.subplots(1, 2, figsize=(12,7), dpi=100, sharex=True, sharey=True)
-                
-                for i, cell_line in enumerate(self.cell_lines):
-                    df_cell = combined_df[combined_df["Cell Line"] == cell_line]
-                    ax = axes[i]
+                logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
+
+                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=100, sharex=True, sharey=True)
+                for position in range(1, 7):
                     
-                    self.plot_dpsi_vs_local_SHAP_scatterplot(df=df_cell, ax=ax, plot_metric=plot_metric)
-                    ax.set_title(f"{cell_line}", fontsize=14)
+                    for i, cell_line in enumerate(self.cell_lines):
+                        df_cell = combined_df[
+                            (combined_df["Cell Line"] == cell_line) &
+                            (combined_df["Position"] == position)
+                        ]
+                        ax = axes[position-1, i]
+                        
+                        self.plot_dpsi_vs_local_SHAP_scatterplot(
+                            df=df_cell, 
+                            ax=ax, 
+                            plot_metric=plot_metric, 
+                            title = f"{cell_line} - Pos. {position}",
+                            dot_size = 4
+                        )
 
                 plt.tight_layout()
                 plt.show()
