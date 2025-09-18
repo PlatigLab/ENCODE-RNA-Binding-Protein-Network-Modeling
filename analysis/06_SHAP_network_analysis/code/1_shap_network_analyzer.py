@@ -7849,7 +7849,7 @@ class ShapNetworkInvestigator:
         return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
 
     
-    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None): 
+    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None, **kwargs): 
 
         # Data assertions
         assert isinstance(df, pd.DataFrame), "df must be a pandas DataFrame"
@@ -7867,9 +7867,9 @@ class ShapNetworkInvestigator:
 
         ax.scatter(
             x, y,
-            s=2,
+            s=2 if 'dot_size' not in kwargs else kwargs['dot_size'],
             alpha=0.3,
-            c=df["Position"], 
+            c = kwargs["color"] if "color" in kwargs else None,
             edgecolor="black",
             linewidths=0.3
         )
@@ -7901,7 +7901,7 @@ class ShapNetworkInvestigator:
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.text(
-            0.5, -0.08,
+            0.5, -0.03,
             plot_metric,
             fontsize=12,
             ha='center',
@@ -7909,7 +7909,7 @@ class ShapNetworkInvestigator:
             transform=ax.transAxes
         )
         ax.text(
-            -0.08, 0.5,
+            -0.03, 0.5,
             "△PSI (CTRL - KD)",
             fontsize=12,
             ha='right',
@@ -7918,7 +7918,10 @@ class ShapNetworkInvestigator:
             transform=ax.transAxes
         )
 
-        ax.set_title(plot_metric, fontsize=12)
+        ax.set_title(
+            kwargs['title'] if 'title' in kwargs else "",
+            fontsize=14
+        )
 
         return ax
 
