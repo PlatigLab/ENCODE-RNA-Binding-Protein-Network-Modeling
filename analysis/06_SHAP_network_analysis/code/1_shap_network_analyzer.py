@@ -149,7 +149,9 @@ class ShapNetworkInvestigator:
                 "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
             }, 
             "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
-
+            "dpsi_vs_local_SHAP_scatterplot_data": {
+                "test_partition": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
+            }, 
         }
 
     non_normalized_differential_plotting_columns_info = {
@@ -7705,6 +7707,129 @@ class ShapNetworkInvestigator:
         return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
 
     
+    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None): 
+
+        # Data assertions
+        assert isinstance(df, pd.DataFrame), "df must be a pandas DataFrame"
+        assert hasattr(ax, "scatter"), "ax must be a matplotlib axis"
+        assert isinstance(plot_metric, str), "plot_metric must be a string"        
+        assert plot_metric in df.columns, f"{plot_metric} not found in df columns"
+        assert "dPSI" in df.columns, "'dPSI' column not found in df"
+
+        # Scatterplot
+        x = df[plot_metric]
+        y = df["dPSI"]
+
+        assert not x.isnull().any(), "Null values found in x"
+        assert not y.isnull().any(), "Null values found in y"
+
+        ax.scatter(
+            x, y,
+            s=2,
+            alpha=0.3,
+            c=df["Position"], 
+            edgecolor="black",
+            linewidths=0.3
+        )
+
+        # Move axes to cross at (0,0)
+        ax.spines['left'].set_position('zero')
+        ax.spines['bottom'].set_position('zero')
+        ax.spines['right'].set_color('none')
+        ax.spines['top'].set_color('none')
+        ax.xaxis.set_ticks_position('bottom')
+        ax.yaxis.set_ticks_position('left')
+
+        # Calculate correlations and number of points
+        pearson_corr, _ = pearsonr(x, y)
+        spearman_corr, _ = spearmanr(x, y)
+        num_points = len(x)
+
+        # Annotate in top left corner
+        ax.text(
+            0.02, 0.98,
+            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment='top',
+            horizontalalignment='left'
+        )
+
+        # Move x/y labels to bottom/left using transAxes
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.text(
+            0.5, -0.08,
+            plot_metric,
+            fontsize=12,
+            ha='center',
+            va='top',
+            transform=ax.transAxes
+        )
+        ax.text(
+            -0.08, 0.5,
+            "△PSI (CTRL - KD)",
+            fontsize=12,
+            ha='right',
+            va='center',
+            rotation=90,
+            transform=ax.transAxes
+        )
+
+        ax.set_title(plot_metric, fontsize=12)
+
+        return ax
+
+    
+    def plot_dpsi_vs_local_SHAP_for_test_data(self): 
+
+        OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']
+
+        if os.path.exists(OUTPUT_FILE):
+            
+            logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")            
+            combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
+
+            for plot_metric in ["Bound Local SHAP", "CTRL - KD Local SHAP"]:
+                logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition ...")
+                
+                fig, axes = plt.subplots(1, 2, figsize=(12,7), dpi=100, sharex=True, sharey=True)
+                
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+                    ax = axes[i]
+                    
+                    self.plot_dpsi_vs_local_SHAP_scatterplot(df=df_cell, ax=ax, plot_metric=plot_metric)
+                    ax.set_title(f"{cell_line}", fontsize=14)
+
+                plt.tight_layout()
+                plt.show()
+
+        else: 
+            
+            logger.info("No cache found. Compiling dPSI vs Local SHAP scatterplot data for test partition ...")
+
+            all_data = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+            plot_dfs = []
+            
+            for cell_line in self.cell_lines: 
+                
+                data = all_data[cell_line].filter(pl.col("Partition") == "Test").collect()
+                assert data.height > 0, f"No test data found for cell line {cell_line}"
+                
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(
+                    data=data, 
+                )
+
+                plot_df["Cell Line"] = cell_line
+                plot_dfs.append(plot_df)
+
+            combined_df = pd.concat(plot_dfs, ignore_index=True)
+            combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
+
+            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition to {OUTPUT_FILE}")
+
+
 
 ###############################################################
 ###############################################################
