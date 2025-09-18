@@ -5389,7 +5389,7 @@ class ShapNetworkInvestigator:
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
 
         if not hasattr(self, "final_all_data_SHAP_data"): 
-            self.load_final_SHAP_data(data_mode="All-Data", as_lazyframe=False)
+            self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
 
         # Determine RBPs and position from feature
         rbp, position = self.get_RBP_position(feature)
@@ -7620,11 +7620,10 @@ class ShapNetworkInvestigator:
         return result, min_count
 
     
-    def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None, local_shap_type=None): 
+    def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None,): 
         assert type(data) == pl.DataFrame, "data must be a polars DataFrame"
-        assert local_shap_type in ["diff(bound-unbound)", "bound-only"], "local_shap_type must be 'diff(bound-unbound)' or 'bound-only'"
 
-        logger.info(f"Creating dPSI vs Local SHAP scatterplot data for {data.height} rows w/ local_shap_type: {local_shap_type} ...")
+        logger.info(f"Creating dPSI vs Local SHAP scatterplot data for {data.height} rows ...")
         # Filter rows where has_RBP_KD is True and get unique combinations of RBP_KD_Target and rMATS Event ID
         unique_kd_rows = data.filter(
             pl.col("has_RBP_KD") == True
@@ -7685,16 +7684,10 @@ class ShapNetworkInvestigator:
                     # Get DeltaPSI and assert equality
                     inc_diff_kd = kd_row["DeltaPSI"]
 
-                    if local_shap_type == "bound-only":
-                        local_shap_val = ctrl_shap
-                    elif local_shap_type == "diff(bound-unbound)":
-                        local_shap_val = ctrl_shap - kd_shap
-                    else:
-                        raise ValueError("Invalid local_shap_type")
-
                     plot_rows.append({
                         "dPSI": inc_diff_kd,
-                        "Bound Local SHAP" if local_shap_type =="bound-only" else "Diff(CTRL - KD)" : local_shap_val,
+                        "Bound Local SHAP": ctrl_shap,
+                        "CTRL - KD Local SHAP": ctrl_shap - kd_shap,
                         "rMATS Event ID": kd_row["rMATS Event ID"],
                         "RBP_KD_Target": kd_rbp,
                         "Position": pos, 
