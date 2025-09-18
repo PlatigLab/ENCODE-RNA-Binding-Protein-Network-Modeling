@@ -7936,32 +7936,41 @@ class ShapNetworkInvestigator:
             combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
             
             colors =['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33']
-            position_color_map = {
-                pos: colors[i] for i, pos in enumerate(range(1, 7))
-            }
-        
             for plot_metric in ["Bound Local SHAP", "CTRL - KD Local SHAP"]:
                 logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
+                
+                # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
+                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+                    self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell,
+                        ax=axes[i],
+                        plot_metric=plot_metric,
+                        title=cell_line
+                    )
 
-                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=400, sharex=True, sharey=True)
-                for position in range(1, 7):
-                    
+                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + " for Test Partition", fontsize=20, y=1.02)
+                plt.tight_layout()
+                plt.show()
+
+                # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
+                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+                for pos in range(1, 7):
                     for i, cell_line in enumerate(self.cell_lines):
-                        df_cell = combined_df[
+                        df_cell_position = combined_df[
                             (combined_df["Cell Line"] == cell_line) &
-                            (combined_df["Position"] == position)
+                            (combined_df["Position"] == pos)
                         ]
-                        ax = axes[position-1, i]
-                        
                         self.plot_dpsi_vs_local_SHAP_scatterplot(
-                            df=df_cell, 
-                            ax=ax, 
-                            plot_metric=plot_metric, 
-                            title = f"{cell_line} - Pos. {position}",
-                            dot_size = 1, 
-                            color = position_color_map[position]
+                            df=df_cell_position,
+                            ax=axes[pos-1, i],
+                            plot_metric=plot_metric,
+                            title=f"{cell_line} - Pos. {pos}",
+                            color=colors[pos-1]
                         )
 
+                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + " for Test Partition\n(SPLIT BY POSITION)", fontsize=20, y=1)
                 plt.tight_layout()
                 plt.show()
 
