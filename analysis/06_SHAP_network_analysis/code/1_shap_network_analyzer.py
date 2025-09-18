@@ -7868,7 +7868,7 @@ class ShapNetworkInvestigator:
         ax.scatter(
             x, y,
             s=2 if 'dot_size' not in kwargs else kwargs['dot_size'],
-            alpha=0.3,
+            alpha=0.2,
             c = kwargs["color"] if "color" in kwargs else None,
             edgecolor="black",
             linewidths=0.3
@@ -7935,10 +7935,15 @@ class ShapNetworkInvestigator:
             logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")            
             combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
             
+            colors =['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33']
+            position_color_map = {
+                pos: colors[i] for i, pos in enumerate(range(1, 7))
+            }
+        
             for plot_metric in ["Bound Local SHAP", "CTRL - KD Local SHAP"]:
                 logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
 
-                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=100, sharex=True, sharey=True)
+                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=400, sharex=True, sharey=True)
                 for position in range(1, 7):
                     
                     for i, cell_line in enumerate(self.cell_lines):
@@ -7953,7 +7958,8 @@ class ShapNetworkInvestigator:
                             ax=ax, 
                             plot_metric=plot_metric, 
                             title = f"{cell_line} - Pos. {position}",
-                            dot_size = 4
+                            dot_size = 1, 
+                            color = position_color_map[position]
                         )
 
                 plt.tight_layout()
