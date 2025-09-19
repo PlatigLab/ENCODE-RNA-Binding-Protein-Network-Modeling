@@ -3307,13 +3307,89 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def calculate_binding_vs_diff_events_fishers_association(self): 
+    def binding_vs_diff_events_fishers_association(self): 
 
         OUTPUT_FILE = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"]
 
         if os.path.exists(OUTPUT_FILE):
             logger.info(f"FROM CACHE: Loading Fisher's Exact test for binding vs significant splicing from {OUTPUT_FILE}")
-            return pd.read_csv(OUTPUT_FILE, sep="\t")
+            table = pd.read_csv(OUTPUT_FILE, sep="\t")
+
+            fig, axes = plt.subplots(2, 1, figsize=(23, 12), dpi=300,sharey=True)
+
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                cell_df = table[table["Cell Line"] == cell_line].copy()
+                cell_df = cell_df.dropna(subset=["(A*D / B*C) Odds Ratio"])
+
+                # Replace -inf and +inf in Log-Odds Ratio with lowest/highest finite value minus/plus 10%
+                finite_log_odds = cell_df.loc[np.isfinite(cell_df["Log-Odds Ratio"]), "Log-Odds Ratio"]
+                min_finite = finite_log_odds.min()
+                max_finite = finite_log_odds.max()
+
+                neg_inf_replacement = min_finite - abs(min_finite) * 0.1
+                pos_inf_replacement = max_finite + abs(max_finite) * 0.1
+
+                cell_df["Log-Odds Ratio"] = cell_df["Log-Odds Ratio"].replace(-np.inf, neg_inf_replacement)
+                cell_df["Log-Odds Ratio"] = cell_df["Log-Odds Ratio"].replace(np.inf, pos_inf_replacement)
+
+                # Pivot to heatmap: Position as rows, RBP as columns, value is Log-Odds Ratio
+                cell_df["Position"] = cell_df["Position"].astype(int)
+                heatmap_data = cell_df.pivot(index="Position", columns="RBP", values="Log-Odds Ratio")
+                heatmap_data = heatmap_data.reindex(index=sorted(heatmap_data.index))
+
+                # Replace nulls with 0 for clustering
+                clustering_data = heatmap_data.fillna(0)
+                linkage = sch.linkage(clustering_data.T, method="ward")
+                dendro = sch.dendrogram(linkage, no_plot=True)
+
+                rbp_order = [heatmap_data.columns[i] for i in dendro["leaves"]]
+                heatmap_data = heatmap_data[rbp_order]
+                
+                ax = axes[row_idx]
+                cbar = sns.heatmap(
+                    heatmap_data,
+                    ax=ax,
+                    cmap="bwr",
+                    center=0,
+                    linewidths=0.5,
+                    linecolor="gray",
+                    cbar=True,
+                    cbar_kws={"shrink": 1, "aspect": 10, "pad": 0.01},  # Adjust colorbar position and sizes
+                ).collections[0].colorbar
+                # Set bad color for nulls
+                ax.set_facecolor("gray")
+                
+                # Add yellow star for FDR BH < 0.1
+                for pos in heatmap_data.index:
+                    for col_idx, rbp in enumerate(rbp_order):
+                        orig_row = table[
+                            (table["Cell Line"] == cell_line) &
+                            (table["RBP"] == rbp) &
+                            (table["Position"] == pos)
+                        ]
+                        assert orig_row.shape[0] ==1, print(f"Expected 1 row, got {orig_row.shape[0]} rows for Position {pos} and RBP {rbp} in {cell_line}")
+                        
+                        if orig_row["FDR BH"].iloc[0] < 0.1:
+                            ax.scatter(
+                                col_idx + 0.5, list(heatmap_data.index).index(pos) + 0.5,
+                                marker="*", s=80, color ="#39ff14", edgecolor="black", linewidths=1, zorder=10
+                            )
+                
+                ax.set_title(f"{cell_line}", fontsize=18)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+
+                ax.tick_params(axis='y', labelsize=18)
+
+                cbar.ax.tick_params(labelsize=18)  # Increase tick label font size
+                cbar.set_label("log10(Odds)", fontsize=18, labelpad=20)
+
+            plt.suptitle("NOTE 1: * means 'FDR BH < 0.1'\nNOTE 2: -inf & +inf converted to 10% lower and 10% higher values, respectively\nNOTE 3: Gray squares indicate 'Nulls'\nNOTE 4: Nulls replaced with '0' for Ward clustering\n\nLog10(Fisher's Odds) Heatmap (Fisher's Exact Test)", fontsize=30, y=1.02)
+            fig.supxlabel("RBP (Ward Clustered)", fontsize=30, x=0.45)
+            fig.supylabel("Position", fontsize=30, x=-0.01)
+
+            plt.tight_layout()
+            plt.show()
 
         else:
 
