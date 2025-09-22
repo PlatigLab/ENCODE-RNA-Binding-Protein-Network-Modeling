@@ -7941,28 +7941,29 @@ class ShapNetworkInvestigator:
         plot_rows = []
         binding_cols = [col for col in data.columns if col.endswith("_binding")]
 
-        for row in unique_kd_rows.iter_rows(named=True):
+        for row in tqdm.tqdm(unique_kd_rows.iter_rows(named=True), desc="KD rows"):
             rbp_kd_target = row["RBP_KD_Target"]
             index = row["index"]
 
-            idx_prefix = index.split(f"_{rbp_kd_target}_")[0]
-            assert len(idx_prefix.split("_")) == 8, f"Index prefix split length != 8: {idx_prefix}"
+            matching = self.get_associated_control_row(
+                index, 
+                data,
+            )
 
-            assoc_exp = str(row["Associated Experiment"])
-            prefix_search = f"{idx_prefix}_{assoc_exp}_"
-
-            # Find all rows in original data that start with prefix_search
-            matching = data.filter(pl.col("index").str.starts_with(prefix_search))
-            if matching.height == 0:
+            if matching is None: 
                 continue
+            
+            elif matching.height == 1:  
+                chosen_row = matching.row(0, named=True)
 
-            if matching.height == 2:
+            elif matching.height == 2:
                 # Unique by binding columns
                 matching_unique = matching.unique(subset=binding_cols, maintain_order=True, keep="first")
-                assert matching_unique.height == 1, f"Unique binding rows != 1 for {prefix_search}"
+                assert matching_unique.height == 1, f"Expected exactly 1 unique control row by binding columns, but got {matching_unique.height}"
+
                 chosen_row = matching_unique.row(0, named=True)
             else:
-                chosen_row = matching.row(0, named=True)
+                raise ValueError(f"Multiple matching control rows found ({matching.height}) for index {index}")
 
             assert chosen_row["RBP_KD_Target"] == "CTRL", f"Chosen row RBP_KD_Target != CTRL: {chosen_row['RBP_KD_Target']}"
 
@@ -7986,18 +7987,15 @@ class ShapNetworkInvestigator:
                     ctrl_shap = ctrl_row[shap_col]
                     kd_shap = kd_row[shap_col]
 
-                    # Get DeltaPSI and assert equality
-                    inc_diff_kd = kd_row["DeltaPSI"]
-
                     plot_rows.append({
-                        "dPSI": inc_diff_kd,
-                        "Bound Local SHAP": ctrl_shap,
-                        "CTRL - KD Local SHAP": ctrl_shap - kd_shap,
-                        "rMATS Event ID": kd_row["rMATS Event ID"],
+                        "Feature": binding_col,
                         "RBP_KD_Target": kd_rbp,
                         "Position": pos, 
-                        "Feature": binding_col
-
+                        "rMATS Event ID": kd_row["rMATS Event ID"],
+                        "dPSI": kd_row["DeltaPSI"], 
+                        "rMATS FDR": kd_row["FDR"], 
+                        "Bound Local SHAP": ctrl_shap,
+                        "CTRL - KD Local SHAP": ctrl_shap - kd_shap,
                     })
 
         plot_df = pd.DataFrame(plot_rows)
