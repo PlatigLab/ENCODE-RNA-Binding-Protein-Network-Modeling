@@ -8085,36 +8085,41 @@ class ShapNetworkInvestigator:
         return ax
 
     
-    def plot_dpsi_vs_local_SHAP_for_test_data(self): 
+    def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None): 
 
         OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']
 
         if os.path.exists(OUTPUT_FILE):
             
-            logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")            
+            logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")
+            logger.info(f"Plotting dPSI vs Local SHAP scatterplots for test partition (FDR <= {FDR_threshold}) ...")          
+            
             combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
+
+            if FDR_threshold is not None:
+                combined_df = combined_df[combined_df["rMATS FDR"] <= FDR_threshold]
             
             colors =['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33']
-            for plot_metric in ["Bound Local SHAP", "CTRL - KD Local SHAP"]:
+            for plot_metric in ["CTRL - KD Local SHAP", "Bound Local SHAP"]:
                 logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
                 
                 # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
-                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=50, sharex=True, sharey=True)
                 for i, cell_line in enumerate(self.cell_lines):
-                    df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+
                     self.plot_dpsi_vs_local_SHAP_scatterplot(
-                        df=df_cell,
+                        df= combined_df[combined_df["Cell Line"] == cell_line],
                         ax=axes[i],
                         plot_metric=plot_metric,
                         title=cell_line
                     )
 
-                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + " for Test Partition", fontsize=20, y=1.02)
+                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold})", fontsize=20, y=1.02)
                 plt.tight_layout()
                 plt.show()
 
                 # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
-                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=50, sharex=True, sharey=True)
                 for pos in range(1, 7):
                     for i, cell_line in enumerate(self.cell_lines):
                         df_cell_position = combined_df[
@@ -8129,7 +8134,7 @@ class ShapNetworkInvestigator:
                             color=colors[pos-1]
                         )
 
-                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + " for Test Partition\n(SPLIT BY POSITION)", fontsize=20, y=1)
+                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
                 plt.tight_layout()
                 plt.show()
 
@@ -8140,22 +8145,21 @@ class ShapNetworkInvestigator:
             all_data = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
             plot_dfs = []
             
-            for cell_line in self.cell_lines: 
+            for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell Lines"):
                 
                 data = all_data[cell_line].filter(pl.col("Partition") == "Test").collect()
                 assert data.height > 0, f"No test data found for cell line {cell_line}"
                 
-                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(
-                    data=data, 
-                )
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(data=data)
 
                 plot_df["Cell Line"] = cell_line
                 plot_dfs.append(plot_df)
 
-            combined_df = pd.concat(plot_dfs, ignore_index=True)
+            combined_df = pd.concat(plot_dfs, ignore_index=True).sort_values(by=["Cell Line", "Feature", "rMATS Event ID"])
             combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
 
-            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition to {OUTPUT_FILE}")
+            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition (FDR <= {FDR_threshold}) to {OUTPUT_FILE}")
+
 
 
 
@@ -8781,6 +8785,7 @@ if __name__ == "__main__":
         "signed_local_SHAP_mean_unbound",
         "binding_vs_diff_events_fishers_FDR_0.05", 
         "binding_vs_diff_events_fishers_FDR_0.1",
+        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data"
     ]
 
     parser.add_argument(
@@ -8874,6 +8879,9 @@ if __name__ == "__main__":
             fdr = float(fdr_str)
 
             analyzer.binding_vs_diff_events_fishers_association(FDR_threshold=fdr)
+
+        elif args.job_type == "create_test_data_dpsi_vs_local_SHAP_scatterplot_data":
+            analyzer.plot_dpsi_vs_local_SHAP_for_test_data()
 
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
