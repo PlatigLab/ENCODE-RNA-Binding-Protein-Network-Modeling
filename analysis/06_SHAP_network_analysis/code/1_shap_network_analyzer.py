@@ -45,116 +45,119 @@ class ShapNetworkInvestigator:
     }
 
     CACHE_INFO = {
-            "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
-            # "SHAP_mp4": {
-            #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
-            #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
-            # },
-            "SHAP_CV": {
-                "All-Data": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
-                "Unique-Binding": "../outputs/SHAP_cv/local_SHAP_cv_unique_binding.pkl.gz",
+        "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
+        # "SHAP_mp4": {
+        #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
+        #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
+        # },
+        "SHAP_CV": {
+            "All-Data": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
+            "Unique-Binding": "../outputs/SHAP_cv/local_SHAP_cv_unique_binding.pkl.gz",
+        },
+        'SHAP_cv_mp4': {
+            "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
+            "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
+        },
+        "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
+        'SHAP_std_mp4': {
+            "K562": "../outputs/video_plots/SHAP_std/SHAP_std_K562.mp4",
+            "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
+        },
+        "global_SHAP": {
+            "Unique-Binding": {
+                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
+                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
             },
-            'SHAP_cv_mp4': {
-                "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
-                "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
-            },
-            "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
-            'SHAP_std_mp4': {
-                "K562": "../outputs/video_plots/SHAP_std/SHAP_std_K562.mp4",
-                "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
-            },
-            "global_SHAP": {
-                "Unique-Binding": {
-                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
-                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
+            "All-Data": {
+                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
+                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
+            }
+        },
+        "specialized_global_SHAP": {
+            "Bound-Only": 
+                {
+                    None: 
+                        {
+                            "All-Data": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_all_data.pkl",
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
+                        }
                 },
-                "All-Data": {
-                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
-                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
-                }
-            },
-            "specialized_global_SHAP": {
-                "Bound-Only": 
-                    {
-                        None: 
-                            {
-                                "All-Data": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_all_data.pkl",
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
-                            }
-                    },
-                "NOT-Bound-Only": 
-                    {
-                        None: 
-                            {
-                                "All-Data": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_all_data.pkl",
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
-                            }
-                    },
-                "Signed-Local-SHAP-Mean-Bound-Only":
-                    {
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
-                            }
-                    }, 
-                "Signed-Local-SHAP-Mean-NOT-Bound-Only":
-                    {   
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
-                            }
-                    },
-                "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": 
-                    {
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/log_odds_signed_local_SHAP_mean_bound_only_unique_binding.pkl",
-                            }
-                    },
-            },
-            "local_SHAP_mean_vs_variance": {
-                "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
-                "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
-            },
-            "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
-            "local_SHAP_mean_vs_variance_deciles": {
-                "5_dfs_average": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles.tsv",
-                "Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_bound_only.tsv",
-                "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
-            },
-            "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
-            "local_SHAP_percent_non_zero": {
-                "All-Data": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_all_data.tsv",
-                "Unique-Binding": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_unique_binding.tsv",
-            },
-            "local_SHAP_percent_positive_negative": {
-                "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
-                "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
-            },
-            "activator_repressor_behavior_score": {
-                "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
-                "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
-            },
-            "final_SHAP_cache": {
-                "All-Data": {
-                    "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
-                    "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
+            "NOT-Bound-Only": 
+                {
+                    None: 
+                        {
+                            "All-Data": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_all_data.pkl",
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
+                        }
+                },
+            "Signed-Local-SHAP-Mean-Bound-Only":
+                {
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                        }
                 }, 
-            },
-            "per_row_num_and_percent_greater_than_cutoff": {
-                "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
-                "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
-            },
-            "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
-            "position_3_4_activating_and_others_repressing": {
-                "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
-                "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
+            "Signed-Local-SHAP-Mean-NOT-Bound-Only":
+                {   
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
+                        }
+                },
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": 
+                {
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/log_odds_signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                        }
+                },
+        },
+        "local_SHAP_mean_vs_variance": {
+            "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
+            "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
+        },
+        "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
+        "local_SHAP_mean_vs_variance_deciles": {
+            "5_dfs_average": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles.tsv",
+            "Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_bound_only.tsv",
+            "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
+        },
+        "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
+        "local_SHAP_percent_non_zero": {
+            "All-Data": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_all_data.tsv",
+            "Unique-Binding": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_unique_binding.tsv",
+        },
+        "local_SHAP_percent_positive_negative": {
+            "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
+            "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
+        },
+        "activator_repressor_behavior_score": {
+            "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
+            "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
+        },
+        "final_SHAP_cache": {
+            "All-Data": {
+                "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
+                "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
             }, 
-            "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
-            "dpsi_vs_local_SHAP_scatterplot_data": {
-                "test_partition": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
-            }, 
-            "fishers_exact_association_between_binding_and_differential_splicing": "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_significant_splicing.tsv",  
+        },
+        "per_row_num_and_percent_greater_than_cutoff": {
+            "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
+            "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
+        },
+        "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
+        "position_3_4_activating_and_others_repressing": {
+            "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
+            "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
+        }, 
+        "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
+        "dpsi_vs_local_SHAP_scatterplot_data": {
+            "test_partition": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
+        }, 
+        "fishers_exact_association_between_binding_and_differential_splicing": {
+            0.1: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.1_significant_splicing.tsv", 
+            0.05: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.05_significant_splicing.tsv",
+        }
     }
 
     non_normalized_differential_plotting_columns_info = {
@@ -3307,9 +3310,10 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
-    def binding_vs_diff_events_fishers_association(self): 
+    def binding_vs_diff_events_fishers_association(self, FDR_threshold = None): 
+        assert FDR_threshold in [0.05, 0.1], "FDR_threshold must be either 0.05 or 0.1"
 
-        OUTPUT_FILE = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"]
+        OUTPUT_FILE = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][FDR_threshold]
 
         if os.path.exists(OUTPUT_FILE):
             logger.info(f"FROM CACHE: Loading Fisher's Exact test for binding vs significant splicing from {OUTPUT_FILE}")
@@ -3352,14 +3356,14 @@ class ShapNetworkInvestigator:
                     cmap="bwr",
                     center=0,
                     linewidths=0.5,
-                    linecolor="gray",
+                    linecolor="black",
                     cbar=True,
                     cbar_kws={"shrink": 1, "aspect": 10, "pad": 0.01},  # Adjust colorbar position and sizes
                 ).collections[0].colorbar
                 # Set bad color for nulls
                 ax.set_facecolor("gray")
                 
-                # Add yellow star for FDR BH < 0.1
+                # Add yellow star for significant FDR BH 
                 for pos in heatmap_data.index:
                     for col_idx, rbp in enumerate(rbp_order):
                         orig_row = table[
@@ -3372,10 +3376,10 @@ class ShapNetworkInvestigator:
                         if orig_row["FDR BH"].iloc[0] < 0.1:
                             ax.scatter(
                                 col_idx + 0.5, list(heatmap_data.index).index(pos) + 0.5,
-                                marker="*", s=80, color ="#39ff14", edgecolor="black", linewidths=1, zorder=10
+                                marker="*", s=120, color ="#39ff14", edgecolor="black", linewidths=0.5, zorder=10
                             )
                 
-                ax.set_title(f"{cell_line}", fontsize=18)
+                ax.set_title(f"{cell_line}", fontsize=24)
                 ax.set_xlabel("")
                 ax.set_ylabel("")
 
@@ -3384,16 +3388,88 @@ class ShapNetworkInvestigator:
                 cbar.ax.tick_params(labelsize=18)  # Increase tick label font size
                 cbar.set_label("log10(Odds)", fontsize=18, labelpad=20)
 
-            plt.suptitle("NOTE 1: * means 'FDR BH < 0.1'\nNOTE 2: -inf & +inf converted to 10% lower and 10% higher values, respectively\nNOTE 3: Gray squares indicate 'Nulls'\nNOTE 4: Nulls replaced with '0' for Ward clustering\n\nLog10(Fisher's Odds) Heatmap (Fisher's Exact Test)", fontsize=30, y=1.02)
+            plt.suptitle(f"NOTE 1: * means 'FDR BH < 0.1'\nNOTE 2: -inf & +inf converted to 10% lower and 10% higher values, respectively\nNOTE 3: Gray squares indicate 'Nulls'\nNOTE 4: Nulls replaced with '0' for Ward clustering\nNOTE 5: Significant splicing defined as FDR <= {FDR_threshold}\n\nLog10(Fisher's Odds) Heatmap (Fisher's Exact Test)", fontsize=30, y=1.02)
             fig.supxlabel("RBP (Ward Clustered)", fontsize=30, x=0.45)
             fig.supylabel("Position", fontsize=30, x=-0.01)
 
             plt.tight_layout()
             plt.show()
 
+            # Create scatterplots for significant FDR BH and odds ratio > 1, one subplot per cell line
+            subset = table[(table["FDR BH"] < 0.1) & (table["(A*D / B*C) Odds Ratio"] > 1)].copy()
+            assert np.isposinf(subset["(A*D / B*C) Odds Ratio"]).any(), "No positive infinity values found in odds ratio column"
+            
+            finite_odds = subset.loc[np.isfinite(subset["(A*D / B*C) Odds Ratio"]), "(A*D / B*C) Odds Ratio"]
+            max_finite = finite_odds.max()
+            pos_inf_replacement = max_finite + abs(max_finite) * 0.05
+            subset["(A*D / B*C) Odds Ratio"] = subset["(A*D / B*C) Odds Ratio"].replace(np.inf, pos_inf_replacement)
+
+            contingency_table_a_min_threshold = 20
+            
+            fig, axes = plt.subplots(1, 2, figsize=(16, 9), dpi=600, sharey=True,)
+
+            for i, cell_line in enumerate(self.cell_lines):
+                ax = axes[i]
+                cell_subset = subset[subset["Cell Line"] == cell_line]
+                ax.scatter(
+                    cell_subset["(A*D / B*C) Odds Ratio"],
+                    cell_subset["(A) Significant & Bound"],
+                    color="#d95f02",
+                    edgecolor="black",
+                    s=20,
+                    alpha=0.3
+                )
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.set_title(cell_line, fontsize=24)
+
+                # Label each point with f"{rbp}_{position}" in color #1b9e77
+                texts = []
+                for _, row in cell_subset.iterrows():
+                    if row["(A) Significant & Bound"] > contingency_table_a_min_threshold:
+                        label = f"{row['RBP']}_{row['Position']}"
+                        texts.append(
+                            ax.text(
+                                row["(A*D / B*C) Odds Ratio"],
+                                row["(A) Significant & Bound"],
+                                label,
+                                fontsize=10,
+                                fontweight='bold',
+                                color="#1b9e77",
+                            )
+                        )
+
+                # Draw a dashed horizontal line at y = contingency_table_a_min_threshold
+                ax.axhline(y=contingency_table_a_min_threshold, color='#7570b3', linestyle='--', linewidth=2)
+
+                # Add an arrow annotation pointing above the threshold line
+                ax.annotate(
+                    "Points above this line are labeled",
+                    xy=(ax.get_xlim()[1]*0.7, contingency_table_a_min_threshold * 1),
+                    xytext=(ax.get_xlim()[1]*0.6, contingency_table_a_min_threshold * 10),
+                    arrowprops=dict(arrowstyle="->", color="#7570b3", lw=2, linestyle='--'),
+                    fontsize=14,
+                    fontweight='bold',
+                    color="#7570b3",
+                    ha="center"
+                )
+
+                adjustText.adjust_text(
+                    texts,
+                    ax=ax,
+                    arrowprops=dict(arrowstyle='->', color='gray', lw=1),
+                )
+
+            fig.suptitle(f"NOTE 1: Only features with 'Stat. Test FDR BH < 0.1' and 'Odds Ratio > 1' are shown\nNOTE 2: Points with '(A) Significant & Bound' > {contingency_table_a_min_threshold} are labeled\nNOTE 3: +inf odds converted to ({pos_inf_replacement:.2f}) (5% higher than max finite value)\nNOTE 4: Significant splicing events denote with FDR <= {FDR_threshold}\n\nSignificant & Positive Odds Ratio Features from Fisher's Exact Tests", fontsize=24, y=1.02)
+            fig.supxlabel("Fisher's Odds Ratio", fontsize=20)
+            fig.supylabel("Significant & Bound\n(Contingency Table 'A')", fontsize=20, x=-0.005)
+
+            plt.tight_layout()
+            plt.show()
+
         else:
 
-            logger.info("Calculating Fisher's Exact test for binding vs significant splicing... ")
+            logger.info(f"Calculating Fisher's Exact test for binding vs significant splicing, where significant means FDR <= {FDR_threshold}")
             lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
 
             results = []
@@ -3418,8 +3494,8 @@ class ShapNetworkInvestigator:
                     
                     fishers_test_contingency_tables = {
                         position: {
-                            "FDR <= 0.05": {"Binding": 0, "No Binding": 0},
-                            "FDR > 0.05": {"Binding": 0, "No binding": 0}
+                            f"FDR <= {FDR_threshold}": {"Binding": 0, "No Binding": 0},
+                            f"FDR > {FDR_threshold}": {"Binding": 0, "No binding": 0}
                         }
                         for position in range(1, 7)
                     }
@@ -3443,25 +3519,31 @@ class ShapNetworkInvestigator:
                         for position in range(1, 7):
                             binding_col = f"{rbp_kd_target}_{position}_binding"
 
-                            if kd_row["FDR"] <= 0.05:
+                            if ctrl_row[binding_col] ==1: 
+                                assert kd_row[f"has_RBP_KD_{position}"] == True, "If control has binding, the KD should have knockdown at position"
+                                assert kd_row[binding_col] ==0, "If control has binding, the KD should not have binding at position"
+
+                            if kd_row["FDR"] <= FDR_threshold:
                                 
                                 if ctrl_row[binding_col] == 1:
-                                    fishers_test_contingency_tables[position]["FDR <= 0.05"]["Binding"] += 1
+                                    fishers_test_contingency_tables[position][f"FDR <= {FDR_threshold}"]["Binding"] += 1
+                                
                                 elif ctrl_row[binding_col] == 0:
-                                    fishers_test_contingency_tables[position]["FDR <= 0.05"]["No Binding"] += 1
+                                    fishers_test_contingency_tables[position][f"FDR <= {FDR_threshold}"]["No Binding"] += 1
                             
-                            elif kd_row["FDR"] > 0.05:
+                            elif kd_row["FDR"] > FDR_threshold:
                                 
                                 if ctrl_row[binding_col] == 1:
-                                    fishers_test_contingency_tables[position]["FDR > 0.05"]["Binding"] += 1
+                                    fishers_test_contingency_tables[position][f"FDR > {FDR_threshold}"]["Binding"] += 1
+                                
                                 elif ctrl_row[binding_col] == 0:
-                                    fishers_test_contingency_tables[position]["FDR > 0.05"]["No binding"] += 1  
+                                    fishers_test_contingency_tables[position][f"FDR > {FDR_threshold}"]["No binding"] += 1  
 
                     for position, table in fishers_test_contingency_tables.items():
                         
                         contingency = [
-                            [table["FDR <= 0.05"]["Binding"], table["FDR <= 0.05"]["No Binding"]],
-                            [table["FDR > 0.05"]["Binding"], table["FDR > 0.05"]["No binding"]]
+                            [table[f"FDR <= {FDR_threshold}"]["Binding"], table[f"FDR <= {FDR_threshold}"]["No Binding"]],
+                            [table[f"FDR > {FDR_threshold}"]["Binding"], table[f"FDR > {FDR_threshold}"]["No binding"]]
                         ]
                         
                         odds_ratio, p_value = fisher_exact(contingency)
@@ -3480,13 +3562,16 @@ class ShapNetworkInvestigator:
                             "Fisher's Exact Test P-Value": p_value
                         })  
 
+                del df, non_ctrl_df, unique_rows, subset, control_dict, control_df
+                gc.collect()
+
             results_df = pd.DataFrame(results)
             results_df["FDR BH"] = multipletests(results_df["Fisher's Exact Test P-Value"], method="fdr_bh")[1]
             
             results_df = results_df.sort_values(by=["Cell Line", "Feature"]) 
 
             results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
-            logger.success(f"Fisher's Exact test between binding and differential splicing results saved to {OUTPUT_FILE}")
+            logger.success(f"Binding vs significant diff splicing results for FDR {FDR_threshold} written to {OUTPUT_FILE}")
 
 
     def get_associated_control_row(self, index, df): 
@@ -8696,6 +8781,8 @@ if __name__ == "__main__":
         "is_position_3_4_activating_and_others_repressing", 
         "signed_local_SHAP_mean_bound",
         "signed_local_SHAP_mean_unbound",
+        "binding_vs_diff_events_fishers_FDR_0.05", 
+        "binding_vs_diff_events_fishers_FDR_0.1",
     ]
 
     parser.add_argument(
@@ -8783,6 +8870,12 @@ if __name__ == "__main__":
                 condition=None,
                 underlying_data="Unique-Binding"
             )
-            
+        
+        elif args.job_type.startswith("binding_vs_diff_events_fishers_FDR_"):
+            fdr_str = args.job_type.split("_")[-1]
+            fdr = float(fdr_str)
+
+            analyzer.binding_vs_diff_events_fishers_association(FDR_threshold=fdr)
+
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
