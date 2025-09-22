@@ -8753,6 +8753,72 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def hacky_log_odds_test_data_dpsi_vs_local_shap_scatterplot(self): 
+        OUTPUT_FILE = "./log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE}")
+            combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")  
+
+            # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
+                df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+                self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=cell_line
+                )
+
+            fig.suptitle("LOG-ODDS: dPSI vs Local SHAP Scatterplot for Test Partition", fontsize=16)
+            plt.tight_layout()
+            plt.show()
+
+            # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
+            colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33']
+            fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell = combined_df[
+                        (combined_df["Cell Line"] == cell_line) &
+                        (combined_df["Position"] == pos)
+                    ]
+                    self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell,
+                        ax=axes[pos-1, i],
+                        plot_metric="CTRL - KD Local SHAP",
+                        title=f"{cell_line} - Pos. {pos}",
+                        color=colors[pos-1]
+                    )
+            fig.suptitle("LOG-ODDS: dPSI vs Local SHAP Scatterplot for Test Partition\n (Split by Position)", fontsize=16, y=1)
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            logger.info("No cache found. Compiling dPSI vs Local SHAP scatterplot data for test partition ...")
+
+            log_odds_data = {}
+            for cell_line in self.cell_lines:
+                log_odds_data[cell_line] = (
+                    pl.scan_ipc(
+                        f"/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/FINAL_AVERAGE_SHAP_CACHE/{cell_line}_all-data.feather"
+                    )
+                    .filter(pl.col("Partition") == "Test")
+                    .collect()
+                )
+            
+            plot_dfs = []
+            for cell_line in self.cell_lines:
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(data=log_odds_data[cell_line])
+                plot_df["Cell Line"] = cell_line
+                plot_dfs.append(plot_df)
+
+            combined_df = pd.concat(plot_dfs, ignore_index=True)
+            combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
+            logger.success(f"Saved log-odds dPSI vs Local SHAP scatterplot data for test partition to {OUTPUT_FILE}")
+
+
     def tmp(self): 
         lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
         return lazyframes["K562"].collect_schema().names()
