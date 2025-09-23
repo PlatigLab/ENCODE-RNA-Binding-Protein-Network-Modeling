@@ -152,7 +152,10 @@ class ShapNetworkInvestigator:
         }, 
         "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
         "dpsi_vs_local_SHAP_scatterplot_data": {
-            "test_partition": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
+            "test_partition": {
+                "table": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
+                "correlations": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_correlations_test_partition.tsv", 
+            }
         }, 
         "fishers_exact_association_between_binding_and_differential_splicing": {
             0.1: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.1_significant_splicing.tsv", 
@@ -8161,6 +8164,130 @@ class ShapNetworkInvestigator:
             logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition (FDR <= {FDR_threshold}) to {OUTPUT_FILE}")
 
 
+    def correlation_between_test_dpsi_and_local_SHAP(self,):
+        OUTPUT_FILE  = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
+
+        if os.path.exists(OUTPUT_FILE):
+            
+            correlation_table = pd.read_csv(OUTPUT_FILE, sep="\t")
+            MIN_EVENTS_THRESHOLD = 10
+            SPEARMAN_THRESHOLD = 0.3
+
+            fig, axes = plt.subplots(2, 3, figsize=(30, 22), dpi=600, sharex=True, sharey=True) 
+
+            for row_index, cell_line in enumerate(self.cell_lines):
+                df_cell = correlation_table[correlation_table["Cell Line"] == cell_line]
+
+                for column_index, threshold_col in enumerate(["All Data", "FDR <= 0.1", "FDR <= 0.05"]): 
+
+                    ax = axes[row_index, column_index]
+                
+                    x = df_cell[f"Spearman - {threshold_col}"]
+                    y = df_cell[f"Pearson - {threshold_col}"]
+                    sizes = df_cell[f"# rMATS Events - {threshold_col}"] 
+
+                    sc = ax.scatter(x, y, s=sizes, alpha=0.2, edgecolor="black", color="skyblue", linewidths=0.4)
+                    
+                    if column_index == 0:
+                        ax.text(
+                            -1.4, 0, cell_line, 
+                            ha='center', va='center', rotation=90, fontsize=40, fontweight='bold'
+                        )
+                    
+                    if row_index == 0:
+                        ax.set_title(threshold_col, fontsize=40, pad=30, fontweight='bold')
+
+                    # Center axes at (0,0)
+                    ax.spines['left'].set_position('zero')
+                    ax.spines['bottom'].set_position('zero')
+                    ax.spines['right'].set_color('none')
+                    ax.spines['top'].set_color('none')
+                    ax.xaxis.set_ticks_position('bottom')
+                    ax.yaxis.set_ticks_position('left')
+
+                    # Add legend for sizes for each subplot
+                    handles, labels = sc.legend_elements(prop="sizes", alpha=0.6)
+                    ax.legend(handles, labels, title="# rMATS Events", bbox_to_anchor=(1.05, 0.5), loc="center left")
+
+                    # Add text annotations for selected points
+                    texts = []
+                    for _, row in df_cell.iterrows():
+                        if (
+                            (row["# rMATS Events - " + threshold_col] >= MIN_EVENTS_THRESHOLD) and
+                            (abs(row["Spearman - " + threshold_col]) >= SPEARMAN_THRESHOLD)
+                        ):
+                            texts.append(
+                                ax.text(
+                                    row["Spearman - " + threshold_col],
+                                    row["Pearson - " + threshold_col],
+                                    f"{row['RBP']}_{row['Position']}",
+                                    fontsize=10, color="red", ha="center", va="center"
+                                )
+                            )
+                    adjustText.adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', lw=2))
+
+            fig.suptitle(f"\nNOTE 1: Correlations for 'Test' Data dPSI vs CTRL-KD Local SHAP\nNOTE 2: Points labelled if '# rMATS Events' > {MIN_EVENTS_THRESHOLD}  and |Spearman| > {SPEARMAN_THRESHOLD}\n\nRelationship between # rMATS Events and Correlation Values", y=1.02, x=.5, fontsize=35)
+            fig.supxlabel("Spearman Correlation", fontsize=40, y=-0.02,)
+            fig.supylabel("Pearson Correlation", fontsize=40, x=-0.04, )
+
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+            combined_df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")    
+
+            results = []
+            for cell_line in combined_df["Cell Line"].unique():
+                df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+
+                for feature in df_cell["Feature"].unique():
+
+                    # Prepare results dictionary for this feature
+                    rbp, pos = self.get_RBP_position(feature)
+                    result_row = {
+                        "Cell Line": cell_line,
+                        "Feature": feature,
+                        "RBP": rbp,
+                        "Position": int(pos),
+                    }
+
+                    # All Data
+                    df_feat = df_cell[df_cell["Feature"] == feature]
+                    result_row["# rMATS Events - All Data"] = len(df_feat)
+                    if len(df_feat) > 1:
+                        result_row["Pearson - All Data"], _ = pearsonr(df_feat["dPSI"], df_feat["CTRL - KD Local SHAP"])
+                        result_row["Spearman - All Data"], _ = spearmanr(df_feat["dPSI"], df_feat["CTRL - KD Local SHAP"])
+                    else:
+                        result_row["Pearson - All Data"] = np.nan
+                        result_row["Spearman - All Data"] = np.nan
+
+                    # FDR <= 0.1
+                    df_fdr_01 = df_feat[df_feat["rMATS FDR"] <= 0.1]
+                    result_row["# rMATS Events - FDR <= 0.1"] = len(df_fdr_01)
+                    if len(df_fdr_01) > 1:
+                        result_row["Pearson - FDR <= 0.1"], _ = pearsonr(df_fdr_01["dPSI"], df_fdr_01["CTRL - KD Local SHAP"])
+                        result_row["Spearman - FDR <= 0.1"], _ = spearmanr(df_fdr_01["dPSI"], df_fdr_01["CTRL - KD Local SHAP"])
+                    else:
+                        result_row["Pearson - FDR <= 0.1"] = np.nan
+                        result_row["Spearman - FDR <= 0.1"] = np.nan
+
+                    # FDR <= 0.05
+                    df_fdr_005 = df_feat[df_feat["rMATS FDR"] <= 0.05]
+                    result_row["# rMATS Events - FDR <= 0.05"] = len(df_fdr_005)
+                    if len(df_fdr_005) > 1:
+                        result_row["Pearson - FDR <= 0.05"], _ = pearsonr(df_fdr_005["dPSI"], df_fdr_005["CTRL - KD Local SHAP"])
+                        result_row["Spearman - FDR <= 0.05"], _ = spearmanr(df_fdr_005["dPSI"], df_fdr_005["CTRL - KD Local SHAP"])
+                    else:
+                        result_row["Pearson - FDR <= 0.05"] = np.nan
+                        result_row["Spearman - FDR <= 0.05"] = np.nan
+
+                    results.append(result_row)
+
+            correlation_table = pd.DataFrame(results).sort_values(
+                by=["Cell Line", "Feature"], 
+            )
+            correlation_table.to_csv(OUTPUT_FILE, sep="\t", index=False)
 
 
 ###############################################################
