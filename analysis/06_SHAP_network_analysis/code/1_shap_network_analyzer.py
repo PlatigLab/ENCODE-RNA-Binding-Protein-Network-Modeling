@@ -199,6 +199,11 @@ class ShapNetworkInvestigator:
             "Absolute Value": r"$|\beta_{i}|$",
             "Signed": r"$\beta_{i}$",
         },
+        "Differential Symbols": {
+            "dPSI": r"$\Delta \Psi$ (CTRL-KD)",
+            "CTRL - KD Local SHAP": r"$\Delta \varphi_{i}$ (CTRL-KD)",
+            
+        }
 
     }
 
@@ -3463,7 +3468,7 @@ class ShapNetworkInvestigator:
                     arrowprops=dict(arrowstyle='->', color='gray', lw=1),
                 )
 
-            fig.suptitle(f"NOTE 1: Only features with 'Stat. Test FDR BH < 0.1' and 'Odds Ratio > 1' are shown\nNOTE 2: Points with '(A) Significant & Bound' > {contingency_table_a_min_threshold} are labeled\nNOTE 3: +inf odds converted to ({pos_inf_replacement:.2f}) (5% higher than max finite value)\nNOTE 4: Significant splicing events denote with FDR <= {FDR_threshold}\n\nSignificant & Positive Odds Ratio Features from Fisher's Exact Tests", fontsize=24, y=1.02)
+            fig.suptitle(f"NOTE 1: Only features with 'Stat. Test FDR BH < 0.1' and 'Odds Ratio > 1' are shown\nNOTE 2: Points with '(A) Significant & Bound' > {contingency_table_a_min_threshold} are labeled\nNOTE 3: +inf odds converted to ({pos_inf_replacement:.2f}) (5% higher than max finite value)\nNOTE 4: Significant splicing events denote with FDR <= {FDR_threshold}\n\nSignificant & Positive Odds Ratio Features from Fisher's Exact Tests", fontsize=20, y=1.02)
             fig.supxlabel("Fisher's Odds Ratio", fontsize=20)
             fig.supylabel("Significant & Bound\n(Contingency Table 'A')", fontsize=20, x=-0.005)
 
