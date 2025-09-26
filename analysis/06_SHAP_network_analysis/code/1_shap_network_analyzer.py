@@ -10,7 +10,8 @@ from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from matplotlib.colors import LogNorm
-from scipy.stats import pearsonr, spearmanr, mannwhitneyu
+from matplotlib.lines import Line2D
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu, fisher_exact, ttest_ind
 from itertools import combinations
 from matplotlib.legend import Legend
 from sklearn.metrics import r2_score
@@ -18,7 +19,6 @@ from statannotations.Annotator import Annotator
 from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
-from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
 from waterfall_plot import waterfall
@@ -7970,6 +7970,7 @@ class ShapNetworkInvestigator:
                 assert matching_unique.height == 1, f"Expected exactly 1 unique control row by binding columns, but got {matching_unique.height}"
 
                 chosen_row = matching_unique.row(0, named=True)
+            
             else:
                 raise ValueError(f"Multiple matching control rows found ({matching.height}) for index {index}")
 
@@ -8068,7 +8069,7 @@ class ShapNetworkInvestigator:
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.text(
-            0.5, -0.03,
+            0.55, -0.03,
             plot_metric,
             fontsize=12,
             ha='center',
@@ -8095,7 +8096,7 @@ class ShapNetworkInvestigator:
     
     def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None): 
 
-        OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']
+        OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
 
         if os.path.exists(OUTPUT_FILE):
             
@@ -8112,7 +8113,7 @@ class ShapNetworkInvestigator:
                 logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
                 
                 # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
-                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=50, sharex=True, sharey=True)
+                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=200, sharex=True, sharey=True)
                 for i, cell_line in enumerate(self.cell_lines):
 
                     self.plot_dpsi_vs_local_SHAP_scatterplot(
@@ -8127,7 +8128,7 @@ class ShapNetworkInvestigator:
                 plt.show()
 
                 # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
-                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=50, sharex=True, sharey=True)
+                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=200, sharex=True, sharey=True)
                 for pos in range(1, 7):
                     for i, cell_line in enumerate(self.cell_lines):
                         df_cell_position = combined_df[
@@ -8293,6 +8294,173 @@ class ShapNetworkInvestigator:
                 by=["Cell Line", "Feature"], 
             )
             correlation_table.to_csv(OUTPUT_FILE, sep="\t", index=False)
+
+
+    def delta_local_SHAP_significant_vs_not_significant_by_pos_neg_dpsi_in_test(self): 
+        
+        DATASETS = ["probability", "logodds"]
+        FDR_CUTOFFS = [0.1, 0.05]
+        STAT_TESTS = [("MWU", "mann-whitney"), ("Welch's T", "t-test_ind")]
+        DPSI_THRESHOLDS = [0, 0.001, 0.01]
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+
+        # Coloring and Ordering
+        dpsi_sign_order = ["- dPSI", "+ dPSI"]
+        line_color = "#fc8d62"
+        violin_colors = {"Not Significant": "#8da0cb", f"Significant": "#66c2a5"}
+
+        for dataset in DATASETS:
+
+            if dataset == "probability":
+                INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+            elif dataset == "logodds":
+                INPUT_FILE = "/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
+            
+            df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
+            min_shap = df["CTRL - KD Local SHAP"].min()
+            max_shap = df["CTRL - KD Local SHAP"].max()
+
+            for cutoff in FDR_CUTOFFS:
+                for dpsi_threshold in DPSI_THRESHOLDS:
+
+                    fig, axes = plt.subplots(
+                        nrows=1, ncols=len(self.cell_lines), figsize=(12, 6), dpi=200, sharey=True, sharex=True
+                    )
+
+                    for ax, cell_line in zip(axes, self.cell_lines):
+                        df_cell = df[df["Cell Line"] == cell_line].copy()
+
+                        # Assign dPSI sign based on dpsi_threshold (simplified)
+                        df_cell["dPSI Sign"] = np.nan
+                        df_cell.loc[df_cell["dPSI"] > dpsi_threshold, "dPSI Sign"] = "+ dPSI"
+                        df_cell.loc[df_cell["dPSI"] < -dpsi_threshold, "dPSI Sign"] = "- dPSI"
+                        
+                        # Assign significance status
+                        df_cell["Significance"] = np.where(
+                            df_cell["rMATS FDR"] <= cutoff, f"Significant (FDR≤{cutoff})", "Not Significant"
+                        )
+
+                        # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
+                        df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
+
+                        hue_order = [f"Significant (FDR≤{cutoff})", "Not Significant"]  # switched order
+                        palette = {f"Significant (FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
+
+                        sns.violinplot(
+                            data=df_cell,
+                            x="dPSI Sign",
+                            y="CTRL - KD Local SHAP",
+                            hue="Significance",
+                            order=dpsi_sign_order,
+                            hue_order=hue_order,
+                            palette=palette,
+                            cut=0,
+                            density_norm="width",
+                            ax=ax,
+                        )
+
+                        ax.axhline(0, color=line_color, linestyle="--", linewidth=1.5)
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
+                        ax.set_title(f"{cell_line}", fontsize=22, pad=10)
+                        ax.tick_params(axis='x', labelsize=18)
+                        ax.tick_params(axis='y', labelsize=14)
+                        ax.legend_.remove()
+
+                        ax.set_ylim(top = max_shap * 2)
+
+                        # Statistical annotation: run both tests for each dpsi_sign
+                        for dpsi_sign in dpsi_sign_order:
+                            subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
+
+                            group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
+                            group2 = subset[subset["Significance"] == f"Significant (FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
+
+                            xpos = dpsi_sign_order.index(dpsi_sign)
+                            ymax = subset["CTRL - KD Local SHAP"].max()
+                            yspan = ax.get_ylim()[1] - ax.get_ylim()[0]
+
+                            # Annotate number of points for each group just 5% above their max value
+                            offsets = [-0.19, 0.19]
+                            for i, significance in enumerate(hue_order):
+                                group = subset[subset["Significance"] == significance]["CTRL - KD Local SHAP"]
+                                color = palette[significance]
+                                offset = offsets[i]
+                                group_max = group.max()
+                                group_y = group_max + 0.02 * yspan
+
+                                ax.text(
+                                    xpos + offset, group_y,
+                                    f"{len(group)}",
+                                    ha="center", va="bottom", fontsize=12, color=color
+                                )
+
+                            # Draw a line ("roof") above the two violins
+                            line_y = ymax + 0.13 * yspan
+                            ax.plot([xpos - 0.2, xpos + 0.2], [line_y, line_y], color="black", linewidth=1.5)
+                            # Draw vertical ticks down from the ends
+                            ax.plot([xpos - 0.2, xpos - 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                            ax.plot([xpos + 0.2, xpos + 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                            
+                            # Add direction marker under the line
+                            direction = "<" if dpsi_sign == "- dPSI" else ">"
+                            ax.text(xpos, line_y - 0.08 * yspan, direction, ha="center", va="bottom", fontsize=20, fontweight="bold", color="#66c2a5")
+
+                            # Run both statistical tests and annotate both p-values
+                            stat_results = []
+                            for stat_test_name, stat_test in STAT_TESTS:
+                                
+                                if stat_test == "mann-whitney":
+                                    if dpsi_sign == "- dPSI":
+                                        _, pval = mannwhitneyu(group2, group1, alternative="less")
+                                    elif dpsi_sign == "+ dPSI":
+                                        _, pval = mannwhitneyu(group2, group1, alternative="greater")
+                                
+                                elif stat_test == "t-test_ind":
+                                    if dpsi_sign == "- dPSI":
+                                        _, pval = ttest_ind(group2, group1, alternative="less", equal_var=False)
+                                    elif dpsi_sign == "+ dPSI":
+                                        _, pval = ttest_ind(group2, group1, alternative="greater", equal_var=False)
+                                
+                                else:
+                                    raise ValueError(f"Unknown stat_test: {stat_test}")
+                                
+                                stat_results.append((stat_test_name, pval))
+
+                            # Annotate both p-values, one above the other
+                            for i, (stat_test_name, pval) in enumerate(stat_results):
+                                ax.text(
+                                    xpos, line_y + 0.03 * yspan + i * 0.06 * yspan,
+                                    f"{stat_test_name}: {pval:.1e}",
+                                    ha="center", va="bottom", fontsize=12, color="black"
+                                )
+                    
+                    # Shared labels and legend
+                    fig.supxlabel("dPSI Sign", fontsize=20, x=0.53)
+                    fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
+                    # Custom legend for hue and y=0 line
+                    handles = [
+                        Patch(facecolor=palette[f"Significant (FDR≤{cutoff})"], edgecolor="black", label=f"Significant (FDR ≤ {cutoff})"),
+                        Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
+                        Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
+                    ]
+                    fig.legend(
+                        handles,
+                        [h.get_label() for h in handles],
+                        loc="center left",
+                        bbox_to_anchor=(0.97, 0.45),
+                        fontsize=14,
+                        frameon=False,
+                        title_fontsize=15,
+                    )
+                    fig.suptitle(
+                        f"{dataset.capitalize()} SHAP; FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction",
+                        fontsize=18, y=1.01
+                    )
+
+                    plt.tight_layout(rect=[0, 0, 0.98, 1])
+                    plt.show()
+
 
 
 ###############################################################
