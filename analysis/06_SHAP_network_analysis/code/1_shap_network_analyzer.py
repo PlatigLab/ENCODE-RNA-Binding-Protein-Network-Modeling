@@ -24,7 +24,6 @@ from statsmodels.stats.multitest import multipletests
 from waterfall_plot import waterfall
 
 
-
 @dataclass
 class ShapNetworkInvestigator:
     PARAMS_DIR = "../../03_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
@@ -9054,7 +9053,7 @@ class ShapNetworkInvestigator:
 
 
     def hacky_log_odds_test_data_dpsi_vs_local_shap_scatterplot(self): 
-        OUTPUT_FILE = "./log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
+        OUTPUT_FILE  = "/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
 
         if os.path.exists(OUTPUT_FILE):
             logger.success(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE}")
