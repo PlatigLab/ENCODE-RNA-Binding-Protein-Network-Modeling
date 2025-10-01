@@ -4,10 +4,10 @@ os.chdir(SCRIPT_DIR)
 
 import platiglib.wandb_utils
 
-PROJECT_NAME = "yogi-RBP-ML-linear-models-april-2025"
-SWEEP_ID = "ha252ijh"
-NUM_ADDITIONAL_AGENTS = 50
-MEMORY = 256
+PROJECT_NAME = "yogi-sample-importance-fall-2025"
+SWEEP_ID = "3wsjjtdx"
+NUM_ADDITIONAL_AGENTS = 500
+MEMORY = 128
 CPUS = 16
 
 wbp = platiglib.wandb_utils.WBProject(PROJECT_NAME)
