@@ -8327,6 +8327,41 @@ class ShapNetworkInvestigator:
             correlation_table.to_csv(OUTPUT_FILE, sep="\t", index=False)
 
 
+    def retrieve_differential_candidate_features(self, min_events = 10, min_spearman = 0.3, fishers_fdr = 0.05):
+        logger.info(f"Retrieving CANDIDATE FEATURES w/\nmin_events={min_events}, min_spearman={min_spearman}, fishers_fdr={fishers_fdr} ...")
+
+        final_candidate_sets = {}
+
+        for rmats_fdr in [0.1, 0.05]:
+            key = f"Fisher's Exact Test (rMATS FDR < {rmats_fdr})"
+            final_candidate_sets[key] ={}
+
+            fishers_file = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][rmats_fdr]
+            fishers_df = pd.read_csv(fishers_file, sep="\t")
+            
+            for cell_line in self.cell_lines:
+                final_candidate_sets[key][cell_line] = fishers_df[
+                        (fishers_df["Cell Line"] == cell_line) &
+                        (fishers_df["(A*D / B*C) Odds Ratio"] > 1) &
+                        (fishers_df["FDR BH"] < fishers_fdr)
+                    ]["Feature"].sort_values().unique().tolist()
+                
+
+        # Correlation candidates
+        corr_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
+        corr_df = pd.read_csv(corr_file, sep="\t")
+        
+        final_candidate_sets["'Test' Correlations"] = {}
+        for cell_line in self.cell_lines:
+            final_candidate_sets["'Test' Correlations"][cell_line] = corr_df[
+                    (corr_df["Cell Line"] == cell_line) &
+                    (corr_df["# rMATS Events - All Data"] >= min_events) &
+                    (corr_df["Spearman - All Data"] >= min_spearman)
+                ]["Feature"].sort_values().unique().tolist()
+
+        return final_candidate_sets
+    
+
     def delta_local_SHAP_significant_vs_not_significant_by_pos_neg_dpsi_in_test(self): 
         
         DATASETS = ["probability", "logodds"]
@@ -8497,38 +8532,17 @@ class ShapNetworkInvestigator:
 
         SPEARMAN_THRESHOLD = 0.3
         MIN_EVENTS_THRESHOLD = 10
+        FISHERS_FDR = 0.1
+
+        final_candidate_sets = self.retrieve_differential_candidate_features(
+            min_events=MIN_EVENTS_THRESHOLD, 
+            min_spearman=SPEARMAN_THRESHOLD,
+            fishers_fdr=FISHERS_FDR
+        )
 
         # Load dPSI vs local SHAP test partition data
         dpsi_shap_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
         dpsi_shap_df = pd.read_csv(dpsi_shap_file, sep="\t", compression="gzip")
-
-        final_candidate_sets = {}
-        for fdr in [0.1, 0.05]:
-            key = f"Fisher's Exact Test (rMATS FDR < {fdr})"
-            final_candidate_sets[key] ={}
-
-            fishers_file = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][fdr]
-            fishers_df = pd.read_csv(fishers_file, sep="\t")
-            
-            for cell_line in self.cell_lines:
-                final_candidate_sets[key][cell_line] = fishers_df[
-                        (fishers_df["Cell Line"] == cell_line) &
-                        (fishers_df["(A*D / B*C) Odds Ratio"] > 1) &
-                        (fishers_df["FDR BH"] < .1)
-                    ]["Feature"].sort_values().unique().tolist()
-                
-
-        # Correlation candidates
-        corr_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
-        corr_df = pd.read_csv(corr_file, sep="\t")
-        
-        final_candidate_sets["'Test' Correlations"] = {}
-        for cell_line in self.cell_lines:
-            final_candidate_sets["'Test' Correlations"][cell_line] = corr_df[
-                    (corr_df["Cell Line"] == cell_line) &
-                    (corr_df["# rMATS Events - All Data"] >= MIN_EVENTS_THRESHOLD) &
-                    (corr_df["Spearman - All Data"] >= SPEARMAN_THRESHOLD)
-                ]["Feature"].sort_values().unique().tolist()
 
         # PLOT ALL FEATURES TOGETHER
         for label, cell_line_candidates in final_candidate_sets.items():
@@ -8536,7 +8550,7 @@ class ShapNetworkInvestigator:
             if label == "'Test' Correlations":
                 prefix = f"NOTE 1: Candidates from 'Test' w/ (Spearman - All Data >= {SPEARMAN_THRESHOLD} &\n# Events >= {MIN_EVENTS_THRESHOLD})"
             elif "Fisher's Exact Test" in label:
-                prefix = "NOTE 1: Candidates from Fisher's (Test, Train, Val)\nw/ Fisher's FDR < .1 & Odds Ratio > 1"
+                prefix = f"NOTE 1: Candidates from Fisher's (Test, Train, Val)\nw/ Fisher's FDR < {FISHERS_FDR} & Odds Ratio > 1"
             else: 
                 raise ValueError(f"Unknown label: {label}")
             
