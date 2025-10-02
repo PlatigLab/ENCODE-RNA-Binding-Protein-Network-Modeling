@@ -8016,7 +8016,10 @@ class ShapNetworkInvestigator:
         return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
 
     
-    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None, **kwargs): 
+    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None, color_significant=False, **kwargs): 
+        SIGNIFICANT_COLOR = "#FF6A00"  # Orange color for significant points
+        DEFAULT_COLOR = "#87C0D0"      # Default color for non-significant points
+        FDR_CUTOFF = 0.05
 
         # Data assertions
         assert isinstance(df, pd.DataFrame), "df must be a pandas DataFrame"
@@ -8032,11 +8035,28 @@ class ShapNetworkInvestigator:
         assert not x.isnull().any(), "Null values found in x"
         assert not y.isnull().any(), "Null values found in y"
 
+        if color_significant: 
+            is_significant = df["rMATS FDR"] <= FDR_CUTOFF
+            colors = []
+
+            for sig in is_significant:
+                if sig:
+                    colors.append(SIGNIFICANT_COLOR)
+                else:
+                    if "color" in kwargs:
+                        colors.append(kwargs["color"])
+                    else:
+                        colors.append(DEFAULT_COLOR)
+            scatter_color = colors
+        
+        else:
+            scatter_color = kwargs["color"] if "color" in kwargs else None
+
         ax.scatter(
             x, y,
             s=2 if 'dot_size' not in kwargs else kwargs['dot_size'],
-            alpha=0.2,
-            c = kwargs["color"] if "color" in kwargs else None,
+            alpha=0.2 if 'alpha' not in kwargs else kwargs['alpha'],
+            color=scatter_color,
             edgecolor="black",
             linewidths=0.3
         )
@@ -8059,7 +8079,7 @@ class ShapNetworkInvestigator:
             0.02, 0.98,
             f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
             transform=ax.transAxes,
-            fontsize=10,
+            fontsize=12,
             verticalalignment='top',
             horizontalalignment='left'
         )
@@ -8076,7 +8096,7 @@ class ShapNetworkInvestigator:
             transform=ax.transAxes
         )
         ax.text(
-            -0.03, 0.5,
+            -0.04, 0.5,
             "△PSI (CTRL - KD)",
             fontsize=12,
             ha='right',
@@ -8090,7 +8110,19 @@ class ShapNetworkInvestigator:
             fontsize=14
         )
 
-        return ax
+        if not color_significant: 
+            return ax
+        elif color_significant: 
+            # Create a legend object for significant vs non-significant points
+            legend_elements = [
+                Line2D([0], [0], marker='o', color='w', label=f'Significant\n(rMATS FDR ≤ {FDR_CUTOFF})',
+                       markerfacecolor=SIGNIFICANT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7),
+                Line2D([0], [0], marker='o', color='w', label='Not Significant',
+                       markerfacecolor=DEFAULT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7)
+            ]
+            legend = ax.legend(handles=legend_elements, loc='best', frameon=True)
+            ax.get_legend().remove()  # Remove it from the plot for now
+            return ax, legend
 
     
     def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None): 
