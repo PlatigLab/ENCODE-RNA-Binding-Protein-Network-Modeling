@@ -8492,6 +8492,191 @@ class ShapNetworkInvestigator:
                     plt.tight_layout(rect=[0, 0, 0.98, 1])
                     plt.show()
 
+    
+    def plot_feature_candidates_for_dpsi_vs_local_SHAP_in_test(self): 
+
+        SPEARMAN_THRESHOLD = 0.3
+        MIN_EVENTS_THRESHOLD = 10
+
+        # Load dPSI vs local SHAP test partition data
+        dpsi_shap_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        dpsi_shap_df = pd.read_csv(dpsi_shap_file, sep="\t", compression="gzip")
+
+        final_candidate_sets = {}
+        for fdr in [0.1, 0.05]:
+            key = f"Fisher's Exact Test (rMATS FDR < {fdr})"
+            final_candidate_sets[key] ={}
+
+            fishers_file = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][fdr]
+            fishers_df = pd.read_csv(fishers_file, sep="\t")
+            
+            for cell_line in self.cell_lines:
+                final_candidate_sets[key][cell_line] = fishers_df[
+                        (fishers_df["Cell Line"] == cell_line) &
+                        (fishers_df["(A*D / B*C) Odds Ratio"] > 1) &
+                        (fishers_df["FDR BH"] < .1)
+                    ]["Feature"].sort_values().unique().tolist()
+                
+
+        # Correlation candidates
+        corr_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
+        corr_df = pd.read_csv(corr_file, sep="\t")
+        
+        final_candidate_sets["'Test' Correlations"] = {}
+        for cell_line in self.cell_lines:
+            final_candidate_sets["'Test' Correlations"][cell_line] = corr_df[
+                    (corr_df["Cell Line"] == cell_line) &
+                    (corr_df["# rMATS Events - All Data"] >= MIN_EVENTS_THRESHOLD) &
+                    (corr_df["Spearman - All Data"] >= SPEARMAN_THRESHOLD)
+                ]["Feature"].sort_values().unique().tolist()
+
+        # PLOT ALL FEATURES TOGETHER
+        for label, cell_line_candidates in final_candidate_sets.items():
+        
+            if label == "'Test' Correlations":
+                prefix = f"NOTE 1: Candidates from 'Test' w/ (Spearman - All Data >= {SPEARMAN_THRESHOLD} &\n# Events >= {MIN_EVENTS_THRESHOLD})"
+            elif "Fisher's Exact Test" in label:
+                prefix = "NOTE 1: Candidates from Fisher's (Test, Train, Val)\nw/ Fisher's FDR < .1 & Odds Ratio > 1"
+            else: 
+                raise ValueError(f"Unknown label: {label}")
+            
+            # print(f"{label} FEATURE Candidates:\n[{prefix.lstrip('NOTE 1: ')}]")
+            # for cell_line in self.cell_lines:
+            #     print(f"  {cell_line}: {len(cell_line_candidates[cell_line])} FEATURE candidates")
+            #     assert len(cell_line_candidates[cell_line]) > 0, f"No candidates found for {cell_line} in set {label}"  
+            # print()
+
+            # 2-column subplot: one per cell line
+            fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=200, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
+                df_cell = dpsi_shap_df[
+                    (dpsi_shap_df["Cell Line"] == cell_line) &
+                    (dpsi_shap_df["Feature"].isin(cell_line_candidates[cell_line]))
+                ]
+                assert not df_cell.empty, f"No candidates found for {cell_line} in set {label}"
+                
+                ax, legend = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=f"{cell_line}",
+                    dot_size = 4, 
+                    alpha=0.4,
+                    color_significant=True
+                )
+    
+            fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP (Test Partition)", fontsize=16, y=1.02)
+            fig.legend(
+                handles=legend.legendHandles,
+                labels=[t.get_text() for t in legend.get_texts()],
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.45),
+                frameon=True,
+                fontsize=14,
+                markerscale=1
+            )
+            
+            plt.tight_layout()
+            plt.show()
+
+            # 6x2 subplot: split by position
+            fig, axes = plt.subplots(6, 2, figsize=(13, 27), dpi=200, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell_pos = dpsi_shap_df[
+                        (dpsi_shap_df["Cell Line"] == cell_line) &
+                        (dpsi_shap_df["Position"] == pos) &
+                        (dpsi_shap_df["Feature"].isin(cell_line_candidates[cell_line]))
+                    ]
+
+                    assert not df_cell_pos.empty, f"No candidates found for {cell_line} position {pos} in set {label}"
+                    
+                    ax, legend = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell_pos,
+                        ax=axes[pos-1, i],
+                        plot_metric="CTRL - KD Local SHAP",
+                        title=f"{cell_line} - Pos. {pos}", 
+                        dot_size = 9,
+                        alpha=0.4,
+                        color_significant=True
+                    )
+                    
+            fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP by Position (Test Partition)", fontsize=16, y=1.01)
+            fig.legend(
+                handles=legend.legendHandles,
+                labels=[t.get_text() for t in legend.get_texts()],
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.5),
+                frameon=True,
+                fontsize=22,
+                markerscale=3
+            )
+            
+            plt.tight_layout()
+            plt.show()
+
+        # Build a mapping from feature to the set of cell lines it appears in
+        feature_to_cell_lines = {}
+        for cell_line in self.cell_lines:
+            for feature in final_candidate_sets["'Test' Correlations"][cell_line]:
+                
+                if feature not in feature_to_cell_lines:
+                    feature_to_cell_lines[feature] = set()
+                
+                feature_to_cell_lines[feature].add(cell_line)
+
+        # Sort feature_to_cell_lines by key (feature name)
+        feature_to_cell_lines = dict(sorted(feature_to_cell_lines.items(), key=lambda x: x[0]))
+        
+        # For each feature, plot dPSI vs Local SHAP for the relevant cell lines
+        for feature, cell_lines in feature_to_cell_lines.items():
+            cell_lines = sorted(cell_lines)
+            n_subplots = len(cell_lines)
+            if n_subplots == 2:
+                fig, axes = plt.subplots(1, 2, figsize=(8,4), dpi=200, sharex=True, sharey=True)
+            else:
+                fig, axes = plt.subplots(1, 1, figsize=(4,4), dpi=200)
+                axes = [axes]
+
+            legend = None  # Will hold the legend object if returned
+
+            for i, cell_line in enumerate(cell_lines):
+                
+                df_cell_feature = dpsi_shap_df[
+                    (dpsi_shap_df["Cell Line"] == cell_line) &
+                    (dpsi_shap_df["Feature"] == feature)
+                ]
+                
+                result = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell_feature,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=f"{cell_line}" if n_subplots == 2 else f"dPSI vs Delta Local SHAP\n{cell_line} - {feature}",
+                    dot_size=16, 
+                    alpha=0.9,
+                    color_significant=True
+                )
+                # If a legend is returned, save it for later
+                if isinstance(result, tuple) and len(result) == 2:
+                    _, legend = result
+
+            if legend is not None:
+                # Place the legend outside the right of the plot
+                fig.legend(
+                    handles=legend.legendHandles,
+                    labels=[t.get_text() for t in legend.get_texts()],
+                    loc='center left',
+                    bbox_to_anchor=(1.01, 0.5),
+                    frameon=True,
+                    fontsize=8,
+                )
+
+            if n_subplots == 2:
+                fig.suptitle(f"dPSI vs Delta Local SHAP for Feature: {feature}")
+
+            plt.tight_layout()
+            plt.show()
+        
 
 
 ###############################################################
