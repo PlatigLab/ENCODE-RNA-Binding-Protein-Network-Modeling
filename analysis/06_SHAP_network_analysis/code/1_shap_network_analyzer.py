@@ -159,7 +159,7 @@ class ShapNetworkInvestigator:
         "fishers_exact_association_between_binding_and_differential_splicing": {
             0.1: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.1_significant_splicing.tsv", 
             0.05: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.05_significant_splicing.tsv",
-        }
+        }, 
     }
 
     non_normalized_differential_plotting_columns_info = {
@@ -8116,9 +8116,9 @@ class ShapNetworkInvestigator:
             # Create a legend object for significant vs non-significant points
             legend_elements = [
                 Line2D([0], [0], marker='o', color='w', label=f'Significant\n(rMATS FDR ≤ {FDR_CUTOFF})',
-                       markerfacecolor=SIGNIFICANT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7),
+                    markerfacecolor=SIGNIFICANT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7),
                 Line2D([0], [0], marker='o', color='w', label='Not Significant',
-                       markerfacecolor=DEFAULT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7)
+                    markerfacecolor=DEFAULT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7)
             ]
             legend = ax.legend(handles=legend_elements, loc='best', frameon=True)
             ax.get_legend().remove()  # Remove it from the plot for now
@@ -8362,13 +8362,17 @@ class ShapNetworkInvestigator:
         return final_candidate_sets
     
 
-    def delta_local_SHAP_significant_vs_not_significant_by_pos_neg_dpsi_in_test(self): 
+    def delta_local_SHAP_significant_vs_not_significant_by_pos_neg_dpsi_in_test(self, only_candidate_features=False): 
         
+        # REQUIRED 
         DATASETS = ["probability", "logodds"]
         FDR_CUTOFFS = [0.1, 0.05]
         STAT_TESTS = [("MWU", "mann-whitney"), ("Welch's T", "t-test_ind")]
         DPSI_THRESHOLDS = [0, 0.001, 0.01]
         DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+
+        # OPTIONAL
+        CANDIDATE_FEATURE_KEY = "Fisher's Exact Test (rMATS FDR < 0.05)"
 
         # Coloring and Ordering
         dpsi_sign_order = ["- dPSI", "+ dPSI"]
@@ -8396,6 +8400,15 @@ class ShapNetworkInvestigator:
                     for ax, cell_line in zip(axes, self.cell_lines):
                         df_cell = df[df["Cell Line"] == cell_line].copy()
 
+                        if only_candidate_features:
+                            candidate_features = self.retrieve_differential_candidate_features()
+                            df_cell = df_cell[
+                                df_cell["Feature"].isin(
+                                    candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
+                                )
+                            ]
+
+
                         # Assign dPSI sign based on dpsi_threshold (simplified)
                         df_cell["dPSI Sign"] = np.nan
                         df_cell.loc[df_cell["dPSI"] > dpsi_threshold, "dPSI Sign"] = "+ dPSI"
@@ -8403,14 +8416,14 @@ class ShapNetworkInvestigator:
                         
                         # Assign significance status
                         df_cell["Significance"] = np.where(
-                            df_cell["rMATS FDR"] <= cutoff, f"Significant (FDR≤{cutoff})", "Not Significant"
+                            df_cell["rMATS FDR"] <= cutoff, f"Significant (rMATS FDR≤{cutoff})", "Not Significant"
                         )
 
                         # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
                         df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
 
-                        hue_order = [f"Significant (FDR≤{cutoff})", "Not Significant"]  # switched order
-                        palette = {f"Significant (FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
+                        hue_order = [f"Significant (rMATS FDR≤{cutoff})", "Not Significant"]  # switched order
+                        palette = {f"Significant (rMATS FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
 
                         sns.violinplot(
                             data=df_cell,
@@ -8440,7 +8453,7 @@ class ShapNetworkInvestigator:
                             subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
 
                             group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
-                            group2 = subset[subset["Significance"] == f"Significant (FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
+                            group2 = subset[subset["Significance"] == f"Significant (rMATS FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
 
                             xpos = dpsi_sign_order.index(dpsi_sign)
                             ymax = subset["CTRL - KD Local SHAP"].max()
@@ -8506,7 +8519,7 @@ class ShapNetworkInvestigator:
                     fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
                     # Custom legend for hue and y=0 line
                     handles = [
-                        Patch(facecolor=palette[f"Significant (FDR≤{cutoff})"], edgecolor="black", label=f"Significant (FDR ≤ {cutoff})"),
+                        Patch(facecolor=palette[f"Significant (rMATS FDR≤{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR ≤ {cutoff})"),
                         Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
                         Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
                     ]
@@ -8519,8 +8532,12 @@ class ShapNetworkInvestigator:
                         frameon=False,
                         title_fontsize=15,
                     )
+
+                    additional_note = f"NOTE 2: CANDIDATE FEATURES from {CANDIDATE_FEATURE_KEY}" if only_candidate_features else ""
+                    suffix = "(CANDIDATE FEATURES)" if only_candidate_features else ""
+
                     fig.suptitle(
-                        f"{dataset.capitalize()} SHAP; FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction",
+                        f"NOTE 1: {dataset.capitalize()} SHAP; rMATS FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
                         fontsize=18, y=1.01
                     )
 
