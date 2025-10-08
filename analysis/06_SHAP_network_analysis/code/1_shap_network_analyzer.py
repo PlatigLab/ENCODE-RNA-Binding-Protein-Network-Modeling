@@ -8781,12 +8781,15 @@ class ShapNetworkInvestigator:
         df = data.copy()
         counts_df, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=df)
         
+        # Format pct_df as strings with percent sign, rounded to 0 decimals
+        pct_annot = pct_df.round(0).astype(int).astype(str) + '%'
+
         sns.heatmap(
             counts_df,
             ax=ax,
             cmap="YlGn",
-            annot=pct_df,
-            fmt=".0%",
+            annot=pct_annot,
+            fmt="s",
             cbar=True,
             linewidths=0.5,
             linecolor="black",
