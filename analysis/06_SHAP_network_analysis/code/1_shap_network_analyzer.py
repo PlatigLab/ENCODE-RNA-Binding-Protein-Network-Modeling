@@ -8777,6 +8777,187 @@ class ShapNetworkInvestigator:
         return ax, counts_df, pct_df
 
 
+    def create_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, across_thresholds = None, data_mode=None):
+        assert across_thresholds in [True, False], "across_thresholds must be True or False"
+        assert data_mode in ["test", "test candidate features"], "data_mode must be 'test' or 'test candidate features'"
+
+        DPSI_THRESHOLDS = [0, 0.05, 0.1]
+        FDR_THRESHOLDS = [1, 0.1, 0.05]
+        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.005, 0.01, 0.05]
+
+        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+        
+        INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
+        
+        note_prefix = ""
+        if data_mode == "test candidate features":
+            CANDIDATE_FEATURE_KEY = "Fisher's Exact Test (rMATS FDR < 0.05)"
+            candidate_features = self.retrieve_differential_candidate_features()
+            note_prefix = f"NOTE:'Candidates' from {CANDIDATE_FEATURE_KEY}\n\n"
+
+            dfs = []
+            for cell_line in self.cell_lines:
+                features = candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
+                dfs.append(df[
+                        (df["Cell Line"] == cell_line) & 
+                        (df["Feature"].isin(features))
+                    ])
+            
+            df = pd.concat(dfs, ignore_index=True)
+
+        if not across_thresholds:
+            # Iterate thresholds: dPSI -> ΔLocal SHAP -> FDR; build confusion matrices per cell line
+            for dpsi_thr in DPSI_THRESHOLDS:
+                for delta_shap_thr in DELTA_LOCAL_SHAP_THRESHOLDS:
+                    for fdr_thr in FDR_THRESHOLDS:
+
+                        # Create a 1xN subplot (one per cell line)
+                        fig, axes = plt.subplots(
+                            1,
+                            len(self.cell_lines),
+                            figsize=(6.1,3.4),
+                            dpi=200,
+                        )
+
+                        for ax, cell_line in zip(axes, self.cell_lines):
+                            sub = df[
+                                (df["Cell Line"] == cell_line) &
+                                (df["rMATS FDR"] <= fdr_thr) &
+                                (df["dPSI"].abs() >= dpsi_thr) &
+                                (df["CTRL - KD Local SHAP"].abs() >= delta_shap_thr)
+                            ].copy(deep=True)
+
+                            # Skip if no rows after filtering
+                            if sub.empty:
+                                continue
+
+                            _, counts_df, pct_df =self.plot_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix(
+                                data=sub,
+                                ax=ax,
+                                title=f"{cell_line}"
+                            )
+
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, dPSI≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
+                            display(pct_df)
+
+                        fig.suptitle(
+                            f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
+                            f"{DPSI_SYMBOL}≥{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|≥{delta_shap_thr}, rMATS FDR≤{fdr_thr}",
+                            fontsize=10,
+                            y=0.94
+                        )
+                        fig.tight_layout()
+                        plt.show()
+
+        elif across_thresholds:
+
+            # Prepare colors and element labels
+            delta_shap_colors = ['#edf8fb','#b2e2e2','#66c2a4','#238b45'] # least to highest ΔSHAP threshold
+            element_types = ["TP", "TN", "FP", "FN"]
+            element_labels = {
+                "TP": "True Positive",
+                "TN": "True Negative",
+                "FP": "False Positive",
+                "FN": "False Negative"
+            }
+
+            # For each cell line, create a figure
+            for cell_line in self.cell_lines:
+                nrows = len(DPSI_THRESHOLDS)
+                ncols = len(element_types)
+                
+                fig, axes = plt.subplots(
+                    nrows=nrows, ncols=ncols,
+                    figsize=(ncols*2.3, nrows*2),
+                    dpi=200, sharex=True, sharey=True
+                )
+
+                # Treat FDR thresholds as categorical strings for x-axis
+                fdr_labels = [str(x) for x in FDR_THRESHOLDS]
+
+                for row_idx, dpsi_thr in enumerate(DPSI_THRESHOLDS):
+                    for col_idx, element in enumerate(element_types):
+                        ax = axes[row_idx, col_idx] 
+
+                        # For each delta local shap threshold, collect values across FDR thresholds
+                        for delta_idx, delta_thr in enumerate(DELTA_LOCAL_SHAP_THRESHOLDS):
+                            y_vals = []
+
+                            for fdr_thr in FDR_THRESHOLDS:
+                                # Filter data for this cell line and thresholds
+                                sub = df[
+                                        (df["Cell Line"] == cell_line) &
+                                        (df["rMATS FDR"] <= fdr_thr) &
+                                        (df["dPSI"].abs() >= dpsi_thr) &
+                                        (df["CTRL - KD Local SHAP"].abs() >= delta_thr)
+                                    ].copy(deep=True)
+                                
+                                # Get confusion matrix
+                                _, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=sub)
+                                pct_df = pct_df * 100  # convert to percentage
+
+                                # Map element to value in pct_df
+                                if element == "TP":
+                                    val = pct_df.loc["+", "+"]
+                                elif element == "TN":
+                                    val = pct_df.loc["—", "—"]
+                                elif element == "FP":
+                                    val = pct_df.loc["—", "+"]
+                                elif element == "FN":
+                                    val = pct_df.loc["+", "—"]
+                                else:
+                                    val = np.nan
+                                y_vals.append(val)
+
+                            # Plot line and points with reduced thickness/size and black borders
+                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f"≥{delta_thr}", linewidth=0.6)
+                            ax.scatter(fdr_labels, y_vals, color=delta_shap_colors[delta_idx], s=18, edgecolor='black', linewidths=0.5, zorder=3)
+
+                        # Axis labels and title
+                        if row_idx == 0:
+                            ax.set_title(element_labels[element], fontsize=13)
+                        if col_idx == 0:
+                            ax.set_ylabel(f"≥ {dpsi_thr}", fontsize=16, color = "#FF8C00")
+
+                        ax.set_xticks(fdr_labels)
+                        ax.set_xticklabels(fdr_labels)
+                        ax.grid(True, axis='y', linestyle='--', alpha=0.8)
+
+                        # Remove all subplot legends to ensure only a single figure legend
+                        if hasattr(ax, "legend_") and ax.legend_:
+                            ax.legend_.remove()
+
+
+                fig.text(
+                    0.03, 0.5, DPSI_SYMBOL, fontsize=16, rotation=90, va='center', color = "#FF8C00"
+                )
+
+                # Add a single legend for ΔSHAP thresholds for the entire figure
+                # Use handles/labels from the first subplot
+                handles, labels = axes[0, 0].get_legend_handles_labels() if nrows > 1 else axes[0].get_legend_handles_labels()
+                fig.legend(
+                    handles, labels,
+                    title=f"{DELTA_LOCAL_SHAP_SYMBOL}",
+                    fontsize=11,
+                    title_fontsize=12,
+                    loc="center left",
+                    bbox_to_anchor=(0.98, 0.5),
+                    frameon=True
+                )
+
+                fig.suptitle(f'{note_prefix}"{data_mode.capitalize()}"\n{cell_line}: Confusion Matrix Elements Across Thresholds', fontsize=18, y=1)
+                fig.supxlabel("FDR", fontsize=20, y=0.01, x=0.55)
+                fig.supylabel("%", fontsize=26, x=-0.04)
+
+                plt.tight_layout()
+                plt.show()
+
+        else: 
+            raise ValueError("across_thresholds must be True or False")
+
+
 
 ###############################################################
 ###############################################################
