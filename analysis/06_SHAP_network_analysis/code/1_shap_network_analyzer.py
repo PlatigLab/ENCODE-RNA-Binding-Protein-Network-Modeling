@@ -8707,7 +8707,75 @@ class ShapNetworkInvestigator:
 
             plt.tight_layout()
             plt.show()
+
+    
+    def create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(self, data = None):
+        assert type(data) == pd.DataFrame, "Data must be a pandas DataFrame"
         
+        dpsi = data["dPSI"]
+        shap_delta = data["CTRL - KD Local SHAP"]
+
+        # Exclude zeros (neutral) from both metrics
+        mask = (dpsi != 0) & (shap_delta != 0)
+        dpsi = dpsi[mask]
+        shap_delta = shap_delta[mask]
+
+        counts_df = pd.DataFrame(
+            [
+                {
+                    "dPSI Sign": "+",
+                    "+": ((dpsi > 0) & (shap_delta > 0)).sum(),
+                    "—": ((dpsi > 0) & (shap_delta < 0)).sum(),
+                },
+                {
+                    "dPSI Sign": "—",
+                    "+": ((dpsi < 0) & (shap_delta > 0)).sum(),
+                    "—": ((dpsi < 0) & (shap_delta < 0)).sum(),
+                },
+            ]
+        ).set_index("dPSI Sign")[["+", "—"]]
+        
+        pct_df = counts_df / counts_df.values.sum()
+
+        return counts_df, pct_df
+
+
+    def plot_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix(self, data = None, ax = None, title = "NOT PROVIDED", **kwargs):
+        assert data is not None, "Data must be provided"
+        assert ax is not None, "Axis must be provided"
+
+        dpsi_symbol = self.latex_symbols["Differential Symbols"]["dPSI"]
+        delta_shap_symbol = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+
+        df = data.copy()
+        counts_df, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=df)
+        
+        sns.heatmap(
+            counts_df,
+            ax=ax,
+            cmap="YlGn",
+            annot=pct_df,
+            fmt=".0%",
+            cbar=True,
+            linewidths=0.5,
+            linecolor="black",
+            annot_kws={"fontsize": 10, "weight": "bold"},
+            cbar_kws={'shrink': 0.9, 'pad': 0.05}
+        )
+        # Put the colorbar title on top
+        cbar = ax.collections[-1].colorbar
+        cbar.ax.set_title("#", pad=6, fontsize=14)
+
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        
+        ax.set_xlabel(f"Model:\n{delta_shap_symbol}", fontsize=12, y = -0.1)
+        ax.set_ylabel(f"Data:\n{dpsi_symbol}", fontsize=12, x = -0.1)
+        ax.set_title(title, fontsize=14)
+
+        # Return axis and underlying (counts) data without showing
+        return ax, counts_df, pct_df
+
 
 
 ###############################################################
