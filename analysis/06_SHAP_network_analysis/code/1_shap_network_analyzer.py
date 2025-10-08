@@ -160,6 +160,11 @@ class ShapNetworkInvestigator:
             0.1: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.1_significant_splicing.tsv", 
             0.05: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.05_significant_splicing.tsv",
         }, 
+        "fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign": {
+            "test": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_ALL_IN_SILICO_KD_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
+            "test candidate features": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_CANDIDATE_FEATURES_ONLY_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
+        }, 
+
     }
 
     non_normalized_differential_plotting_columns_info = {
@@ -7931,6 +7936,31 @@ class ShapNetworkInvestigator:
         
         return result, min_count
 
+
+    def compare_train_validate_test_metrics(self): 
+        # TODO this doesn't exist anymore
+        OUTPUT_FILE = self.CACHE_INFO["train_validate_test_comparison"]
+
+        if Path(OUTPUT_FILE).exists():
+            logger.info(f"FROM CACHE: Loading train/validate/test comparison from {OUTPUT_FILE} ...")
+            raise NotImplementedError("Loading from cache not implemented yet.")
+        
+        else:
+            logger.info("Calculating train/validate/test comparison metrics ...")
+
+            # lazyframes = self.load_final_SHAP_data(underlying_data = "All-Data", as_lazyframe=True)
+
+            # # For each cell line, get all columns that don't end in "_binding" or "_shap", collect, and store as metadata_df
+            # metadata_df = {}
+            # for cell_line in self.cell_lines:
+            #     schema = lazyframes[cell_line].collect_schema().names()
+            #     metadata_cols = [col for col in schema if not (col.endswith("_binding") or col.endswith("_shap"))]
+            #     metadata_df[cell_line] = lazyframes[cell_line].select(metadata_cols).collect()
+            
+            # # TODO remove 
+            # self.TMP = metadata_df
+            metadata_df = self.TMP
+
     
     def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None,): 
         assert type(data) == pl.DataFrame, "data must be a polars DataFrame"
@@ -8810,9 +8840,14 @@ class ShapNetworkInvestigator:
 
         if not across_thresholds:
             # Iterate thresholds: dPSI -> ΔLocal SHAP -> FDR; build confusion matrices per cell line
+
+            confusion_matrix_data = {}
             for dpsi_thr in DPSI_THRESHOLDS:
+                confusion_matrix_data[dpsi_thr] = {}
                 for delta_shap_thr in DELTA_LOCAL_SHAP_THRESHOLDS:
+                    confusion_matrix_data[dpsi_thr][delta_shap_thr] = {}
                     for fdr_thr in FDR_THRESHOLDS:
+                        confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr] = {}
 
                         # Create a 1xN subplot (one per cell line)
                         fig, axes = plt.subplots(
@@ -8840,6 +8875,11 @@ class ShapNetworkInvestigator:
                                 title=f"{cell_line}"
                             )
 
+                            confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line] = {
+                                "counts": counts_df,
+                                "percentages": pct_df
+                            }
+
                             logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, dPSI≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
                             display(pct_df)
 
@@ -8851,6 +8891,57 @@ class ShapNetworkInvestigator:
                         )
                         fig.tight_layout()
                         plt.show()
+
+            # Prepare to collect all Fisher's test results
+            fisher_results = []
+
+            for dpsi_thr in confusion_matrix_data:
+                for delta_shap_thr in confusion_matrix_data[dpsi_thr]:
+                    for fdr_thr in confusion_matrix_data[dpsi_thr][delta_shap_thr]:
+                        for cell_line in confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr]:
+                            counts_df = confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line]["counts"]
+                            pct_df = confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line]["percentages"]
+                            
+                            assert counts_df.shape == (2, 2), "Counts DataFrame must be 2x2"
+                            assert pct_df.shape == (2, 2), "Percentages DataFrame must be 2x2"
+
+                            # Build contingency table: rows = dPSI sign (+, -), columns = delta SHAP sign (+, -)
+                            table = [
+                                [counts_df.loc["+", "+"], counts_df.loc["+", "—"]],
+                                [counts_df.loc["—", "+"], counts_df.loc["—", "—"]],
+                            ]
+
+                            oddsratio, pvalue = fisher_exact(table)
+                            log10_odds = np.log10(oddsratio) if oddsratio > 0 else np.nan
+                            
+                            fisher_results.append({
+                                "Cell Line": cell_line,
+                                "dPSI Threshold": dpsi_thr,
+                                "Delta SHAP Threshold": delta_shap_thr,
+                                "FDR Threshold": fdr_thr,
+                                "(A) dPSI +, SHAP +": table[0][0],
+                                "(B) dPSI +, SHAP -": table[0][1],
+                                "(C) dPSI -, SHAP +": table[1][0],
+                                "(D) dPSI -, SHAP -": table[1][1],
+                                "(A*D / B*C) Odds Ratio": oddsratio,
+                                "(A)%": pct_df.loc["+", "+"],
+                                "(B)%": pct_df.loc["+", "—"],
+                                "(C)%": pct_df.loc["—", "+"],
+                                "(D)%": pct_df.loc["—", "—"],
+                                "Log10 Odds Ratio": log10_odds,
+                                "P-Value": pvalue,
+                            })
+
+            # FDR correction
+            results_df = pd.DataFrame(fisher_results)
+
+            reject, pvals_corrected, _, _ = multipletests(results_df["P-Value"], method='fdr_bh')
+            results_df["FDR"] = pvals_corrected
+
+            # Save to ~/tmp.tsv
+            results_df.sort_values(
+                by=["Cell Line", "dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"]
+            ).to_csv(self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode], sep="\t", index=False)
 
         elif across_thresholds:
 
