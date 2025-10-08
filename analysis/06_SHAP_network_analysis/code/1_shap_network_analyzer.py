@@ -8736,6 +8736,7 @@ class ShapNetworkInvestigator:
         ).set_index("dPSI Sign")[["+", "—"]]
         
         pct_df = counts_df / counts_df.values.sum()
+        pct_df = pct_df * 100  # Convert to percentages
 
         return counts_df, pct_df
 
@@ -8896,7 +8897,6 @@ class ShapNetworkInvestigator:
                                 
                                 # Get confusion matrix
                                 _, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=sub)
-                                pct_df = pct_df * 100  # convert to percentage
 
                                 # Map element to value in pct_df
                                 if element == "TP":
