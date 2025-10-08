@@ -8843,7 +8843,6 @@ class ShapNetworkInvestigator:
 
         if not across_thresholds:
             # Iterate thresholds: dPSI -> ΔLocal SHAP -> FDR; build confusion matrices per cell line
-
             confusion_matrix_data = {}
             for dpsi_thr in DPSI_THRESHOLDS:
                 confusion_matrix_data[dpsi_thr] = {}
@@ -8895,7 +8894,10 @@ class ShapNetworkInvestigator:
                         fig.tight_layout()
                         plt.show()
 
-            # Prepare to collect all Fisher's test results
+            #####################################################################
+            # RUN FISHER'S EXACT TEST BETWEEN dPSI SIGN AND DELTA LOCAL SHAP SIGN
+            ######################################################################
+
             fisher_results = []
 
             for dpsi_thr in confusion_matrix_data:
@@ -8938,7 +8940,11 @@ class ShapNetworkInvestigator:
             # FDR correction
             results_df = pd.DataFrame(fisher_results)
 
-            reject, pvals_corrected, _, _ = multipletests(results_df["P-Value"], method='fdr_bh')
+            # Round all columns ending with '%' to the nearest integer
+            percent_cols = [col for col in results_df.columns if col.endswith('%')]
+            results_df[percent_cols] = results_df[percent_cols].round(0).astype(int)
+
+            _, pvals_corrected, _, _ = multipletests(results_df["P-Value"], method='fdr_bh')
             results_df["FDR"] = pvals_corrected
 
             # Save to ~/tmp.tsv
