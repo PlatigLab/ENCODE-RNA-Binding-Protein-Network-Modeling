@@ -1,0 +1,95 @@
+Processing 2025790 samples for cell line K562
+Train r2_score: 0.527303
+Validate r2_score: 0.424892
+Test r2_score: 0.401617
+       AARS_1_binding  AARS_2_binding  ...  ZRANB2_5_binding  ZRANB2_6_binding
+0                   0               0  ...                 0                 0
+1                   0               0  ...                 0                 0
+2                   0               0  ...                 0                 0
+3                   0               0  ...                 0                 0
+4                   0               0  ...                 0                 0
+...               ...             ...  ...               ...               ...
+77253               0               0  ...                 0                 0
+77254               0               0  ...                 0                 0
+77255               0               0  ...                 0                 0
+77256               0               0  ...                 0                 0
+77257               0               0  ...                 0                 0
+
+[77258 rows x 834 columns]
+Using 77258 background rows (unique combinations of 834 binding columns).
+Calculating SHAP values for 95165 samples...
+       AARS_1_binding  AARS_2_binding  ...  ZRANB2_5_binding  ZRANB2_6_binding
+0                   0               0  ...                 0                 0
+1                   0               0  ...                 0                 0
+2                   0               0  ...                 0                 0
+3                   0               0  ...                 0                 0
+4                   0               0  ...                 0                 0
+...               ...             ...  ...               ...               ...
+95160               0               0  ...                 0                 0
+95161               0               0  ...                 0                 0
+95162               0               0  ...                 0                 0
+95163               0               0  ...                 0                 0
+95164               0               0  ...                 0                 0
+
+[95165 rows x 834 columns]
+Max prediction difference: 4.4852e-07
+Mean prediction difference: 5.116e-08
+       AARS_1_binding  AARS_2_binding  ...  ZRANB2_5_shap  ZRANB2_6_shap
+0                   0               0  ...            0.0            0.0
+1                   0               0  ...            0.0            0.0
+2                   0               0  ...            0.0            0.0
+3                   0               0  ...            0.0            0.0
+4                   0               0  ...            0.0            0.0
+...               ...             ...  ...            ...            ...
+95160               0               0  ...            0.0            0.0
+95161               0               0  ...            0.0            0.0
+95162               0               0  ...            0.0            0.0
+95163               0               0  ...            0.0            0.0
+95164               0               0  ...            0.0            0.0
+
+[95165 rows x 1668 columns]
+AARS_1_binding       uint8
+AARS_2_binding       uint8
+AARS_3_binding       uint8
+AARS_4_binding       uint8
+AARS_5_binding       uint8
+                    ...   
+Upstream Exon       object
+Main Exon           object
+Downstream Exon     object
+Predictions        float32
+Partition           object
+Length: 857, dtype: object
+AARS_1_binding      uint8
+AARS_2_binding      uint8
+AARS_3_binding      uint8
+AARS_4_binding      uint8
+AARS_5_binding      uint8
+                   ...   
+ZRANB2_2_shap     float64
+ZRANB2_3_shap     float64
+ZRANB2_4_shap     float64
+ZRANB2_5_shap     float64
+ZRANB2_6_shap     float64
+Length: 1668, dtype: object
+Successfully joined SHAP columns: added 834 columns. Dataframe shape is now (2025790, 1691).
+shape: (2_025_790, 1_691)
+┌───────────┬───────────┬───────────┬───────────┬───┬───────────┬───────────┬───────────┬──────────┐
+│ AARS_1_bi ┆ AARS_2_bi ┆ AARS_3_bi ┆ AARS_4_bi ┆ … ┆ ZRANB2_3_ ┆ ZRANB2_4_ ┆ ZRANB2_5_ ┆ ZRANB2_6 │
+│ nding     ┆ nding     ┆ nding     ┆ nding     ┆   ┆ shap      ┆ shap      ┆ shap      ┆ _shap    │
+│ ---       ┆ ---       ┆ ---       ┆ ---       ┆   ┆ ---       ┆ ---       ┆ ---       ┆ ---      │
+│ u8        ┆ u8        ┆ u8        ┆ u8        ┆   ┆ f64       ┆ f64       ┆ f64       ┆ f64      │
+╞═══════════╪═══════════╪═══════════╪═══════════╪═══╪═══════════╪═══════════╪═══════════╪══════════╡
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000029  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000029  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000029  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000029  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000029  ┆ 0.0       ┆ 0.0      │
+│ …         ┆ …         ┆ …         ┆ …         ┆ … ┆ …         ┆ …         ┆ …         ┆ …        │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000019  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000019  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000019  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000019  ┆ 0.0       ┆ 0.0      │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ 0.0       ┆ 0.000019  ┆ 0.0       ┆ 0.0      │
+└───────────┴───────────┴───────────┴───────────┴───┴───────────┴───────────┴───────────┴──────────┘
+Saved SHAP feather file and SHAP explainer for cell line K562.
