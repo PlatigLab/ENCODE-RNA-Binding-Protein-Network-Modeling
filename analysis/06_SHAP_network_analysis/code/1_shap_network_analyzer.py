@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent.futures, argparse, random
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent.futures, argparse, random, subprocess
 
 import pandas as pd, polars as pl, numpy as np
 import matplotlib.pyplot as plt, matplotlib as mpl, seaborn as sns, matplotlib.gridspec as gridspec
@@ -9866,20 +9866,26 @@ if __name__ == "__main__":
         "no_shap_variance_per_binding_pattern", 
         "create_final_shap_cache", 
         "global_SHAP_5_dfs_all_data", 
+        "global_SHAP_5_dfs_unique_binding",
+        "global_SHAP_5_dfs_average_all_data",
+        "global_SHAP_5_dfs_average_unique_binding", 
+        "specialized_global_shap_unsigned_bound", 
+        "specialized_global_shap_unsigned_unbound", 
+        "specialized_global_shap_signed_local_SHAP_mean_bound",
+        "specialized_global_shap_signed_local_SHAP_mean_unbound",
+        "specialized_global_shap_signed_local_SHAP_mean_LOG-ODDS_bound",
         "local_SHAP_mean_vs_variance_plot",
         "calculate_local_SHAP_percent_non_zero",
         "calculate_local_SHAP_mean_vs_variance_deciles_bound",
         "calculate_local_SHAP_mean_vs_variance_deciles_unbound", 
         "pct_pos_neg_local_SHAP_per_feature_bound",
         "pct_pos_neg_local_SHAP_per_feature_unbound", 
-        "arbs_narbs_bound", 
-        "arbs_narbs_unbound", 
         "is_position_3_4_activating_and_others_repressing", 
-        "signed_local_SHAP_mean_bound",
-        "signed_local_SHAP_mean_unbound",
         "binding_vs_diff_events_fishers_FDR_0.05", 
         "binding_vs_diff_events_fishers_FDR_0.1",
-        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data"
+        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data",
+        "arbs_narbs_bound", 
+        "arbs_narbs_unbound", 
     ]
 
     parser.add_argument(
@@ -9898,15 +9904,25 @@ if __name__ == "__main__":
         help="Specify the job type for specific job."
     )
 
+    parser.add_argument(
+        "--run_all", 
+        action="store_true",
+        required=False,
+    )     
+
     args = parser.parse_args()
 
-    if args.parallelize:
+    if args.run_all:
+        for job in PARALLELIZE_CHOICES:
+            subprocess.run(["python3.11", __file__, "--parallelize", job], check=True)
+    
+    elif args.parallelize:
 
-        sbatch_prefix = "sbatch -N2 --partition=parallel -n32 --mem=256GB --account=platiglab"
+        sbatch_prefix = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
         logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-        os.system(sbatch_command)
+        subprocess.run(sbatch_command, shell=True, check=True)
     
     elif args.job_type: 
 
@@ -9923,9 +9939,12 @@ if __name__ == "__main__":
         
         elif args.job_type == "create_final_shap_cache":
             analyzer.load_final_SHAP_data(underlying_data="All-Data")
-        
-        elif args.job_type == "global_SHAP_5_dfs_all_data":
-            analyzer.calculate_global_SHAP(mode="5_dfs", binding_unique="All-Data")
+
+        elif args.job_type.startswith("global_SHAP_5_dfs_"):
+            underlying_data = "All-Data" if "all_data" in args.job_type else "Unique-Binding"
+            mode = "5_dfs_average" if "_average_" in args.job_type else "5_dfs"
+
+            analyzer.calculate_global_SHAP(mode=mode, binding_unique = underlying_data)
 
         elif args.job_type == "local_SHAP_mean_vs_variance_plot":
             analyzer.plot_local_SHAP_mean_vs_variance()
@@ -9953,19 +9972,33 @@ if __name__ == "__main__":
         elif args.job_type == "is_position_3_4_activating_and_others_repressing": 
             analyzer.is_position_3_4_activating_and_others_repressing()
 
-        elif args.job_type.startswith("signed_local_SHAP_mean_"): 
-            
-            if args.job_type.endswith("_bound"):
-                mode = "Signed-Local-SHAP-Mean-Bound-Only"
-            elif args.job_type.endswith("_unbound"):
-                mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+        elif args.job_type.startswith("specialized_global_shap_"):
+
+            condition = None 
+            underlying_data = "Unique-Binding"
+            mode = None
+
+            if "LOG-ODDS" not in args.job_type:
+                if args.job_type.endswith("_bound"):
+                    if "unsigned" in args.job_type:
+                        mode = "Bound-Only"
+                    elif "signed_local_SHAP" in args.job_type:
+                        mode = "Signed-Local-SHAP-Mean-Bound-Only"
+                
+                elif args.job_type.endswith("_unbound"):
+                    if "unsigned" in args.job_type:
+                        mode = "NOT-Bound-Only"
+                    elif "signed_local_SHAP" in args.job_type:
+                        mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
             else:
-                raise ValueError(f"Unknown job type: {args.job_type}")
+                mode = "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"
+            
+            assert mode is not None, "Could not determine mode from job_type"
 
             analyzer.calculate_specialized_global_SHAP(
-                mode=mode, 
-                condition=None,
-                underlying_data="Unique-Binding"
+                mode=mode,
+                condition=condition,
+                underlying_data=underlying_data
             )
         
         elif args.job_type.startswith("binding_vs_diff_events_fishers_FDR_"):
