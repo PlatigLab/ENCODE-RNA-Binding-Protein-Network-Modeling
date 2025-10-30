@@ -8638,7 +8638,7 @@ class ShapNetworkInvestigator:
     
             fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP (Test Partition)", fontsize=16, y=1.02)
             fig.legend(
-                handles=legend.legendHandles,
+                handles=legend.legend_handles,
                 labels=[t.get_text() for t in legend.get_texts()],
                 loc='center left',
                 bbox_to_anchor=(1.01, 0.45),
@@ -8674,7 +8674,7 @@ class ShapNetworkInvestigator:
                     
             fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP by Position (Test Partition)", fontsize=16, y=1.01)
             fig.legend(
-                handles=legend.legendHandles,
+                handles=legend.legend_handles,
                 labels=[t.get_text() for t in legend.get_texts()],
                 loc='center left',
                 bbox_to_anchor=(1.01, 0.5),
@@ -8734,7 +8734,7 @@ class ShapNetworkInvestigator:
             if legend is not None:
                 # Place the legend outside the right of the plot
                 fig.legend(
-                    handles=legend.legendHandles,
+                    handles=legend.legend_handles,
                     labels=[t.get_text() for t in legend.get_texts()],
                     loc='center left',
                     bbox_to_anchor=(1.01, 0.5),
