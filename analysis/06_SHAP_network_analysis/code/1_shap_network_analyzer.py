@@ -6727,6 +6727,7 @@ class ShapNetworkInvestigator:
             logger.success(f"FROM CACHE: loading data for SHAP additivity assertions")
 
             additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
+            logger.info(f'{additivity_df["difference_probability"].describe()}')
 
             probability_df = additivity_df.copy()
             probability_df["Source"] = probability_df["model"].astype(str)
@@ -9041,7 +9042,7 @@ class ShapNetworkInvestigator:
 
 
                 fig.text(
-                    0.03, 0.5, DPSI_SYMBOL, fontsize=16, rotation=90, va='center', color = "#FF8C00"
+                    0.03, 0.5, f"|{DPSI_SYMBOL}|", fontsize=16, rotation=90, va='center', color = "#FF8C00"
                 )
 
                 # Add a single legend for ΔSHAP thresholds for the entire figure
@@ -9049,7 +9050,7 @@ class ShapNetworkInvestigator:
                 handles, labels = axes[0, 0].get_legend_handles_labels() if nrows > 1 else axes[0].get_legend_handles_labels()
                 fig.legend(
                     handles, labels,
-                    title=f"{DELTA_LOCAL_SHAP_SYMBOL}",
+                    title=f"|{DELTA_LOCAL_SHAP_SYMBOL}|",
                     fontsize=11,
                     title_fontsize=12,
                     loc="center left",
