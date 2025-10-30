@@ -8893,12 +8893,12 @@ class ShapNetworkInvestigator:
                                 "percentages": pct_df
                             }
 
-                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, dPSI≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
                             display(pct_df)
 
                         fig.suptitle(
                             f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
-                            f"{DPSI_SYMBOL}≥{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|≥{delta_shap_thr}, rMATS FDR≤{fdr_thr}",
+                            f"|{DPSI_SYMBOL}|≥{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|≥{delta_shap_thr}, rMATS FDR≤{fdr_thr}",
                             fontsize=10,
                             y=0.94
                         )
