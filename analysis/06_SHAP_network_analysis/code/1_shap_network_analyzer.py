@@ -5674,6 +5674,11 @@ class ShapNetworkInvestigator:
                 joined_df = joined_df.with_columns(
                     pl.Series("Averaged Prediction (Log-Odds)", np.mean(np.stack(log_odds_predictions, axis=0), axis=0))
                 )
+
+                # Add standard deviation of predictions as new column
+                joined_df = joined_df.with_columns(
+                    pl.Series("Std. Dev. Prediction (Probability)", np.std(np.stack(predictions_list, axis=0), axis=0))
+                )
                 
                 del predictions_list, log_odds_predictions
                 gc.collect()
