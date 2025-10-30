@@ -8030,6 +8030,10 @@ class ShapNetworkInvestigator:
                     ctrl_shap = ctrl_row[shap_col]
                     kd_shap = kd_row[shap_col]
 
+                    # get averaged predictions 
+                    ctrl_pred = ctrl_row["Averaged Prediction (Probability)"]
+                    kd_pred = kd_row["Averaged Prediction (Probability)"]
+
                     plot_rows.append({
                         "Feature": binding_col,
                         "RBP_KD_Target": kd_rbp,
@@ -8039,6 +8043,7 @@ class ShapNetworkInvestigator:
                         "rMATS FDR": kd_row["FDR"], 
                         "Bound Local SHAP": ctrl_shap,
                         "CTRL - KD Local SHAP": ctrl_shap - kd_shap,
+                        "CTRL - KD Model Prediction (Probability)": ctrl_pred - kd_pred,
                     })
 
         plot_df = pd.DataFrame(plot_rows)
