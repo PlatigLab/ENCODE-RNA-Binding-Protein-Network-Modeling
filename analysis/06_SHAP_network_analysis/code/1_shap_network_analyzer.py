@@ -7990,31 +7990,6 @@ class ShapNetworkInvestigator:
         return result, min_count
 
 
-    def compare_train_validate_test_metrics(self): 
-        # TODO this doesn't exist anymore
-        OUTPUT_FILE = self.CACHE_INFO["train_validate_test_comparison"]
-
-        if Path(OUTPUT_FILE).exists():
-            logger.info(f"FROM CACHE: Loading train/validate/test comparison from {OUTPUT_FILE} ...")
-            raise NotImplementedError("Loading from cache not implemented yet.")
-        
-        else:
-            logger.info("Calculating train/validate/test comparison metrics ...")
-
-            # lazyframes = self.load_final_SHAP_data(underlying_data = "All-Data", as_lazyframe=True)
-
-            # # For each cell line, get all columns that don't end in "_binding" or "_shap", collect, and store as metadata_df
-            # metadata_df = {}
-            # for cell_line in self.cell_lines:
-            #     schema = lazyframes[cell_line].collect_schema().names()
-            #     metadata_cols = [col for col in schema if not (col.endswith("_binding") or col.endswith("_shap"))]
-            #     metadata_df[cell_line] = lazyframes[cell_line].select(metadata_cols).collect()
-            
-            # # TODO remove 
-            # self.TMP = metadata_df
-            metadata_df = self.TMP
-
-    
     def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None,): 
         assert type(data) == pl.DataFrame, "data must be a polars DataFrame"
 
@@ -8102,6 +8077,25 @@ class ShapNetworkInvestigator:
         assert not plot_df.duplicated(subset=["rMATS Event ID", "RBP_KD_Target", "Feature"]).any(), "Duplicate rows found for rMATS Event ID and RBP_KD_Target"
         
         return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
+
+    
+    def get_delta_prediction_data(self, FDR_threshold = None): 
+
+        INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        assert FDR_threshold is not None and type(FDR_threshold) is float
+
+        df = pl.scan_csv(
+            INPUT_FILE,
+            separator="\t",
+        ).filter(
+            pl.col("rMATS FDR") <= FDR_threshold
+        ).unique(
+            subset=["Cell Line", "rMATS Event ID", "RBP_KD_Target"],
+            maintain_order=True,
+        ).collect()
+
+        df = df.drop("CTRL - KD Local SHAP")
+        return df
 
     
     def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None, color_significant=False, **kwargs): 
