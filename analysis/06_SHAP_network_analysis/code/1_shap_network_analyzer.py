@@ -4777,10 +4777,10 @@ class ShapNetworkInvestigator:
                         })
 
             # Convert all_results to DataFrame and save to output file
-            results_df = pd.DataFrame(all_results)
+            results_df = pd.DataFrame(all_results).sort_values(by=["Data Mode", "Cell Line", "Feature", "Zero Cutoff"])
             results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            
             logger.success(f"Saved percent non zero local SHAP for all cell lines in mode {mode} to {OUTPUT_FILE}")
-
             return results_df
     
 
