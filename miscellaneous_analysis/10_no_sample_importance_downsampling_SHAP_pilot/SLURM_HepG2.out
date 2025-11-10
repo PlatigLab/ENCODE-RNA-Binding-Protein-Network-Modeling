@@ -1,0 +1,95 @@
+Processing 1577266 samples for cell line HepG2
+Train r2_score: 0.517947
+Validate r2_score: 0.402580
+Test r2_score: 0.442314
+       AGGF1_1_binding  AGGF1_2_binding  ...  ZNF800_5_binding  ZNF800_6_binding
+0                    0                0  ...                 0                 0
+1                    0                0  ...                 0                 0
+2                    0                0  ...                 0                 0
+3                    0                0  ...                 0                 0
+4                    0                0  ...                 0                 0
+...                ...              ...  ...               ...               ...
+61699                0                0  ...                 0                 0
+61700                0                0  ...                 0                 0
+61701                0                0  ...                 0                 0
+61702                0                0  ...                 0                 0
+61703                0                0  ...                 0                 0
+
+[61704 rows x 630 columns]
+Using 61704 background rows (unique combinations of 630 binding columns).
+Calculating SHAP values for 76952 samples...
+       AGGF1_1_binding  AGGF1_2_binding  ...  ZNF800_5_binding  ZNF800_6_binding
+0                    0                0  ...                 0                 0
+1                    0                0  ...                 0                 0
+2                    0                0  ...                 0                 0
+3                    0                0  ...                 0                 0
+4                    0                0  ...                 0                 0
+...                ...              ...  ...               ...               ...
+76947                0                0  ...                 0                 0
+76948                0                0  ...                 0                 0
+76949                0                0  ...                 0                 0
+76950                0                0  ...                 0                 0
+76951                0                0  ...                 0                 0
+
+[76952 rows x 630 columns]
+Max prediction difference: 8.1186e-07
+Mean prediction difference: 9.3137e-08
+       AGGF1_1_binding  AGGF1_2_binding  ...  ZNF800_5_shap  ZNF800_6_shap
+0                    0                0  ...       0.000341       0.000461
+1                    0                0  ...       0.000217       0.000287
+2                    0                0  ...       0.000515       0.000578
+3                    0                0  ...       0.000208       0.000276
+4                    0                0  ...       0.000183       0.000133
+...                ...              ...  ...            ...            ...
+76947                0                0  ...       0.000496       0.000236
+76948                0                0  ...       0.000498       0.000581
+76949                0                0  ...       0.000491       0.000321
+76950                0                0  ...       0.000221       0.000292
+76951                0                0  ...       0.000503       0.000566
+
+[76952 rows x 1260 columns]
+AGGF1_1_binding      uint8
+AGGF1_2_binding      uint8
+AGGF1_3_binding      uint8
+AGGF1_4_binding      uint8
+AGGF1_5_binding      uint8
+                    ...   
+Upstream Exon       object
+Main Exon           object
+Downstream Exon     object
+Predictions        float32
+Partition           object
+Length: 653, dtype: object
+AGGF1_1_binding      uint8
+AGGF1_2_binding      uint8
+AGGF1_3_binding      uint8
+AGGF1_4_binding      uint8
+AGGF1_5_binding      uint8
+                    ...   
+ZNF800_2_shap      float64
+ZNF800_3_shap      float64
+ZNF800_4_shap      float64
+ZNF800_5_shap      float64
+ZNF800_6_shap      float64
+Length: 1260, dtype: object
+Successfully joined SHAP columns: added 630 columns. Dataframe shape is now (1577266, 1283).
+shape: (1_577_266, 1_283)
+┌───────────┬───────────┬───────────┬───────────┬───┬───────────┬───────────┬───────────┬──────────┐
+│ AGGF1_1_b ┆ AGGF1_2_b ┆ AGGF1_3_b ┆ AGGF1_4_b ┆ … ┆ ZNF800_3_ ┆ ZNF800_4_ ┆ ZNF800_5_ ┆ ZNF800_6 │
+│ inding    ┆ inding    ┆ inding    ┆ inding    ┆   ┆ shap      ┆ shap      ┆ shap      ┆ _shap    │
+│ ---       ┆ ---       ┆ ---       ┆ ---       ┆   ┆ ---       ┆ ---       ┆ ---       ┆ ---      │
+│ u8        ┆ u8        ┆ u8        ┆ u8        ┆   ┆ f64       ┆ f64       ┆ f64       ┆ f64      │
+╞═══════════╪═══════════╪═══════════╪═══════════╪═══╪═══════════╪═══════════╪═══════════╪══════════╡
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.000997 ┆ -0.000163 ┆ 0.000341  ┆ 0.000461 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.000997 ┆ -0.000163 ┆ 0.000341  ┆ 0.000461 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.000997 ┆ -0.000163 ┆ 0.000341  ┆ 0.000461 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.000333 ┆ -0.000024 ┆ 0.000217  ┆ 0.000287 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.00168  ┆ -0.000289 ┆ 0.000515  ┆ 0.000578 │
+│ …         ┆ …         ┆ …         ┆ …         ┆ … ┆ …         ┆ …         ┆ …         ┆ …        │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.001734 ┆ -0.000298 ┆ 0.00052   ┆ 0.000321 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.001734 ┆ -0.000298 ┆ 0.00052   ┆ 0.000321 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.001734 ┆ -0.000298 ┆ 0.00052   ┆ 0.000321 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.001734 ┆ -0.000298 ┆ 0.00052   ┆ 0.000321 │
+│ 0         ┆ 0         ┆ 0         ┆ 0         ┆ … ┆ -0.001734 ┆ -0.000298 ┆ 0.00052   ┆ 0.000321 │
+└───────────┴───────────┴───────────┴───────────┴───┴───────────┴───────────┴───────────┴──────────┘
+Saved SHAP feather file and SHAP explainer for cell line HepG2.

@@ -1,4 +1,4 @@
-import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent.futures, argparse, random
+import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent.futures, argparse, random, subprocess
 
 import pandas as pd, polars as pl, numpy as np
 import matplotlib.pyplot as plt, matplotlib as mpl, seaborn as sns, matplotlib.gridspec as gridspec
@@ -10,7 +10,8 @@ from IPython.display import display, Video
 from loguru import logger
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from matplotlib.colors import LogNorm
-from scipy.stats import pearsonr, spearmanr, mannwhitneyu
+from matplotlib.lines import Line2D
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu, fisher_exact, ttest_ind
 from itertools import combinations
 from matplotlib.legend import Legend
 from sklearn.metrics import r2_score
@@ -18,9 +19,9 @@ from statannotations.Annotator import Annotator
 from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
+from statsmodels.stats.multitest import multipletests
 
 from waterfall_plot import waterfall
-
 
 
 @dataclass
@@ -43,114 +44,128 @@ class ShapNetworkInvestigator:
     }
 
     CACHE_INFO = {
-            "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
-            # "SHAP_mp4": {
-            #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
-            #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
-            # },
-            "SHAP_CV": {
-                "All-Data": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
-                "Unique-Binding": "../outputs/SHAP_cv/local_SHAP_cv_unique_binding.pkl.gz",
+        "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
+        # "SHAP_mp4": {
+        #     "K562": "../outputs/local_SHAP_distribution_video/K562_local_SHAP_distribution.mp4",
+        #     "HepG2": "../outputs/local_SHAP_distribution_video/HepG2_local_SHAP_distribution.mp4",
+        # },
+        "SHAP_CV": {
+            "All-Data": "../outputs/SHAP_cv/local_SHAP_cv.pkl.gz",
+            "Unique-Binding": "../outputs/SHAP_cv/local_SHAP_cv_unique_binding.pkl.gz",
+        },
+        'SHAP_cv_mp4': {
+            "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
+            "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
+        },
+        "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
+        'SHAP_std_mp4': {
+            "K562": "../outputs/video_plots/SHAP_std/SHAP_std_K562.mp4",
+            "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
+        },
+        "global_SHAP": {
+            "Unique-Binding": {
+                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
+                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
             },
-            'SHAP_cv_mp4': {
-                "K562": "../outputs/video_plots/SHAP_cv/SHAP_cv_K562.mp4",
-                "HepG2": "../outputs/video_plots/SHAP_cv/SHAP_cv_HepG2.mp4",
-            },
-            "SHAP_std": "../outputs/SHAP_std/local_SHAP_std.pkl.gz",
-            'SHAP_std_mp4': {
-                "K562": "../outputs/video_plots/SHAP_std/SHAP_std_K562.mp4",
-                "HepG2": "../outputs/video_plots/SHAP_std/SHAP_std_HepG2.mp4",
-            },
-            "global_SHAP": {
-                "Unique-Binding": {
-                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP_binding_unique.pkl", 
-                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP_binding_unique.pkl",
+            "All-Data": {
+                "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
+                "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
+            }
+        },
+        "specialized_global_SHAP": {
+            "Bound-Only": 
+                {
+                    None: 
+                        {
+                            "All-Data": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_all_data.pkl",
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
+                        }
                 },
-                "All-Data": {
-                    "5_dfs": "../outputs/global_SHAP/5_dfs_global_SHAP.pkl", 
-                    "5_dfs_average": "../outputs/global_SHAP/5_dfs_average_global_SHAP.pkl",
-                }
-            },
-            "specialized_global_SHAP": {
-                "Bound-Only": 
-                    {
-                        None: 
-                            {
-                                "All-Data": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_all_data.pkl",
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/bound_only_global_SHAP_unique_binding.pkl",
-                            }
-                    },
-                "NOT-Bound-Only": 
-                    {
-                        None: 
-                            {
-                                "All-Data": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_all_data.pkl",
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
-                            }
-                    },
-                "Signed-Local-SHAP-Mean-Bound-Only":
-                    {
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
-                            }
-                    }, 
-                "Signed-Local-SHAP-Mean-NOT-Bound-Only":
-                    {   
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
-                            }
-                    },
-                "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": 
-                    {
-                        None:
-                            {
-                                "Unique-Binding": "../outputs/specialized_global_SHAP/log_odds_signed_local_SHAP_mean_bound_only_unique_binding.pkl",
-                            }
-                    },
-            },
-            "local_SHAP_mean_vs_variance": {
-                "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
-                "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
-            },
-            "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
-            "local_SHAP_mean_vs_variance_deciles": {
-                "5_dfs_average": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles.tsv",
-                "Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_bound_only.tsv",
-                "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
-            },
-            "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
-            "local_SHAP_percent_non_zero": {
-                "All-Data": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_all_data.tsv",
-                "Unique-Binding": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_unique_binding.tsv",
-            },
-            "local_SHAP_percent_positive_negative": {
-                "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
-                "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
-            },
-            "activator_repressor_behavior_score": {
-                "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
-                "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
-            },
-            "final_SHAP_cache": {
-                "All-Data": {
-                    "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
-                    "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
+            "NOT-Bound-Only": 
+                {
+                    None: 
+                        {
+                            "All-Data": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_all_data.pkl",
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/NOT_bound_only_global_SHAP_unique_binding.pkl",
+                        }
+                },
+            "Signed-Local-SHAP-Mean-Bound-Only":
+                {
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                        }
                 }, 
-            },
-            "per_row_num_and_percent_greater_than_cutoff": {
-                "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
-                "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
-            },
-            "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
-            "position_3_4_activating_and_others_repressing": {
-                "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
-                "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
+            "Signed-Local-SHAP-Mean-NOT-Bound-Only":
+                {   
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_NOT_bound_only_unique_binding.pkl",
+                        }
+                },
+            "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": 
+                {
+                    None:
+                        {
+                            "Unique-Binding": "../outputs/specialized_global_SHAP/log_odds_signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                        }
+                },
+        },
+        "local_SHAP_mean_vs_variance": {
+            "K562": "../outputs/local_SHAP_mean_vs_variance/K562_local_SHAP_mean_vs_variance.png",
+            "HepG2": "../outputs/local_SHAP_mean_vs_variance/HepG2_local_SHAP_mean_vs_variance.png"
+        },
+        "SHAP_dispersion_per_binding_pattern": "../outputs/shap_variance_per_binding_pattern/SHAP_dispersion_per_binding_pattern.tsv", 
+        "local_SHAP_mean_vs_variance_deciles": {
+            "5_dfs_average": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles.tsv",
+            "Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_bound_only.tsv",
+            "NOT-Bound-Only": "../outputs/local_SHAP_mean_vs_variance/deciles/local_SHAP_mean_vs_variance_deciles_NOT_bound_only.tsv",
+        },
+        "feature_metric_summary_table": "../outputs/feature_metric_summary_table/feature_metric_summary_table.tsv",
+        "local_SHAP_percent_non_zero": {
+            "All-Data": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_all_data.tsv",
+            "Unique-Binding": "../outputs/local_SHAP_percent_non_zero/local_SHAP_percent_non_zero_unique_binding.tsv",
+        },
+        "local_SHAP_percent_positive_negative": {
+            "NOT-Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_NOT_bound.pkl",
+            "Bound-Only": "../outputs/local_SHAP_percent_positive_negative/local_SHAP_percent_positive_negative_bound.pkl",
+        },
+        "activator_repressor_behavior_score": {
+            "Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_bound_only.tsv",
+            "NOT-Bound-Only": "../outputs/activator_repressor_behavior_score/activator_repressor_behavior_score_NOT_bound_only.tsv",
+        },
+        "final_SHAP_cache": {
+            "All-Data": {
+                "K562": "../outputs/FINAL_AVERAGE_SHAP_CACHE/K562_all-data.feather",
+                "HepG2": "../outputs/FINAL_AVERAGE_SHAP_CACHE/HepG2_all-data.feather"
             }, 
-            "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
+        },
+        "per_row_num_and_percent_greater_than_cutoff": {
+            "K562": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_K562.tsv.gz", 
+            "HepG2": "../outputs/per_row_local_shap_greater_than_cutoff/per_row_num_and_percent_greater_than_cutoff_HepG2.tsv.gz",
+        },
+        "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
+        "position_3_4_activating_and_others_repressing": {
+            "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
+            "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
+        }, 
+        "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
+        "dpsi_vs_local_SHAP_scatterplot_data": {
+            "test_partition": {
+                "table": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
+                "correlations": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_correlations_test_partition.tsv", 
+            }
+        }, 
+        "fishers_exact_association_between_binding_and_differential_splicing": {
+            0.1: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.1_significant_splicing.tsv", 
+            0.05: "../outputs/fishers_exact_binding_vs_significant_splicing/fishers_exact_binding_vs_FDR_0.05_significant_splicing.tsv",
+        }, 
+        "fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign": {
+            "test": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_ALL_IN_SILICO_KD_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
+            "test candidate features": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_CANDIDATE_FEATURES_ONLY_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
+        }, 
 
-        }
+    }
 
     non_normalized_differential_plotting_columns_info = {
         "# Diff. Events": "RBP-specific",
@@ -188,13 +203,24 @@ class ShapNetworkInvestigator:
             "Absolute Value": r"$|\beta_{i}|$",
             "Signed": r"$\beta_{i}$",
         },
+        "Differential Symbols": {
+            "dPSI": r"$\Delta \Psi$ (CTRL-KD)",
+            "CTRL - KD Local SHAP": r"$\Delta \varphi_{i}$ (CTRL-KD)",
+            "dPred": r"$\Delta \hat{\Psi}$ (CTRL-KD)",
+        },
 
+        "PSI": {
+            "Predicted": r"$\hat{\Psi}$",
+            "Actual": r"$\Psi$",
+        },     
+              
     }
 
     FIGURES = {
         "predicted_vs_actual_PSI_plot": {
             "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
             "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
+            "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
         }, 
         "global_SHAP_distribution": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
@@ -3302,6 +3328,303 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def binding_vs_diff_events_fishers_association(self, FDR_threshold = None): 
+        assert FDR_threshold in [0.05, 0.1], "FDR_threshold must be either 0.05 or 0.1"
+
+        OUTPUT_FILE = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][FDR_threshold]
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.info(f"FROM CACHE: Loading Fisher's Exact test for binding vs significant splicing from {OUTPUT_FILE}")
+            table = pd.read_csv(OUTPUT_FILE, sep="\t")
+
+            fig, axes = plt.subplots(2, 1, figsize=(23, 12), dpi=300,sharey=True)
+
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                cell_df = table[table["Cell Line"] == cell_line].copy()
+                cell_df = cell_df.dropna(subset=["(A*D / B*C) Odds Ratio"])
+
+                # Replace -inf and +inf in Log-Odds Ratio with lowest/highest finite value minus/plus 10%
+                finite_log_odds = cell_df.loc[np.isfinite(cell_df["Log-Odds Ratio"]), "Log-Odds Ratio"]
+                min_finite = finite_log_odds.min()
+                max_finite = finite_log_odds.max()
+
+                neg_inf_replacement = min_finite - abs(min_finite) * 0.1
+                pos_inf_replacement = max_finite + abs(max_finite) * 0.1
+
+                cell_df["Log-Odds Ratio"] = cell_df["Log-Odds Ratio"].replace(-np.inf, neg_inf_replacement)
+                cell_df["Log-Odds Ratio"] = cell_df["Log-Odds Ratio"].replace(np.inf, pos_inf_replacement)
+
+                # Pivot to heatmap: Position as rows, RBP as columns, value is Log-Odds Ratio
+                cell_df["Position"] = cell_df["Position"].astype(int)
+                heatmap_data = cell_df.pivot(index="Position", columns="RBP", values="Log-Odds Ratio")
+                heatmap_data = heatmap_data.reindex(index=sorted(heatmap_data.index))
+
+                # Replace nulls with 0 for clustering
+                clustering_data = heatmap_data.fillna(0)
+                linkage = sch.linkage(clustering_data.T, method="ward")
+                dendro = sch.dendrogram(linkage, no_plot=True)
+
+                rbp_order = [heatmap_data.columns[i] for i in dendro["leaves"]]
+                heatmap_data = heatmap_data[rbp_order]
+                
+                ax = axes[row_idx]
+                cbar = sns.heatmap(
+                    heatmap_data,
+                    ax=ax,
+                    cmap="bwr",
+                    center=0,
+                    linewidths=0.5,
+                    linecolor="black",
+                    cbar=True,
+                    cbar_kws={"shrink": 1, "aspect": 10, "pad": 0.01},  # Adjust colorbar position and sizes
+                ).collections[0].colorbar
+                # Set bad color for nulls
+                ax.set_facecolor("gray")
+                
+                # Add yellow star for significant FDR BH 
+                for pos in heatmap_data.index:
+                    for col_idx, rbp in enumerate(rbp_order):
+                        orig_row = table[
+                            (table["Cell Line"] == cell_line) &
+                            (table["RBP"] == rbp) &
+                            (table["Position"] == pos)
+                        ]
+                        assert orig_row.shape[0] ==1, print(f"Expected 1 row, got {orig_row.shape[0]} rows for Position {pos} and RBP {rbp} in {cell_line}")
+                        
+                        if orig_row["FDR BH"].iloc[0] < 0.1:
+                            ax.scatter(
+                                col_idx + 0.5, list(heatmap_data.index).index(pos) + 0.5,
+                                marker="*", s=120, color ="#39ff14", edgecolor="black", linewidths=0.5, zorder=10
+                            )
+                
+                ax.set_title(f"{cell_line}", fontsize=24)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+
+                ax.tick_params(axis='y', labelsize=18)
+
+                cbar.ax.tick_params(labelsize=18)  # Increase tick label font size
+                cbar.set_label("log10(Odds)", fontsize=18, labelpad=20)
+
+            plt.suptitle(f"NOTE 1: * means 'FDR BH < 0.1'\nNOTE 2: -inf & +inf converted to 10% lower and 10% higher values, respectively\nNOTE 3: Gray squares indicate 'Nulls'\nNOTE 4: Nulls replaced with '0' for Ward clustering\nNOTE 5: Significant splicing defined as FDR <= {FDR_threshold}\n\nLog10(Fisher's Odds) Heatmap (Fisher's Exact Test)", fontsize=30, y=1.02)
+            fig.supxlabel("RBP (Ward Clustered)", fontsize=30, x=0.45)
+            fig.supylabel("Position", fontsize=30, x=-0.01)
+
+            plt.tight_layout()
+            plt.show()
+
+            # Create scatterplots for significant FDR BH and odds ratio > 1, one subplot per cell line
+            subset = table[(table["FDR BH"] < 0.1) & (table["(A*D / B*C) Odds Ratio"] > 1)].copy()
+            assert np.isposinf(subset["(A*D / B*C) Odds Ratio"]).any(), "No positive infinity values found in odds ratio column"
+            
+            finite_odds = subset.loc[np.isfinite(subset["(A*D / B*C) Odds Ratio"]), "(A*D / B*C) Odds Ratio"]
+            max_finite = finite_odds.max()
+            pos_inf_replacement = max_finite + abs(max_finite) * 0.05
+            subset["(A*D / B*C) Odds Ratio"] = subset["(A*D / B*C) Odds Ratio"].replace(np.inf, pos_inf_replacement)
+
+            contingency_table_a_min_threshold = 20
+            
+            fig, axes = plt.subplots(1, 2, figsize=(16, 9), dpi=600, sharey=True,)
+
+            for i, cell_line in enumerate(self.cell_lines):
+                ax = axes[i]
+                cell_subset = subset[subset["Cell Line"] == cell_line]
+                ax.scatter(
+                    cell_subset["(A*D / B*C) Odds Ratio"],
+                    cell_subset["(A) Significant & Bound"],
+                    color="#d95f02",
+                    edgecolor="black",
+                    s=20,
+                    alpha=0.3
+                )
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.set_title(cell_line, fontsize=24)
+
+                # Label each point with f"{rbp}_{position}" in color #1b9e77
+                texts = []
+                for _, row in cell_subset.iterrows():
+                    if row["(A) Significant & Bound"] > contingency_table_a_min_threshold:
+                        label = f"{row['RBP']}_{row['Position']}"
+                        texts.append(
+                            ax.text(
+                                row["(A*D / B*C) Odds Ratio"],
+                                row["(A) Significant & Bound"],
+                                label,
+                                fontsize=10,
+                                fontweight='bold',
+                                color="#1b9e77",
+                            )
+                        )
+
+                # Draw a dashed horizontal line at y = contingency_table_a_min_threshold
+                ax.axhline(y=contingency_table_a_min_threshold, color='#7570b3', linestyle='--', linewidth=2)
+
+                # Add an arrow annotation pointing above the threshold line
+                ax.annotate(
+                    "Points above this line are labeled",
+                    xy=(ax.get_xlim()[1]*0.7, contingency_table_a_min_threshold * 1),
+                    xytext=(ax.get_xlim()[1]*0.6, contingency_table_a_min_threshold * 10),
+                    arrowprops=dict(arrowstyle="->", color="#7570b3", lw=2, linestyle='--'),
+                    fontsize=14,
+                    fontweight='bold',
+                    color="#7570b3",
+                    ha="center"
+                )
+
+                adjustText.adjust_text(
+                    texts,
+                    ax=ax,
+                    arrowprops=dict(arrowstyle='->', color='gray', lw=1),
+                )
+
+            fig.suptitle(f"NOTE 1: Only features with 'Stat. Test FDR BH < 0.1' and 'Odds Ratio > 1' are shown\nNOTE 2: Points with '(A) Significant & Bound' > {contingency_table_a_min_threshold} are labeled\nNOTE 3: +inf odds converted to ({pos_inf_replacement:.2f}) (5% higher than max finite value)\nNOTE 4: Significant splicing events denote with FDR <= {FDR_threshold}\n\nSignificant & Positive Odds Ratio Features from Fisher's Exact Tests", fontsize=20, y=1.02)
+            fig.supxlabel("Fisher's Odds Ratio", fontsize=20)
+            fig.supylabel("Significant & Bound\n(Contingency Table 'A')", fontsize=20, x=-0.005)
+
+            plt.tight_layout()
+            plt.show()
+
+        else:
+
+            logger.info(f"Calculating Fisher's Exact test for binding vs significant splicing, where significant means FDR <= {FDR_threshold}")
+            lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+
+            results = []
+            for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell Lines"):
+                
+                schema = lazyframes[cell_line].collect_schema().names()
+                non_shap_cols = [col for col in schema if not col.endswith("_shap")]
+
+                df = lazyframes[cell_line].select(non_shap_cols).collect()
+
+                non_ctrl_df = df.filter(pl.col("RBP_KD_Target") != "CTRL")
+                unique_rows = non_ctrl_df.unique(subset=["RBP_KD_Target", "rMATS Event ID"], maintain_order=True, keep="first")
+                
+                # Efficiently create control_dict: subset to CTRL, subset to binding cols, convert to dict
+                control_df = df.filter(pl.col("RBP_KD_Target") == "CTRL")
+                binding_cols = [col for col in control_df.columns if col.endswith("_binding")]
+                
+                control_dict = control_df.to_pandas().set_index("index")[binding_cols].to_dict(orient="index")
+
+                for rbp_kd_target in tqdm.tqdm(unique_rows["RBP_KD_Target"].unique().to_list(), desc=f"{cell_line} KD RBPs"):
+                    subset = unique_rows.filter(pl.col("RBP_KD_Target") == rbp_kd_target)
+                    
+                    fishers_test_contingency_tables = {
+                        position: {
+                            f"FDR <= {FDR_threshold}": {"Binding": 0, "No Binding": 0},
+                            f"FDR > {FDR_threshold}": {"Binding": 0, "No binding": 0}
+                        }
+                        for position in range(1, 7)
+                    }
+
+                    for kd_row in subset.iter_rows(named=True):
+                        associated_experiment = kd_row["Associated Experiment"]
+                        ctrl_row_index_prefix = "_".join(kd_row["index"].split("_")[0:8]) + f"_{associated_experiment}_CTRL-"
+                        
+                        ctrl_1 = ctrl_row_index_prefix + "1"
+                        ctrl_2 = ctrl_row_index_prefix + "2"
+
+                        if ctrl_1 not in control_dict and ctrl_2 not in control_dict:
+                            continue
+                        elif ctrl_1 in control_dict: 
+                            ctrl_row = control_dict[ctrl_1]
+                        elif ctrl_2 in control_dict:
+                            ctrl_row = control_dict[ctrl_2]
+                        else:
+                            raise ValueError("Logic error in finding control row")
+
+                        for position in range(1, 7):
+                            binding_col = f"{rbp_kd_target}_{position}_binding"
+
+                            if ctrl_row[binding_col] ==1: 
+                                assert kd_row[f"has_RBP_KD_{position}"] == True, "If control has binding, the KD should have knockdown at position"
+                                assert kd_row[binding_col] ==0, "If control has binding, the KD should not have binding at position"
+
+                            if kd_row["FDR"] <= FDR_threshold:
+                                
+                                if ctrl_row[binding_col] == 1:
+                                    fishers_test_contingency_tables[position][f"FDR <= {FDR_threshold}"]["Binding"] += 1
+                                
+                                elif ctrl_row[binding_col] == 0:
+                                    fishers_test_contingency_tables[position][f"FDR <= {FDR_threshold}"]["No Binding"] += 1
+                            
+                            elif kd_row["FDR"] > FDR_threshold:
+                                
+                                if ctrl_row[binding_col] == 1:
+                                    fishers_test_contingency_tables[position][f"FDR > {FDR_threshold}"]["Binding"] += 1
+                                
+                                elif ctrl_row[binding_col] == 0:
+                                    fishers_test_contingency_tables[position][f"FDR > {FDR_threshold}"]["No binding"] += 1  
+
+                    for position, table in fishers_test_contingency_tables.items():
+                        
+                        contingency = [
+                            [table[f"FDR <= {FDR_threshold}"]["Binding"], table[f"FDR <= {FDR_threshold}"]["No Binding"]],
+                            [table[f"FDR > {FDR_threshold}"]["Binding"], table[f"FDR > {FDR_threshold}"]["No binding"]]
+                        ]
+                        
+                        odds_ratio, p_value = fisher_exact(contingency)
+
+                        results.append({
+                            "Cell Line": cell_line,
+                            "Feature": f"{rbp_kd_target}_{position}_binding",
+                            "RBP": rbp_kd_target,
+                            "Position": position,
+                            "(A) Significant & Bound": contingency[0][0],
+                            "(B) Significant & Not Bound": contingency[0][1],
+                            "(C) Not Significant & Bound": contingency[1][0],
+                            "(D) Not Significant & Not Bound": contingency[1][1],
+                            "(A*D / B*C) Odds Ratio": odds_ratio,
+                            "Log-Odds Ratio": np.log10(odds_ratio),
+                            "Fisher's Exact Test P-Value": p_value
+                        })  
+
+                del df, non_ctrl_df, unique_rows, subset, control_dict, control_df
+                gc.collect()
+
+            results_df = pd.DataFrame(results)
+            results_df["FDR BH"] = multipletests(results_df["Fisher's Exact Test P-Value"], method="fdr_bh")[1]
+            
+            results_df = results_df.sort_values(by=["Cell Line", "Feature"]) 
+
+            results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Binding vs significant diff splicing results for FDR {FDR_threshold} written to {OUTPUT_FILE}")
+
+
+    def get_associated_control_row(self, index, df): 
+        # Assert index format and df type
+        assert isinstance(df, pl.DataFrame), "df must be a polars DataFrame"
+        assert isinstance(index, str) and "_KD-" in index, "Index must be a string containing '_KD-'"
+        
+        index_parts = str(index).split("_")
+        assert len(index_parts) == 10, f"Index must have 10 parts when split by '_', got {len(index_parts)}"
+
+        # Build the prefix to filter
+        prefix = "_".join(index_parts[:8]) + "_" + str(df.filter(pl.col("index") == index)["Associated Experiment"].item()) + "_"
+
+        # Filter rows where index starts with the prefix
+        filtered = df.filter(pl.col("index").str.starts_with(prefix))
+
+        if filtered.height == 0:
+            return None
+
+        elif filtered.height == 1:
+            return filtered
+
+        elif filtered.height == 2:
+            indices = filtered["index"].to_list()
+            ends = [i.split("_")[-1] for i in indices]
+            
+            assert "CTRL-1" in ends and "CTRL-2" in ends, "Expected one row ending with 'CTRL-1' and one with 'CTRL-2'"
+            
+            # Return the row ending with "CTRL-1"
+            return filtered.filter(pl.col("index").str.ends_with("CTRL-1"))
+
+        else:
+            raise AssertionError(f"Expected 0, 1, or 2 rows, got {filtered.height}")
+
+
     def get_matching_features(self):
 
         if not hasattr(self, 'feature_metric_summary_table'):
@@ -4454,10 +4777,10 @@ class ShapNetworkInvestigator:
                         })
 
             # Convert all_results to DataFrame and save to output file
-            results_df = pd.DataFrame(all_results)
+            results_df = pd.DataFrame(all_results).sort_values(by=["Data Mode", "Cell Line", "Feature", "Zero Cutoff"])
             results_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            
             logger.success(f"Saved percent non zero local SHAP for all cell lines in mode {mode} to {OUTPUT_FILE}")
-
             return results_df
     
 
@@ -5357,6 +5680,11 @@ class ShapNetworkInvestigator:
                 joined_df = joined_df.with_columns(
                     pl.Series("Averaged Prediction (Log-Odds)", np.mean(np.stack(log_odds_predictions, axis=0), axis=0))
                 )
+
+                # Add standard deviation of predictions as new column
+                joined_df = joined_df.with_columns(
+                    pl.Series("Std. Dev. Prediction (Probability)", np.std(np.stack(predictions_list, axis=0), axis=0))
+                )
                 
                 del predictions_list, log_odds_predictions
                 gc.collect()
@@ -5389,7 +5717,7 @@ class ShapNetworkInvestigator:
         assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
 
         if not hasattr(self, "final_all_data_SHAP_data"): 
-            self.load_final_SHAP_data(data_mode="All-Data", as_lazyframe=False)
+            self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=False)
 
         # Determine RBPs and position from feature
         rbp, position = self.get_RBP_position(feature)
@@ -5504,39 +5832,72 @@ class ShapNetworkInvestigator:
 
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
 
-        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
+        assert underlying_data in ["All-Data", "Unique-Binding", "Delta"], "underlying_data must be 'All-Data', 'Unique-Binding', or 'Delta'"
 
         # Prepare data for all cell lines
         dfs = {}
         r2_scores = {}
         for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
-            pred_file = os.path.join(self.PRED_DIR, "XGBRegressor", f"{model_hash}.feather")
-            assert os.path.exists(pred_file), f"Prediction file not found: {pred_file}"
 
-            # Load all columns needed for partitioning and plotting
-            preds = pl.scan_ipc(pred_file).filter(pl.col("Partition") == "Test")
+            if underlying_data != "Delta":
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
 
-            if underlying_data == "Unique-Binding":
-                # Get all columns ending with "_binding"
-                binding_cols = [col for col in preds.collect_schema().names() if col.endswith("_binding")]
-                # Group by all binding columns and aggregate mean of Target_PSI and Predictions
-                preds = preds.group_by(binding_cols).agg(
-                    [
-                        pl.col("Target_PSI").mean().alias("Target_PSI"),
-                        pl.col("Predictions").mean().alias("Predictions"),
-                    ]
+                cell_line_lf = self.get_SHAP_data_as_lazyframe(
+                    cell_line
+                )[0] # Get the first SHAP lazyframe
+
+                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+                cell_line_df = cell_line_lf.filter(
+                    pl.col("Partition") == "Test"
+                ).select(non_shap_cols).sort('index').collect()
+
+                model_prediction_input = cell_line_df.select(
+                    [col for col in cell_line_df.columns if "_binding" in col]
+                ).to_pandas()
+                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch for model prediction input"
+
+                predictions = model.predict(model_prediction_input)
+                cell_line_df = cell_line_df.with_columns(
+                    pl.Series("Predictions", predictions)
                 )
 
-            preds = preds.select(["Predictions", "Target_PSI"]).collect()
+                del model_prediction_input
+                gc.collect()
 
-            y_true = preds["Target_PSI"].to_numpy()
-            y_pred = preds["Predictions"].to_numpy()
+                if underlying_data == "Unique-Binding":
+                    # Get all columns ending with "_binding"
+                    binding_cols = [col for col in cell_line_df.collect_schema().names() if col.endswith("_binding")]
+                    # Group by all binding columns and aggregate mean of Target_PSI and Predictions
+                    cell_line_df = cell_line_df.group_by(binding_cols).agg(
+                        [
+                            pl.col("Target_PSI").mean().alias("Target_PSI"),
+                            pl.col("Predictions").mean().alias("Predictions"),
+                        ]
+                    )
+                
+                x_col = "Target_PSI"
+                y_col = "Predictions"
+
+            elif underlying_data == "Delta":
+
+                cell_line_df = self.get_delta_prediction_data(
+                    FDR_threshold = 1.01
+                ).filter(
+                    pl.col("Cell Line") == cell_line
+                )
+
+                x_col = "dPSI"
+                y_col = "CTRL - KD Model Prediction (Probability)"
+
+            y_true = cell_line_df[x_col].to_numpy()
+            y_pred = cell_line_df[y_col].to_numpy()
             dfs[cell_line] = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
 
             # Calculate R2 score only for the "Test" partition
             r2_scores[cell_line] = r2_score(y_true, y_pred)
 
-            del preds
+            del cell_line_df
             gc.collect()
 
         # Set up a single figure with subplots for each cell line
@@ -5563,9 +5924,6 @@ class ShapNetworkInvestigator:
                 ha="center", va="top"
             )
 
-            # Add line from (0,1) to (0,1)
-            ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
-
             # ax_joint.set_ylabel("Predicted PSI", fontsize=12)
             ax_joint.set_title(f"{cell_line}", fontsize=18)
             # ax_joint.legend(fontsize=10, loc="upper left")
@@ -5574,7 +5932,6 @@ class ShapNetworkInvestigator:
             ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
             ax_histx.hist(df["y_true"], bins=50, color="#4682B4", alpha=0.7, density=True, edgecolor="black")
             sns.kdeplot(df["y_true"], color="orange", lw=1, ax=ax_histx)
-            ax_histx.set_xlim(0, 1)
             ax_histx.axis("off")
             # Move the axis slightly down
             pos = ax_histx.get_position()
@@ -5584,8 +5941,13 @@ class ShapNetworkInvestigator:
             ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
             ax_histy.hist(df["y_pred"], bins=50, color="#4682B4", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
             sns.kdeplot(df["y_pred"], color="orange", lw=1, ax=ax_histy, vertical=True)
-            ax_histy.set_ylim(0, 1)
             ax_histy.axis("off")
+
+            if underlying_data != "Delta":
+                ax_histx.set_xlim(0, 1)
+                ax_histy.set_ylim(0, 1)
+                # Add line from (0,1) to (0,1)
+                ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
 
         # Add a separate horizontal colorbar below each joint subplot
         for idx in range(n):
@@ -5609,9 +5971,16 @@ class ShapNetworkInvestigator:
             )
             cbar_ax.set_xlabel('Counts (log scale)', fontsize=12)
 
-        fig.suptitle(f"Test Partition: Actual vs Predicted PSI\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
-        fig.supxlabel("Actual PSI", fontsize=20, y=-0.07)
-        fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
+        if underlying_data != "Delta": 
+            actual_label = self.latex_symbols["PSI"]["Actual"]
+            predicted_label = self.latex_symbols["PSI"]["Predicted"]
+        else: 
+            actual_label = self.latex_symbols["Differential Symbols"]["dPSI"]
+            predicted_label = self.latex_symbols["Differential Symbols"]["dPred"]
+
+        fig.suptitle(f"Test Partition: {actual_label} vs {predicted_label}\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
+        fig.supxlabel(actual_label, fontsize=26, y=-0.07)
+        fig.supylabel(predicted_label , fontsize=26, x=0.06, y=0.4)
         plt.tight_layout()
 
         plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
@@ -6405,6 +6774,7 @@ class ShapNetworkInvestigator:
             logger.success(f"FROM CACHE: loading data for SHAP additivity assertions")
 
             additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
+            logger.info(f'{additivity_df["difference_probability"].describe()}')
 
             probability_df = additivity_df.copy()
             probability_df["Source"] = probability_df["model"].astype(str)
@@ -7620,6 +7990,1273 @@ class ShapNetworkInvestigator:
         return result, min_count
 
 
+    def create_dpsi_vs_local_SHAP_scatterplot_data(self, data=None,): 
+        assert type(data) == pl.DataFrame, "data must be a polars DataFrame"
+
+        logger.info(f"Creating dPSI vs Local SHAP scatterplot data for {data.height} rows ...")
+        # Filter rows where has_RBP_KD is True and get unique combinations of RBP_KD_Target and rMATS Event ID
+        unique_kd_rows = data.filter(
+            pl.col("has_RBP_KD") == True
+        ).unique(
+            subset=["RBP_KD_Target", "rMATS Event ID"], 
+            maintain_order=True, 
+            keep="first"
+        )
+
+        plot_rows = []
+        binding_cols = [col for col in data.columns if col.endswith("_binding")]
+
+        for row in tqdm.tqdm(unique_kd_rows.iter_rows(named=True), desc="KD rows"):
+            rbp_kd_target = row["RBP_KD_Target"]
+            index = row["index"]
+
+            matching = self.get_associated_control_row(
+                index, 
+                data,
+            )
+
+            if matching is None: 
+                continue
+            
+            elif matching.height == 1:  
+                chosen_row = matching.row(0, named=True)
+
+            elif matching.height == 2:
+                # Unique by binding columns
+                matching_unique = matching.unique(subset=binding_cols, maintain_order=True, keep="first")
+                assert matching_unique.height == 1, f"Expected exactly 1 unique control row by binding columns, but got {matching_unique.height}"
+
+                chosen_row = matching_unique.row(0, named=True)
+            
+            else:
+                raise ValueError(f"Multiple matching control rows found ({matching.height}) for index {index}")
+
+            assert chosen_row["RBP_KD_Target"] == "CTRL", f"Chosen row RBP_KD_Target != CTRL: {chosen_row['RBP_KD_Target']}"
+
+            for pos in range(1, 7):
+                has_kd_col = f"has_RBP_KD_{pos}"
+
+                if row[has_kd_col] == True:
+                    kd_rbp = rbp_kd_target
+                    binding_col = f"{kd_rbp}_{pos}_binding"
+                    shap_col = f"{kd_rbp}_{pos}_shap"
+
+                    # Get KD and CTRL rows
+                    kd_row = row
+                    ctrl_row = chosen_row
+
+                    # Assert binding values
+                    assert ctrl_row[binding_col] == 1, f"CTRL binding_col not 1: {binding_col}"
+                    assert kd_row[binding_col] == 0, f"KD binding_col not 0: {binding_col}"
+
+                    # Get local SHAP values
+                    ctrl_shap = ctrl_row[shap_col]
+                    kd_shap = kd_row[shap_col]
+
+                    # get averaged predictions 
+                    ctrl_pred = ctrl_row["Averaged Prediction (Probability)"]
+                    kd_pred = kd_row["Averaged Prediction (Probability)"]
+
+                    plot_rows.append({
+                        "Feature": binding_col,
+                        "RBP_KD_Target": kd_rbp,
+                        "Position": pos, 
+                        "rMATS Event ID": kd_row["rMATS Event ID"],
+                        "dPSI": kd_row["DeltaPSI"], 
+                        "rMATS FDR": kd_row["FDR"], 
+                        "Bound Local SHAP": ctrl_shap,
+                        "CTRL - KD Local SHAP": ctrl_shap - kd_shap,
+                        "CTRL - KD Model Prediction (Probability)": ctrl_pred - kd_pred,
+                    })
+
+        plot_df = pd.DataFrame(plot_rows)
+        # multiply dPSI by -1 to match SHAP directionality
+        plot_df["dPSI"] = plot_df["dPSI"] * -1
+
+        # Assert that there are no duplicate rows for rMATS Event ID and RBP_KD_Target
+        assert not plot_df.duplicated(subset=["rMATS Event ID", "RBP_KD_Target", "Feature"]).any(), "Duplicate rows found for rMATS Event ID and RBP_KD_Target"
+        
+        return plot_df.sort_values(by=["Feature", "rMATS Event ID"])
+
+    
+    def get_delta_prediction_data(self, FDR_threshold = None): 
+
+        INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        assert FDR_threshold is not None and type(FDR_threshold) is float
+
+        df = pl.scan_csv(
+            INPUT_FILE,
+            separator="\t",
+        ).filter(
+            pl.col("rMATS FDR") <= FDR_threshold
+        ).unique(
+            subset=["Cell Line", "rMATS Event ID", "RBP_KD_Target"],
+            maintain_order=True,
+        ).collect()
+
+        df = df.drop("CTRL - KD Local SHAP")
+        return df
+
+    
+    def plot_dpsi_vs_local_SHAP_scatterplot(self, df=None, ax = None, plot_metric = None, color_significant=False, **kwargs): 
+        SIGNIFICANT_COLOR = "#FF6A00"  # Orange color for significant points
+        DEFAULT_COLOR = "#87C0D0"      # Default color for non-significant points
+        FDR_CUTOFF = 0.05
+
+        # Data assertions
+        assert isinstance(df, pd.DataFrame), "df must be a pandas DataFrame"
+        assert hasattr(ax, "scatter"), "ax must be a matplotlib axis"
+        assert isinstance(plot_metric, str), "plot_metric must be a string"        
+        assert plot_metric in df.columns, f"{plot_metric} not found in df columns"
+        assert "dPSI" in df.columns, "'dPSI' column not found in df"
+
+        # Scatterplot
+        x = df[plot_metric]
+        y = df["dPSI"]
+
+        assert not x.isnull().any(), "Null values found in x"
+        assert not y.isnull().any(), "Null values found in y"
+
+        if color_significant: 
+            is_significant = df["rMATS FDR"] <= FDR_CUTOFF
+            colors = []
+
+            for sig in is_significant:
+                if sig:
+                    colors.append(SIGNIFICANT_COLOR)
+                else:
+                    if "color" in kwargs:
+                        colors.append(kwargs["color"])
+                    else:
+                        colors.append(DEFAULT_COLOR)
+            scatter_color = colors
+        
+        else:
+            scatter_color = kwargs["color"] if "color" in kwargs else None
+
+        ax.scatter(
+            x, y,
+            s=2 if 'dot_size' not in kwargs else kwargs['dot_size'],
+            alpha=0.2 if 'alpha' not in kwargs else kwargs['alpha'],
+            color=scatter_color,
+            edgecolor="black",
+            linewidths=0.3
+        )
+
+        # Move axes to cross at (0,0)
+        ax.spines['left'].set_position('zero')
+        ax.spines['bottom'].set_position('zero')
+        ax.spines['right'].set_color('none')
+        ax.spines['top'].set_color('none')
+        ax.xaxis.set_ticks_position('bottom')
+        ax.yaxis.set_ticks_position('left')
+
+        # Calculate correlations and number of points
+        pearson_corr, _ = pearsonr(x, y)
+        spearman_corr, _ = spearmanr(x, y)
+        num_points = len(x)
+
+        # Annotate in top left corner
+        ax.text(
+            0.02, 0.98,
+            f"Pearson: {pearson_corr:.2f}\nSpearman: {spearman_corr:.2f}\nPoints: {num_points}",
+            transform=ax.transAxes,
+            fontsize=12,
+            verticalalignment='top',
+            horizontalalignment='left'
+        )
+
+        # Move x/y labels to bottom/left using transAxes
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.text(
+            0.55, -0.03,
+            plot_metric,
+            fontsize=12,
+            ha='center',
+            va='top',
+            transform=ax.transAxes
+        )
+        ax.text(
+            -0.04, 0.5,
+            "△PSI (CTRL - KD)",
+            fontsize=12,
+            ha='right',
+            va='center',
+            rotation=90,
+            transform=ax.transAxes
+        )
+
+        ax.set_title(
+            kwargs['title'] if 'title' in kwargs else "",
+            fontsize=14
+        )
+
+        if not color_significant: 
+            return ax
+        elif color_significant: 
+            # Create a legend object for significant vs non-significant points
+            legend_elements = [
+                Line2D([0], [0], marker='o', color='w', label=f'Significant\n(rMATS FDR ≤ {FDR_CUTOFF})',
+                    markerfacecolor=SIGNIFICANT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7),
+                Line2D([0], [0], marker='o', color='w', label='Not Significant',
+                    markerfacecolor=DEFAULT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7)
+            ]
+            legend = ax.legend(handles=legend_elements, loc='best', frameon=True)
+            ax.get_legend().remove()  # Remove it from the plot for now
+            return ax, legend
+
+    
+    def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None, plot_metric=None): 
+        OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+
+        if os.path.exists(OUTPUT_FILE):
+            assert plot_metric in ["CTRL - KD Local SHAP", "CTRL - KD Model Prediction (Probability)"], "plot_metric must be either 'CTRL - KD Local SHAP' or 'CTRL - KD Model Prediction (Probability)'"
+            
+            logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")
+            logger.info(f"Plotting for test partition (FDR <= {FDR_threshold} and metric: {plot_metric})...")         
+            
+            if plot_metric == "CTRL - KD Local SHAP":
+                combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
+
+                if FDR_threshold is not None:
+                    combined_df = combined_df[combined_df["rMATS FDR"] <= FDR_threshold]
+            
+            elif plot_metric == "CTRL - KD Model Prediction (Probability)":
+                # Load pre-filtered data
+                combined_df = self.get_delta_prediction_data(FDR_threshold=FDR_threshold).to_pandas()
+            
+            colors =['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33']
+            logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
+            
+            # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
+
+                self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df= combined_df[combined_df["Cell Line"] == cell_line],
+                    ax=axes[i],
+                    plot_metric=plot_metric,
+                    title=cell_line
+                )
+
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold})", fontsize=20, y=1.02)
+            plt.tight_layout()
+            plt.show()
+
+            # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
+            fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell_position = combined_df[
+                        (combined_df["Cell Line"] == cell_line) &
+                        (combined_df["Position"] == pos)
+                    ]
+                    self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell_position,
+                        ax=axes[pos-1, i],
+                        plot_metric=plot_metric,
+                        title=f"{cell_line} - Pos. {pos}",
+                        color=colors[pos-1]
+                    )
+
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            
+            logger.info("No cache found. Compiling dPSI vs Local SHAP scatterplot data for test partition ...")
+
+            all_data = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+            plot_dfs = []
+            
+            for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell Lines"):
+                
+                data = all_data[cell_line].filter(pl.col("Partition") == "Test").collect()
+                assert data.height > 0, f"No test data found for cell line {cell_line}"
+                
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(data=data)
+
+                plot_df["Cell Line"] = cell_line
+                plot_dfs.append(plot_df)
+
+            combined_df = pd.concat(plot_dfs, ignore_index=True).sort_values(by=["Cell Line", "Feature", "rMATS Event ID"])
+            combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
+
+            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition (FDR <= {FDR_threshold}) to {OUTPUT_FILE}")
+
+
+    def correlation_between_test_dpsi_and_local_SHAP(self,):
+        OUTPUT_FILE  = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
+
+        if os.path.exists(OUTPUT_FILE):
+            
+            correlation_table = pd.read_csv(OUTPUT_FILE, sep="\t")
+            MIN_EVENTS_THRESHOLD = 10
+            SPEARMAN_THRESHOLD = 0.3
+
+            fig, axes = plt.subplots(2, 3, figsize=(30, 22), dpi=600, sharex=True, sharey=True) 
+
+            for row_index, cell_line in enumerate(self.cell_lines):
+                df_cell = correlation_table[correlation_table["Cell Line"] == cell_line]
+
+                for column_index, threshold_col in enumerate(["All Data", "FDR <= 0.1", "FDR <= 0.05"]): 
+
+                    ax = axes[row_index, column_index]
+                
+                    x = df_cell[f"Spearman - {threshold_col}"]
+                    y = df_cell[f"Pearson - {threshold_col}"]
+                    sizes = df_cell[f"# rMATS Events - {threshold_col}"] 
+
+                    sc = ax.scatter(x, y, s=sizes, alpha=0.2, edgecolor="black", color="skyblue", linewidths=0.4)
+                    
+                    if column_index == 0:
+                        ax.text(
+                            -1.4, 0, cell_line, 
+                            ha='center', va='center', rotation=90, fontsize=40, fontweight='bold'
+                        )
+                    
+                    if row_index == 0:
+                        ax.set_title(threshold_col, fontsize=40, pad=30, fontweight='bold')
+
+                    # Center axes at (0,0)
+                    ax.spines['left'].set_position('zero')
+                    ax.spines['bottom'].set_position('zero')
+                    ax.spines['right'].set_color('none')
+                    ax.spines['top'].set_color('none')
+                    ax.xaxis.set_ticks_position('bottom')
+                    ax.yaxis.set_ticks_position('left')
+
+                    # Add legend for sizes for each subplot
+                    handles, labels = sc.legend_elements(prop="sizes", alpha=0.6)
+                    ax.legend(handles, labels, title="# rMATS Events", bbox_to_anchor=(1.05, 0.5), loc="center left")
+
+                    # Add text annotations for selected points
+                    texts = []
+                    for _, row in df_cell.iterrows():
+                        if (
+                            (row["# rMATS Events - " + threshold_col] >= MIN_EVENTS_THRESHOLD) and
+                            (abs(row["Spearman - " + threshold_col]) >= SPEARMAN_THRESHOLD)
+                        ):
+                            texts.append(
+                                ax.text(
+                                    row["Spearman - " + threshold_col],
+                                    row["Pearson - " + threshold_col],
+                                    f"{row['RBP']}_{row['Position']}",
+                                    fontsize=10, color="red", ha="center", va="center"
+                                )
+                            )
+                    adjustText.adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', lw=2))
+
+            fig.suptitle(f"\nNOTE 1: Correlations for 'Test' Data dPSI vs CTRL-KD Local SHAP\nNOTE 2: Points labelled if '# rMATS Events' > {MIN_EVENTS_THRESHOLD}  and |Spearman| > {SPEARMAN_THRESHOLD}\n\nRelationship between # rMATS Events and Correlation Values", y=1.02, x=.5, fontsize=35)
+            fig.supxlabel("Spearman Correlation", fontsize=40, y=-0.02,)
+            fig.supylabel("Pearson Correlation", fontsize=40, x=-0.04, )
+
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+            combined_df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")    
+
+            results = []
+            for cell_line in combined_df["Cell Line"].unique():
+                df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+
+                for feature in tqdm.tqdm(df_cell["Feature"].unique(), desc=f"{cell_line} features"):
+
+                    # Prepare results dictionary for this feature
+                    rbp, pos = self.get_RBP_position(feature)
+                    result_row = {
+                        "Cell Line": cell_line,
+                        "Feature": feature,
+                        "RBP": rbp,
+                        "Position": int(pos),
+                    }
+
+                    # Aggregate metrics for multiple FDR thresholds using a loop to avoid repetition
+                    df_feat = df_cell[df_cell["Feature"] == feature]
+
+                    thresholds = [
+                        (1.0, "All Data"),
+                        (0.1, "FDR <= 0.1"),
+                        (0.05, "FDR <= 0.05"),
+                    ]
+
+                    for thr, label in thresholds:
+                        # rMATS rows for this threshold
+                        if thr == 1.0:
+                            df_thr = df_feat
+                        else:
+                            df_thr = df_feat[df_feat["rMATS FDR"] <= thr]
+
+                        # Model delta-prediction rows for this threshold
+                        dpred_thr = self.get_delta_prediction_data(FDR_threshold=thr).to_pandas()
+                        dpred_thr = dpred_thr[
+                            (dpred_thr["Cell Line"] == cell_line) &
+                            (dpred_thr["Feature"] == feature)
+                        ]
+
+                        # Counts
+                        result_row[f"# rMATS Events - {label}"] = len(df_thr)
+                        result_row[f"dPred | # rMATS Events - {label}"] = len(dpred_thr)
+
+                        # Correlations (require at least two points)
+                        if len(df_thr) > 1:
+                            result_row[f"Pearson - {label}"], _ = pearsonr(df_thr["dPSI"], df_thr["CTRL - KD Local SHAP"])
+                            result_row[f"Spearman - {label}"], _ = spearmanr(df_thr["dPSI"], df_thr["CTRL - KD Local SHAP"])
+                        else:
+                            result_row[f"Pearson - {label}"] = np.nan
+                            result_row[f"Spearman - {label}"] = np.nan
+
+                        if len(dpred_thr) > 1:
+                            result_row[f"dPred | Pearson - {label}"], _ = pearsonr(dpred_thr["dPSI"], dpred_thr["CTRL - KD Model Prediction (Probability)"])
+                            result_row[f"dPred | Spearman - {label}"], _ = spearmanr(dpred_thr["dPSI"], dpred_thr["CTRL - KD Model Prediction (Probability)"])
+                        else:
+                            result_row[f"dPred | Pearson - {label}"] = np.nan
+                            result_row[f"dPred | Spearman - {label}"] = np.nan
+
+                    results.append(result_row)
+
+            correlation_table = pd.DataFrame(results).sort_values(
+                by=["Cell Line", "Feature"], 
+            )
+            correlation_table.to_csv(OUTPUT_FILE, sep="\t", index=False)
+
+
+    def retrieve_differential_candidate_features(self, min_events = 10, min_spearman = 0.3, fishers_fdr = 0.05):
+        logger.info(f"Retrieving CANDIDATE FEATURES w/\nmin_events={min_events}, min_spearman={min_spearman}, fishers_fdr={fishers_fdr} ...")
+
+        final_candidate_sets = {}
+
+        for rmats_fdr in [0.1, 0.05]:
+            key = f"Fisher's Exact Test (rMATS FDR < {rmats_fdr})"
+            final_candidate_sets[key] ={}
+
+            fishers_file = self.CACHE_INFO["fishers_exact_association_between_binding_and_differential_splicing"][rmats_fdr]
+            fishers_df = pd.read_csv(fishers_file, sep="\t")
+            
+            for cell_line in self.cell_lines:
+                final_candidate_sets[key][cell_line] = fishers_df[
+                        (fishers_df["Cell Line"] == cell_line) &
+                        (fishers_df["(A*D / B*C) Odds Ratio"] > 1) &
+                        (fishers_df["FDR BH"] < fishers_fdr)
+                    ]["Feature"].sort_values().unique().tolist()
+                
+
+        # Correlation candidates
+        corr_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['correlations']
+        corr_df = pd.read_csv(corr_file, sep="\t")
+        
+        final_candidate_sets["'Test' Correlations"] = {}
+        for cell_line in self.cell_lines:
+            final_candidate_sets["'Test' Correlations"][cell_line] = corr_df[
+                    (corr_df["Cell Line"] == cell_line) &
+                    (corr_df["# rMATS Events - All Data"] >= min_events) &
+                    (corr_df["Spearman - All Data"] >= min_spearman)
+                ]["Feature"].sort_values().unique().tolist()
+
+        return final_candidate_sets
+    
+
+    def delta_local_SHAP_significant_vs_not_significant_by_pos_neg_dpsi_in_test(self, only_candidate_features=False): 
+        
+        # REQUIRED 
+        DATASETS = ["probability", "logodds"]
+        FDR_CUTOFFS = [0.1, 0.05]
+        STAT_TESTS = [("MWU", "mann-whitney"), ("Welch's T", "t-test_ind")]
+        DPSI_THRESHOLDS = [0, 0.001, 0.01]
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+
+        # OPTIONAL
+        CANDIDATE_FEATURE_KEY = "Fisher's Exact Test (rMATS FDR < 0.05)"
+
+        # Coloring and Ordering
+        dpsi_sign_order = ["- dPSI", "+ dPSI"]
+        line_color = "#fc8d62"
+        violin_colors = {"Not Significant": "#8da0cb", f"Significant": "#66c2a5"}
+
+        for dataset in DATASETS:
+
+            if dataset == "probability":
+                INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+            elif dataset == "logodds":
+                INPUT_FILE = "/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
+            
+            df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
+            min_shap = df["CTRL - KD Local SHAP"].min()
+            max_shap = df["CTRL - KD Local SHAP"].max()
+
+            for cutoff in FDR_CUTOFFS:
+                for dpsi_threshold in DPSI_THRESHOLDS:
+
+                    fig, axes = plt.subplots(
+                        nrows=1, ncols=len(self.cell_lines), figsize=(12, 6), dpi=200, sharey=True, sharex=True
+                    )
+
+                    for ax, cell_line in zip(axes, self.cell_lines):
+                        df_cell = df[df["Cell Line"] == cell_line].copy()
+
+                        if only_candidate_features:
+                            candidate_features = self.retrieve_differential_candidate_features()
+                            df_cell = df_cell[
+                                df_cell["Feature"].isin(
+                                    candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
+                                )
+                            ]
+
+
+                        # Assign dPSI sign based on dpsi_threshold (simplified)
+                        df_cell["dPSI Sign"] = np.nan
+                        df_cell.loc[df_cell["dPSI"] > dpsi_threshold, "dPSI Sign"] = "+ dPSI"
+                        df_cell.loc[df_cell["dPSI"] < -dpsi_threshold, "dPSI Sign"] = "- dPSI"
+                        
+                        # Assign significance status
+                        df_cell["Significance"] = np.where(
+                            df_cell["rMATS FDR"] <= cutoff, f"Significant (rMATS FDR≤{cutoff})", "Not Significant"
+                        )
+
+                        # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
+                        df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
+
+                        hue_order = [f"Significant (rMATS FDR≤{cutoff})", "Not Significant"]  # switched order
+                        palette = {f"Significant (rMATS FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
+
+                        sns.violinplot(
+                            data=df_cell,
+                            x="dPSI Sign",
+                            y="CTRL - KD Local SHAP",
+                            hue="Significance",
+                            order=dpsi_sign_order,
+                            hue_order=hue_order,
+                            palette=palette,
+                            cut=0,
+                            density_norm="width",
+                            ax=ax,
+                        )
+
+                        ax.axhline(0, color=line_color, linestyle="--", linewidth=1.5)
+                        ax.set_xlabel("")
+                        ax.set_ylabel("")
+                        ax.set_title(f"{cell_line}", fontsize=22, pad=10)
+                        ax.tick_params(axis='x', labelsize=18)
+                        ax.tick_params(axis='y', labelsize=14)
+                        ax.legend_.remove()
+
+                        ax.set_ylim(top = max_shap * 2)
+
+                        # Statistical annotation: run both tests for each dpsi_sign
+                        for dpsi_sign in dpsi_sign_order:
+                            subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
+
+                            group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
+                            group2 = subset[subset["Significance"] == f"Significant (rMATS FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
+
+                            xpos = dpsi_sign_order.index(dpsi_sign)
+                            ymax = subset["CTRL - KD Local SHAP"].max()
+                            yspan = ax.get_ylim()[1] - ax.get_ylim()[0]
+
+                            # Annotate number of points for each group just 5% above their max value
+                            offsets = [-0.19, 0.19]
+                            for i, significance in enumerate(hue_order):
+                                group = subset[subset["Significance"] == significance]["CTRL - KD Local SHAP"]
+                                color = palette[significance]
+                                offset = offsets[i]
+                                group_max = group.max()
+                                group_y = group_max + 0.02 * yspan
+
+                                ax.text(
+                                    xpos + offset, group_y,
+                                    f"{len(group)}",
+                                    ha="center", va="bottom", fontsize=12, color=color
+                                )
+
+                            # Draw a line ("roof") above the two violins
+                            line_y = ymax + 0.13 * yspan
+                            ax.plot([xpos - 0.2, xpos + 0.2], [line_y, line_y], color="black", linewidth=1.5)
+                            # Draw vertical ticks down from the ends
+                            ax.plot([xpos - 0.2, xpos - 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                            ax.plot([xpos + 0.2, xpos + 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                            
+                            # Add direction marker under the line
+                            direction = "<" if dpsi_sign == "- dPSI" else ">"
+                            ax.text(xpos, line_y - 0.08 * yspan, direction, ha="center", va="bottom", fontsize=20, fontweight="bold", color="#66c2a5")
+
+                            # Run both statistical tests and annotate both p-values
+                            stat_results = []
+                            for stat_test_name, stat_test in STAT_TESTS:
+                                
+                                if stat_test == "mann-whitney":
+                                    if dpsi_sign == "- dPSI":
+                                        _, pval = mannwhitneyu(group2, group1, alternative="less")
+                                    elif dpsi_sign == "+ dPSI":
+                                        _, pval = mannwhitneyu(group2, group1, alternative="greater")
+                                
+                                elif stat_test == "t-test_ind":
+                                    if dpsi_sign == "- dPSI":
+                                        _, pval = ttest_ind(group2, group1, alternative="less", equal_var=False)
+                                    elif dpsi_sign == "+ dPSI":
+                                        _, pval = ttest_ind(group2, group1, alternative="greater", equal_var=False)
+                                
+                                else:
+                                    raise ValueError(f"Unknown stat_test: {stat_test}")
+                                
+                                stat_results.append((stat_test_name, pval))
+
+                            # Annotate both p-values, one above the other
+                            for i, (stat_test_name, pval) in enumerate(stat_results):
+                                ax.text(
+                                    xpos, line_y + 0.03 * yspan + i * 0.06 * yspan,
+                                    f"{stat_test_name}: {pval:.1e}",
+                                    ha="center", va="bottom", fontsize=12, color="black"
+                                )
+                    
+                    # Shared labels and legend
+                    fig.supxlabel("dPSI Sign", fontsize=20, x=0.53)
+                    fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
+                    # Custom legend for hue and y=0 line
+                    handles = [
+                        Patch(facecolor=palette[f"Significant (rMATS FDR≤{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR ≤ {cutoff})"),
+                        Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
+                        Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
+                    ]
+                    fig.legend(
+                        handles,
+                        [h.get_label() for h in handles],
+                        loc="center left",
+                        bbox_to_anchor=(0.97, 0.45),
+                        fontsize=14,
+                        frameon=False,
+                        title_fontsize=15,
+                    )
+
+                    additional_note = f"NOTE 2: CANDIDATE FEATURES from {CANDIDATE_FEATURE_KEY}" if only_candidate_features else ""
+                    suffix = "(CANDIDATE FEATURES)" if only_candidate_features else ""
+
+                    fig.suptitle(
+                        f"NOTE 1: {dataset.capitalize()} SHAP; rMATS FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
+                        fontsize=18, y=1.01
+                    )
+
+                    plt.tight_layout(rect=[0, 0, 0.98, 1])
+                    plt.show()
+
+    
+    def plot_feature_candidates_for_dpsi_vs_local_SHAP_in_test(self): 
+
+        SPEARMAN_THRESHOLD = 0.3
+        MIN_EVENTS_THRESHOLD = 10
+        FISHERS_FDR = 0.1
+
+        final_candidate_sets = self.retrieve_differential_candidate_features(
+            min_events=MIN_EVENTS_THRESHOLD, 
+            min_spearman=SPEARMAN_THRESHOLD,
+            fishers_fdr=FISHERS_FDR
+        )
+
+        # Load dPSI vs local SHAP test partition data
+        dpsi_shap_file = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        dpsi_shap_df = pd.read_csv(dpsi_shap_file, sep="\t", compression="gzip")
+
+        # PLOT ALL FEATURES TOGETHER
+        for label, cell_line_candidates in final_candidate_sets.items():
+        
+            if label == "'Test' Correlations":
+                prefix = f"NOTE 1: Candidates from 'Test' w/ (Spearman - All Data >= {SPEARMAN_THRESHOLD} &\n# Events >= {MIN_EVENTS_THRESHOLD})"
+            elif "Fisher's Exact Test" in label:
+                prefix = f"NOTE 1: Candidates from Fisher's (Test, Train, Val)\nw/ Fisher's FDR < {FISHERS_FDR} & Odds Ratio > 1"
+            else: 
+                raise ValueError(f"Unknown label: {label}")
+            
+            # print(f"{label} FEATURE Candidates:\n[{prefix.lstrip('NOTE 1: ')}]")
+            # for cell_line in self.cell_lines:
+            #     print(f"  {cell_line}: {len(cell_line_candidates[cell_line])} FEATURE candidates")
+            #     assert len(cell_line_candidates[cell_line]) > 0, f"No candidates found for {cell_line} in set {label}"  
+            # print()
+
+            # 2-column subplot: one per cell line
+            fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=200, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
+                df_cell = dpsi_shap_df[
+                    (dpsi_shap_df["Cell Line"] == cell_line) &
+                    (dpsi_shap_df["Feature"].isin(cell_line_candidates[cell_line]))
+                ]
+                assert not df_cell.empty, f"No candidates found for {cell_line} in set {label}"
+                
+                ax, legend = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=f"{cell_line}",
+                    dot_size = 4, 
+                    alpha=0.4,
+                    color_significant=True
+                )
+    
+            fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP (Test Partition)", fontsize=16, y=1.02)
+            fig.legend(
+                handles=legend.legend_handles,
+                labels=[t.get_text() for t in legend.get_texts()],
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.45),
+                frameon=True,
+                fontsize=14,
+                markerscale=1
+            )
+            
+            plt.tight_layout()
+            plt.show()
+
+            # 6x2 subplot: split by position
+            fig, axes = plt.subplots(6, 2, figsize=(13, 27), dpi=200, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell_pos = dpsi_shap_df[
+                        (dpsi_shap_df["Cell Line"] == cell_line) &
+                        (dpsi_shap_df["Position"] == pos) &
+                        (dpsi_shap_df["Feature"].isin(cell_line_candidates[cell_line]))
+                    ]
+
+                    assert not df_cell_pos.empty, f"No candidates found for {cell_line} position {pos} in set {label}"
+                    
+                    ax, legend = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell_pos,
+                        ax=axes[pos-1, i],
+                        plot_metric="CTRL - KD Local SHAP",
+                        title=f"{cell_line} - Pos. {pos}", 
+                        dot_size = 9,
+                        alpha=0.4,
+                        color_significant=True
+                    )
+                    
+            fig.suptitle(f"{prefix}\n\n{label}-Derived Candidates:\ndPSI vs Local SHAP by Position (Test Partition)", fontsize=16, y=1.01)
+            fig.legend(
+                handles=legend.legend_handles,
+                labels=[t.get_text() for t in legend.get_texts()],
+                loc='center left',
+                bbox_to_anchor=(1.01, 0.5),
+                frameon=True,
+                fontsize=22,
+                markerscale=3
+            )
+            
+            plt.tight_layout()
+            plt.show()
+
+        # Build a mapping from feature to the set of cell lines it appears in
+        feature_to_cell_lines = {}
+        for cell_line in self.cell_lines:
+            for feature in final_candidate_sets["'Test' Correlations"][cell_line]:
+                
+                if feature not in feature_to_cell_lines:
+                    feature_to_cell_lines[feature] = set()
+                
+                feature_to_cell_lines[feature].add(cell_line)
+
+        # Sort feature_to_cell_lines by key (feature name)
+        feature_to_cell_lines = dict(sorted(feature_to_cell_lines.items(), key=lambda x: x[0]))
+        
+        # For each feature, plot dPSI vs Local SHAP for the relevant cell lines
+        for feature, cell_lines in feature_to_cell_lines.items():
+            cell_lines = sorted(cell_lines)
+            n_subplots = len(cell_lines)
+            if n_subplots == 2:
+                fig, axes = plt.subplots(1, 2, figsize=(8,4), dpi=200, sharex=True, sharey=True)
+            else:
+                fig, axes = plt.subplots(1, 1, figsize=(4,4), dpi=200)
+                axes = [axes]
+
+            legend = None  # Will hold the legend object if returned
+
+            for i, cell_line in enumerate(cell_lines):
+                
+                df_cell_feature = dpsi_shap_df[
+                    (dpsi_shap_df["Cell Line"] == cell_line) &
+                    (dpsi_shap_df["Feature"] == feature)
+                ]
+                
+                result = self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell_feature,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=f"{cell_line}" if n_subplots == 2 else f"dPSI vs Delta Local SHAP\n{cell_line} - {feature}",
+                    dot_size=16, 
+                    alpha=0.9,
+                    color_significant=True
+                )
+                # If a legend is returned, save it for later
+                if isinstance(result, tuple) and len(result) == 2:
+                    _, legend = result
+
+            if legend is not None:
+                # Place the legend outside the right of the plot
+                fig.legend(
+                    handles=legend.legend_handles,
+                    labels=[t.get_text() for t in legend.get_texts()],
+                    loc='center left',
+                    bbox_to_anchor=(1.01, 0.5),
+                    frameon=True,
+                    fontsize=8,
+                )
+
+            if n_subplots == 2:
+                fig.suptitle(f"dPSI vs Delta Local SHAP for Feature: {feature}")
+
+            plt.tight_layout()
+            plt.show()
+
+    
+    def create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(self, data = None):
+        assert type(data) == pd.DataFrame, "Data must be a pandas DataFrame"
+        
+        dpsi = data["dPSI"]
+        shap_delta = data["CTRL - KD Local SHAP"]
+
+        # Exclude zeros (neutral) from both metrics
+        mask = (dpsi != 0) & (shap_delta != 0)
+        dpsi = dpsi[mask]
+        shap_delta = shap_delta[mask]
+
+        counts_df = pd.DataFrame(
+            [
+                {
+                    "dPSI Sign": "+",
+                    "+": ((dpsi > 0) & (shap_delta > 0)).sum(),
+                    "—": ((dpsi > 0) & (shap_delta < 0)).sum(),
+                },
+                {
+                    "dPSI Sign": "—",
+                    "+": ((dpsi < 0) & (shap_delta > 0)).sum(),
+                    "—": ((dpsi < 0) & (shap_delta < 0)).sum(),
+                },
+            ]
+        ).set_index("dPSI Sign")[["+", "—"]]
+        
+        pct_df = counts_df / counts_df.values.sum()
+        pct_df = pct_df * 100  # Convert to percentages
+
+        return counts_df, pct_df
+
+
+    def plot_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix(self, data = None, ax = None, title = "NOT PROVIDED", **kwargs):
+        assert data is not None, "Data must be provided"
+        assert ax is not None, "Axis must be provided"
+
+        dpsi_symbol = self.latex_symbols["Differential Symbols"]["dPSI"]
+        delta_shap_symbol = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+
+        df = data.copy()
+        counts_df, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=df)
+        
+        # Format pct_df as strings with percent sign, rounded to 0 decimals
+        pct_annot = pct_df.round(0).astype(int).astype(str) + '%'
+
+        sns.heatmap(
+            counts_df,
+            ax=ax,
+            cmap="YlGn",
+            annot=pct_annot,
+            fmt="s",
+            cbar=True,
+            linewidths=0.5,
+            linecolor="black",
+            annot_kws={"fontsize": 10, "weight": "bold"},
+            cbar_kws={'shrink': 0.9, 'pad': 0.05}
+        )
+        # Put the colorbar title on top
+        cbar = ax.collections[-1].colorbar
+        cbar.ax.set_title("#", pad=6, fontsize=14)
+
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        
+        ax.set_xlabel(f"Model:\n{delta_shap_symbol}", fontsize=12, y = -0.1)
+        ax.set_ylabel(f"Data:\n{dpsi_symbol}", fontsize=12, x = -0.1)
+        ax.set_title(title, fontsize=14)
+
+        # Return axis and underlying (counts) data without showing
+        return ax, counts_df, pct_df
+
+
+    def create_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, across_thresholds = None, data_mode=None):
+        assert across_thresholds in [True, False], "across_thresholds must be True or False"
+        assert data_mode in ["test", "test candidate features"], "data_mode must be 'test' or 'test candidate features'"
+
+        DPSI_THRESHOLDS = [0, 0.05, 0.1]
+        FDR_THRESHOLDS = [1, 0.1, 0.05]
+        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.005, 0.01, 0.05]
+
+        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+        
+        INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
+        
+        note_prefix = ""
+        if data_mode == "test candidate features":
+            CANDIDATE_FEATURE_KEY = "Fisher's Exact Test (rMATS FDR < 0.05)"
+            candidate_features = self.retrieve_differential_candidate_features()
+            note_prefix = f"NOTE:'Candidates' from {CANDIDATE_FEATURE_KEY}\n\n"
+
+            dfs = []
+            for cell_line in self.cell_lines:
+                features = candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
+                dfs.append(df[
+                        (df["Cell Line"] == cell_line) & 
+                        (df["Feature"].isin(features))
+                    ])
+            
+            df = pd.concat(dfs, ignore_index=True)
+
+        if not across_thresholds:
+            # Iterate thresholds: dPSI -> ΔLocal SHAP -> FDR; build confusion matrices per cell line
+            confusion_matrix_data = {}
+            for dpsi_thr in DPSI_THRESHOLDS:
+                confusion_matrix_data[dpsi_thr] = {}
+                for delta_shap_thr in DELTA_LOCAL_SHAP_THRESHOLDS:
+                    confusion_matrix_data[dpsi_thr][delta_shap_thr] = {}
+                    for fdr_thr in FDR_THRESHOLDS:
+                        confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr] = {}
+
+                        # Create a 1xN subplot (one per cell line)
+                        fig, axes = plt.subplots(
+                            1,
+                            len(self.cell_lines),
+                            figsize=(6.1,3.4),
+                            dpi=200,
+                        )
+
+                        for ax, cell_line in zip(axes, self.cell_lines):
+                            sub = df[
+                                (df["Cell Line"] == cell_line) &
+                                (df["rMATS FDR"] <= fdr_thr) &
+                                (df["dPSI"].abs() >= dpsi_thr) &
+                                (df["CTRL - KD Local SHAP"].abs() >= delta_shap_thr)
+                            ].copy(deep=True)
+
+                            # Skip if no rows after filtering
+                            if sub.empty:
+                                continue
+
+                            _, counts_df, pct_df =self.plot_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix(
+                                data=sub,
+                                ax=ax,
+                                title=f"{cell_line}"
+                            )
+
+                            confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line] = {
+                                "counts": counts_df,
+                                "percentages": pct_df
+                            }
+
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
+                            display(pct_df)
+
+                        fig.suptitle(
+                            f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
+                            f"|{DPSI_SYMBOL}|≥{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|≥{delta_shap_thr}, rMATS FDR≤{fdr_thr}",
+                            fontsize=10,
+                            y=0.94
+                        )
+                        fig.tight_layout()
+                        plt.show()
+
+            #####################################################################
+            # RUN FISHER'S EXACT TEST BETWEEN dPSI SIGN AND DELTA LOCAL SHAP SIGN
+            ######################################################################
+
+            fisher_results = []
+
+            for dpsi_thr in confusion_matrix_data:
+                for delta_shap_thr in confusion_matrix_data[dpsi_thr]:
+                    for fdr_thr in confusion_matrix_data[dpsi_thr][delta_shap_thr]:
+                        for cell_line in confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr]:
+                            counts_df = confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line]["counts"]
+                            pct_df = confusion_matrix_data[dpsi_thr][delta_shap_thr][fdr_thr][cell_line]["percentages"]
+                            
+                            assert counts_df.shape == (2, 2), "Counts DataFrame must be 2x2"
+                            assert pct_df.shape == (2, 2), "Percentages DataFrame must be 2x2"
+
+                            # Build contingency table: rows = dPSI sign (+, -), columns = delta SHAP sign (+, -)
+                            table = [
+                                [counts_df.loc["+", "+"], counts_df.loc["+", "—"]],
+                                [counts_df.loc["—", "+"], counts_df.loc["—", "—"]],
+                            ]
+
+                            oddsratio, pvalue = fisher_exact(table)
+                            log10_odds = np.log10(oddsratio) if oddsratio > 0 else np.nan
+                            
+                            fisher_results.append({
+                                "Cell Line": cell_line,
+                                "dPSI Threshold": dpsi_thr,
+                                "Delta SHAP Threshold": delta_shap_thr,
+                                "FDR Threshold": fdr_thr,
+                                "(A) dPSI +, SHAP +": table[0][0],
+                                "(B) dPSI +, SHAP -": table[0][1],
+                                "(C) dPSI -, SHAP +": table[1][0],
+                                "(D) dPSI -, SHAP -": table[1][1],
+                                "(A*D / B*C) Odds Ratio": oddsratio,
+                                "(A)%": pct_df.loc["+", "+"],
+                                "(B)%": pct_df.loc["+", "—"],
+                                "(C)%": pct_df.loc["—", "+"],
+                                "(D)%": pct_df.loc["—", "—"],
+                                "Log10 Odds Ratio": log10_odds,
+                                "P-Value": pvalue,
+                            })
+
+            # FDR correction
+            results_df = pd.DataFrame(fisher_results)
+
+            # Round all columns ending with '%' to the nearest integer
+            percent_cols = [col for col in results_df.columns if col.endswith('%')]
+            results_df[percent_cols] = results_df[percent_cols].round(0).astype(int)
+
+            _, pvals_corrected, _, _ = multipletests(results_df["P-Value"], method='fdr_bh')
+            results_df["FDR"] = pvals_corrected
+
+            results_df.sort_values(
+                by=["Cell Line", "dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"]
+            ).to_csv(self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode], sep="\t", index=False)
+
+        elif across_thresholds:
+
+            # Prepare colors and element labels
+            delta_shap_colors = ['#edf8fb','#b2e2e2','#66c2a4','#238b45'] # least to highest ΔSHAP threshold
+            element_types = ["TP", "TN", "FP", "FN"]
+            element_labels = {
+                "TP": "True Positive",
+                "TN": "True Negative",
+                "FP": "False Positive",
+                "FN": "False Negative"
+            }
+
+            # For each cell line, create a figure
+            for cell_line in self.cell_lines:
+                nrows = len(DPSI_THRESHOLDS)
+                ncols = len(element_types)
+                
+                fig, axes = plt.subplots(
+                    nrows=nrows, ncols=ncols,
+                    figsize=(ncols*2.3, nrows*2),
+                    dpi=200, sharex=True, sharey=True
+                )
+
+                # Treat FDR thresholds as categorical strings for x-axis
+                fdr_labels = [str(x) for x in FDR_THRESHOLDS]
+
+                for row_idx, dpsi_thr in enumerate(DPSI_THRESHOLDS):
+                    for col_idx, element in enumerate(element_types):
+                        ax = axes[row_idx, col_idx] 
+
+                        # For each delta local shap threshold, collect values across FDR thresholds
+                        for delta_idx, delta_thr in enumerate(DELTA_LOCAL_SHAP_THRESHOLDS):
+                            y_vals = []
+
+                            for fdr_thr in FDR_THRESHOLDS:
+                                # Filter data for this cell line and thresholds
+                                sub = df[
+                                        (df["Cell Line"] == cell_line) &
+                                        (df["rMATS FDR"] <= fdr_thr) &
+                                        (df["dPSI"].abs() >= dpsi_thr) &
+                                        (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
+                                    ].copy(deep=True)
+                                
+                                # Get confusion matrix
+                                _, pct_df = self.create_dpsi_sign_vs_local_SHAP_sign_2_by_2_confusion_matrix_data(data=sub)
+
+                                # Map element to value in pct_df
+                                if element == "TP":
+                                    val = pct_df.loc["+", "+"]
+                                elif element == "TN":
+                                    val = pct_df.loc["—", "—"]
+                                elif element == "FP":
+                                    val = pct_df.loc["—", "+"]
+                                elif element == "FN":
+                                    val = pct_df.loc["+", "—"]
+                                else:
+                                    val = np.nan
+                                y_vals.append(val)
+
+                            # Plot line and points with reduced thickness/size and black borders
+                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f"≥{delta_thr}", linewidth=0.6)
+                            ax.scatter(fdr_labels, y_vals, color=delta_shap_colors[delta_idx], s=18, edgecolor='black', linewidths=0.5, zorder=3)
+
+                        # Axis labels and title
+                        if row_idx == 0:
+                            ax.set_title(element_labels[element], fontsize=13)
+                        if col_idx == 0:
+                            ax.set_ylabel(f"≥ {dpsi_thr}", fontsize=16, color = "#FF8C00")
+
+                        ax.set_xticks(fdr_labels)
+                        ax.set_xticklabels(fdr_labels)
+                        ax.grid(True, axis='y', linestyle='--', alpha=0.8)
+
+                        # Remove all subplot legends to ensure only a single figure legend
+                        if hasattr(ax, "legend_") and ax.legend_:
+                            ax.legend_.remove()
+
+
+                fig.text(
+                    0.03, 0.5, f"|{DPSI_SYMBOL}|", fontsize=16, rotation=90, va='center', color = "#FF8C00"
+                )
+
+                # Add a single legend for ΔSHAP thresholds for the entire figure
+                # Use handles/labels from the first subplot
+                handles, labels = axes[0, 0].get_legend_handles_labels() if nrows > 1 else axes[0].get_legend_handles_labels()
+                fig.legend(
+                    handles, labels,
+                    title=f"|{DELTA_LOCAL_SHAP_SYMBOL}|",
+                    fontsize=11,
+                    title_fontsize=12,
+                    loc="center left",
+                    bbox_to_anchor=(0.98, 0.5),
+                    frameon=True
+                )
+
+                fig.suptitle(f'{note_prefix}"{data_mode.capitalize()}"\n{cell_line}: Confusion Matrix Elements Across Thresholds', fontsize=18, y=1)
+                fig.supxlabel("FDR", fontsize=20, y=0.01, x=0.55)
+                fig.supylabel("%", fontsize=26, x=-0.04)
+
+                plt.tight_layout()
+                plt.show()
+
+        else: 
+            raise ValueError("across_thresholds must be True or False")
+
+    def run_fishers_test_across_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, data_mode=None):
+        assert data_mode in ["test", "test candidate features"], "data_mode must be 'test' or 'test candidate features'"
+    
+        INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode]
+        results_df = pd.read_csv(INPUT_FILE, sep="\t")
+
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+
+        FISHERS_FDR_CUTOFF = 0.1
+
+        # Prepare unique values for axes
+        cell_lines = results_df["Cell Line"].unique()
+        delta_shap_thresholds = sorted(results_df["Delta SHAP Threshold"].unique())
+        dpsi_thresholds = sorted(results_df["dPSI Threshold"].unique())
+        fdr_thresholds = sorted(results_df["FDR Threshold"].unique(), reverse=True)  # highest FDR leftmost
+
+        nrows = len(cell_lines)
+        ncols = len(delta_shap_thresholds)
+
+        # Compute min and max log10 odds ratio per cell line for later use
+        log10_odds_minmax = {}
+        for cell_line in cell_lines:
+            sub = results_df[results_df["Cell Line"] == cell_line]
+            vals = sub["(A*D / B*C) Odds Ratio"].replace([np.inf, -np.inf], np.nan).dropna()
+            log10_odds_minmax[cell_line] = (vals.min(), vals.max())
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.5 * nrows), dpi=600, squeeze=False, sharex=True, sharey=True)
+
+        # Store the mappable objects for each row to use for a single colorbar per row
+        row_mappables = []
+
+        for row_idx, cell_line in enumerate(cell_lines):
+            vmin, vmax = log10_odds_minmax[cell_line]  # Use min/max for this row (cell line)
+            mappables = []
+            for col_idx, delta_shap_thr in enumerate(delta_shap_thresholds):
+                ax = axes[row_idx, col_idx]
+                # Subset for this cell line and delta_shap_thr
+                sub = results_df[
+                    (results_df["Cell Line"] == cell_line) &
+                    (results_df["Delta SHAP Threshold"] == delta_shap_thr)
+                ].copy(deep=True)
+
+                # Build matrix using pivot for Log10 Odds Ratio
+                matrix_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="(A*D / B*C) Odds Ratio")
+                # Ensure correct order of rows and columns
+                matrix_df = matrix_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
+                matrix = matrix_df.to_numpy()
+
+                # Build matrix for FDR < FISHERS_FDR_CUTOFF using pivot
+                fdr_bh_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="FDR")
+                fdr_bh_df = fdr_bh_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
+                fdr_bh_matrix = (fdr_bh_df.to_numpy() < FISHERS_FDR_CUTOFF)
+                
+                # Replace inf with nan in matrix
+                matrix[np.isinf(matrix)] = np.nan
+                mask = np.isnan(matrix)
+
+                matrix_df = pd.DataFrame(matrix, index=dpsi_thresholds, columns=fdr_thresholds)
+
+                cmap = plt.get_cmap("bwr").copy()
+                cmap.set_bad(color='gray')  # Set masked (NaN) cells to gray
+                
+                # Remove colorbar for individual subplots
+                hm = sns.heatmap(
+                    matrix_df,
+                    mask=mask,
+                    cmap=cmap,
+                    vmin=vmin,
+                    vmax=vmax,
+                    ax=ax,
+                    center=1,
+                    cbar=False,
+                    annot=True,
+                    annot_kws={"fontsize": 16, "color": "black",},
+                    linewidths=0.5,
+                    linecolor="#474747",
+                )
+                mappables.append(hm)
+
+                for i in range(matrix.shape[0]):
+                    for j in range(matrix.shape[1]):
+                        if fdr_bh_matrix[i, j] and not np.isnan(matrix[i, j]):
+                            ax.plot(j + 0.5, i + 0.8, marker="*", markersize=18, markeredgewidth=1.5, markeredgecolor="black", markerfacecolor="gold", zorder=3)
+                
+                ax.tick_params(axis='x', labelsize=16)
+                ax.tick_params(axis='y', labelsize=16)
+
+                for label in ax.get_xticklabels() + ax.get_yticklabels():
+                    label.set_fontweight("bold")
+                
+                if row_idx == 0:
+                    ax.set_title(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥ {delta_shap_thr}", fontsize=20)
+
+                if col_idx == 0:
+                    ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=20)
+
+            # Save the last mappable for the colorbar (all have same vmin/vmax/cmap)
+            row_mappables.append(mappables[-1])
+
+        # Add a single colorbar to the right of each row
+        fig.subplots_adjust(right=0.88)  # Make space for colorbars
+        for row_idx in range(nrows):
+            cbar_ax = fig.add_axes([0.90,  # left
+                                    (nrows - row_idx - 1) / nrows + 0.03,  # bottom
+                                    0.02,  # width
+                                    0.6 / nrows])  # height
+            plt.colorbar(row_mappables[row_idx].collections[0], cax=cbar_ax)
+            cbar_ax.set_title("Odds Ratio", fontsize=12)
+
+        if data_mode == "test candidate features":
+            note = "TEST (CANDIDATE FEATURES IN-SILICO KD)"
+        
+        elif data_mode == "test":
+            note = "TEST (ALL IN-SILICO KD)"
+
+        fig.suptitle(
+            f"NOTE 1: * = Fisher's FDR < {FISHERS_FDR_CUTOFF}\n"
+            f"NOTE 2: Color scale comparable across row (Cell Line)\n"
+            f"NOTE 3: Gray indicates 'NaN' or 'Inf'\n\n" 
+            f"{note}:\nOdds Ratio for Fisher's Exact Test Between {DPSI_SYMBOL} Sign and {DELTA_LOCAL_SHAP_SYMBOL} Sign",
+            fontsize=22, y=1.02, x=0.45
+        )
+        
+        fig.supxlabel("FDR", fontsize=30, y=0.01, x=0.48, fontweight="bold")
+        fig.supylabel(f"|{DPSI_SYMBOL}|", fontsize=30, x=0, fontweight="bold")
+        
+        plt.tight_layout(rect=[0, 0, 0.88, 1])
+        plt.show()
+
+
+
+
 ###############################################################
 ###############################################################
 ###############################################################
@@ -8210,6 +9847,72 @@ class ShapNetworkInvestigator:
         plt.show()
 
 
+    def hacky_log_odds_test_data_dpsi_vs_local_shap_scatterplot(self): 
+        OUTPUT_FILE  = "/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.success(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE}")
+            combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")  
+
+            # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
+                df_cell = combined_df[combined_df["Cell Line"] == cell_line]
+                self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df=df_cell,
+                    ax=axes[i],
+                    plot_metric="CTRL - KD Local SHAP",
+                    title=cell_line
+                )
+
+            fig.suptitle("LOG-ODDS: dPSI vs Local SHAP Scatterplot for Test Partition", fontsize=16)
+            plt.tight_layout()
+            plt.show()
+
+            # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
+            colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33']
+            fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell = combined_df[
+                        (combined_df["Cell Line"] == cell_line) &
+                        (combined_df["Position"] == pos)
+                    ]
+                    self.plot_dpsi_vs_local_SHAP_scatterplot(
+                        df=df_cell,
+                        ax=axes[pos-1, i],
+                        plot_metric="CTRL - KD Local SHAP",
+                        title=f"{cell_line} - Pos. {pos}",
+                        color=colors[pos-1]
+                    )
+            fig.suptitle("LOG-ODDS: dPSI vs Local SHAP Scatterplot for Test Partition\n (Split by Position)", fontsize=16, y=1)
+            plt.tight_layout()
+            plt.show()
+
+        else: 
+            logger.info("No cache found. Compiling dPSI vs Local SHAP scatterplot data for test partition ...")
+
+            log_odds_data = {}
+            for cell_line in self.cell_lines:
+                log_odds_data[cell_line] = (
+                    pl.scan_ipc(
+                        f"/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/FINAL_AVERAGE_SHAP_CACHE/{cell_line}_all-data.feather"
+                    )
+                    .filter(pl.col("Partition") == "Test")
+                    .collect()
+                )
+            
+            plot_dfs = []
+            for cell_line in self.cell_lines:
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(data=log_odds_data[cell_line])
+                plot_df["Cell Line"] = cell_line
+                plot_dfs.append(plot_df)
+
+            combined_df = pd.concat(plot_dfs, ignore_index=True)
+            combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
+            logger.success(f"Saved log-odds dPSI vs Local SHAP scatterplot data for test partition to {OUTPUT_FILE}")
+
+
     def tmp(self): 
         lazyframes = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
         return lazyframes["K562"].collect_schema().names()
@@ -8228,18 +9931,25 @@ if __name__ == "__main__":
         "shap_additivity_assertions", 
         "no_shap_variance_per_binding_pattern", 
         "create_final_shap_cache", 
-        "global_SHAP_5_dfs_all_data", 
+        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data",
+        "global_SHAP_5_dfs_average_all_data",
+        "global_SHAP_5_dfs_average_unique_binding", 
+        "specialized_global_shap_unsigned_bound", 
+        "specialized_global_shap_unsigned_unbound", 
+        "specialized_global_shap_signed_local_SHAP_mean_bound",
+        "specialized_global_shap_signed_local_SHAP_mean_unbound",
+        "specialized_global_shap_signed_local_SHAP_mean_LOG-ODDS_bound",
         "local_SHAP_mean_vs_variance_plot",
         "calculate_local_SHAP_percent_non_zero",
         "calculate_local_SHAP_mean_vs_variance_deciles_bound",
         "calculate_local_SHAP_mean_vs_variance_deciles_unbound", 
         "pct_pos_neg_local_SHAP_per_feature_bound",
         "pct_pos_neg_local_SHAP_per_feature_unbound", 
+        "is_position_3_4_activating_and_others_repressing", 
+        "binding_vs_diff_events_fishers_FDR_0.05", 
+        "binding_vs_diff_events_fishers_FDR_0.1",
         "arbs_narbs_bound", 
         "arbs_narbs_unbound", 
-        "is_position_3_4_activating_and_others_repressing", 
-        "signed_local_SHAP_mean_bound",
-        "signed_local_SHAP_mean_unbound",
     ]
 
     parser.add_argument(
@@ -8258,15 +9968,25 @@ if __name__ == "__main__":
         help="Specify the job type for specific job."
     )
 
+    parser.add_argument(
+        "--run_all", 
+        action="store_true",
+        required=False,
+    )     
+
     args = parser.parse_args()
 
-    if args.parallelize:
+    if args.run_all:
+        for job in PARALLELIZE_CHOICES:
+            subprocess.run(["python3.11", __file__, "--parallelize", job], check=True)
+    
+    elif args.parallelize:
 
-        sbatch_prefix = "sbatch -N2 --partition=parallel -n32 --mem=256GB --account=platiglab"
+        sbatch_prefix = "sbatch -N2 --partition=parallel -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
         logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-        os.system(sbatch_command)
+        subprocess.run(sbatch_command, shell=True, check=True)
     
     elif args.job_type: 
 
@@ -8283,9 +10003,12 @@ if __name__ == "__main__":
         
         elif args.job_type == "create_final_shap_cache":
             analyzer.load_final_SHAP_data(underlying_data="All-Data")
-        
-        elif args.job_type == "global_SHAP_5_dfs_all_data":
-            analyzer.calculate_global_SHAP(mode="5_dfs", binding_unique="All-Data")
+
+        elif args.job_type.startswith("global_SHAP_5_dfs_"):
+            underlying_data = "All-Data" if "all_data" in args.job_type else "Unique-Binding"
+            mode = "5_dfs_average" if "_average_" in args.job_type else "5_dfs"
+
+            analyzer.calculate_global_SHAP(mode=mode, binding_unique = underlying_data)
 
         elif args.job_type == "local_SHAP_mean_vs_variance_plot":
             analyzer.plot_local_SHAP_mean_vs_variance()
@@ -8313,20 +10036,43 @@ if __name__ == "__main__":
         elif args.job_type == "is_position_3_4_activating_and_others_repressing": 
             analyzer.is_position_3_4_activating_and_others_repressing()
 
-        elif args.job_type.startswith("signed_local_SHAP_mean_"): 
-            
-            if args.job_type.endswith("_bound"):
-                mode = "Signed-Local-SHAP-Mean-Bound-Only"
-            elif args.job_type.endswith("_unbound"):
-                mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+        elif args.job_type.startswith("specialized_global_shap_"):
+
+            condition = None 
+            underlying_data = "Unique-Binding"
+            mode = None
+
+            if "LOG-ODDS" not in args.job_type:
+                if args.job_type.endswith("_bound"):
+                    if "unsigned" in args.job_type:
+                        mode = "Bound-Only"
+                    elif "signed_local_SHAP" in args.job_type:
+                        mode = "Signed-Local-SHAP-Mean-Bound-Only"
+                
+                elif args.job_type.endswith("_unbound"):
+                    if "unsigned" in args.job_type:
+                        mode = "NOT-Bound-Only"
+                    elif "signed_local_SHAP" in args.job_type:
+                        mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
             else:
-                raise ValueError(f"Unknown job type: {args.job_type}")
+                mode = "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"
+            
+            assert mode is not None, "Could not determine mode from job_type"
 
             analyzer.calculate_specialized_global_SHAP(
-                mode=mode, 
-                condition=None,
-                underlying_data="Unique-Binding"
+                mode=mode,
+                condition=condition,
+                underlying_data=underlying_data
             )
-            
+        
+        elif args.job_type.startswith("binding_vs_diff_events_fishers_FDR_"):
+            fdr_str = args.job_type.split("_")[-1]
+            fdr = float(fdr_str)
+
+            analyzer.binding_vs_diff_events_fishers_association(FDR_threshold=fdr)
+
+        elif args.job_type == "create_test_data_dpsi_vs_local_SHAP_scatterplot_data":
+            analyzer.plot_dpsi_vs_local_SHAP_for_test_data()
+
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
