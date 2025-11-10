@@ -8364,7 +8364,7 @@ class ShapNetworkInvestigator:
             for cell_line in combined_df["Cell Line"].unique():
                 df_cell = combined_df[combined_df["Cell Line"] == cell_line]
 
-                for feature in df_cell["Feature"].unique():
+                for feature in tqdm.tqdm(df_cell["Feature"].unique(), desc=f"{cell_line} features"):
 
                     # Prepare results dictionary for this feature
                     rbp, pos = self.get_RBP_position(feature)
@@ -8375,35 +8375,47 @@ class ShapNetworkInvestigator:
                         "Position": int(pos),
                     }
 
-                    # All Data
+                    # Aggregate metrics for multiple FDR thresholds using a loop to avoid repetition
                     df_feat = df_cell[df_cell["Feature"] == feature]
-                    result_row["# rMATS Events - All Data"] = len(df_feat)
-                    if len(df_feat) > 1:
-                        result_row["Pearson - All Data"], _ = pearsonr(df_feat["dPSI"], df_feat["CTRL - KD Local SHAP"])
-                        result_row["Spearman - All Data"], _ = spearmanr(df_feat["dPSI"], df_feat["CTRL - KD Local SHAP"])
-                    else:
-                        result_row["Pearson - All Data"] = np.nan
-                        result_row["Spearman - All Data"] = np.nan
 
-                    # FDR <= 0.1
-                    df_fdr_01 = df_feat[df_feat["rMATS FDR"] <= 0.1]
-                    result_row["# rMATS Events - FDR <= 0.1"] = len(df_fdr_01)
-                    if len(df_fdr_01) > 1:
-                        result_row["Pearson - FDR <= 0.1"], _ = pearsonr(df_fdr_01["dPSI"], df_fdr_01["CTRL - KD Local SHAP"])
-                        result_row["Spearman - FDR <= 0.1"], _ = spearmanr(df_fdr_01["dPSI"], df_fdr_01["CTRL - KD Local SHAP"])
-                    else:
-                        result_row["Pearson - FDR <= 0.1"] = np.nan
-                        result_row["Spearman - FDR <= 0.1"] = np.nan
+                    thresholds = [
+                        (1.0, "All Data"),
+                        (0.1, "FDR <= 0.1"),
+                        (0.05, "FDR <= 0.05"),
+                    ]
 
-                    # FDR <= 0.05
-                    df_fdr_005 = df_feat[df_feat["rMATS FDR"] <= 0.05]
-                    result_row["# rMATS Events - FDR <= 0.05"] = len(df_fdr_005)
-                    if len(df_fdr_005) > 1:
-                        result_row["Pearson - FDR <= 0.05"], _ = pearsonr(df_fdr_005["dPSI"], df_fdr_005["CTRL - KD Local SHAP"])
-                        result_row["Spearman - FDR <= 0.05"], _ = spearmanr(df_fdr_005["dPSI"], df_fdr_005["CTRL - KD Local SHAP"])
-                    else:
-                        result_row["Pearson - FDR <= 0.05"] = np.nan
-                        result_row["Spearman - FDR <= 0.05"] = np.nan
+                    for thr, label in thresholds:
+                        # rMATS rows for this threshold
+                        if thr == 1.0:
+                            df_thr = df_feat
+                        else:
+                            df_thr = df_feat[df_feat["rMATS FDR"] <= thr]
+
+                        # Model delta-prediction rows for this threshold
+                        dpred_thr = self.get_delta_prediction_data(FDR_threshold=thr).to_pandas()
+                        dpred_thr = dpred_thr[
+                            (dpred_thr["Cell Line"] == cell_line) &
+                            (dpred_thr["Feature"] == feature)
+                        ]
+
+                        # Counts
+                        result_row[f"# rMATS Events - {label}"] = len(df_thr)
+                        result_row[f"dPred | # rMATS Events - {label}"] = len(dpred_thr)
+
+                        # Correlations (require at least two points)
+                        if len(df_thr) > 1:
+                            result_row[f"Pearson - {label}"], _ = pearsonr(df_thr["dPSI"], df_thr["CTRL - KD Local SHAP"])
+                            result_row[f"Spearman - {label}"], _ = spearmanr(df_thr["dPSI"], df_thr["CTRL - KD Local SHAP"])
+                        else:
+                            result_row[f"Pearson - {label}"] = np.nan
+                            result_row[f"Spearman - {label}"] = np.nan
+
+                        if len(dpred_thr) > 1:
+                            result_row[f"dPred | Pearson - {label}"], _ = pearsonr(dpred_thr["dPSI"], dpred_thr["CTRL - KD Model Prediction (Probability)"])
+                            result_row[f"dPred | Spearman - {label}"], _ = spearmanr(dpred_thr["dPSI"], dpred_thr["CTRL - KD Model Prediction (Probability)"])
+                        else:
+                            result_row[f"dPred | Pearson - {label}"] = np.nan
+                            result_row[f"dPred | Spearman - {label}"] = np.nan
 
                     results.append(result_row)
 
