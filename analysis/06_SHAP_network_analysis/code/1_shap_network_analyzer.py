@@ -25,7 +25,7 @@ from waterfall_plot import waterfall
 
 
 @dataclass
-class ShapNetworkInvestigator:
+class FirstOrderShapInvestigator:
     PARAMS_DIR = "../../03_choose_dataset_and_model_parameters/output/model_reproduction/model_parameters/"
     MODEL_PICKLE_DIR = "../../04_run_final_models_and_SHAP/outputs/pickled_models/"
     CORRECTED_HAS_RBP_KD_DIR = "../../01_create_RBP_ML_input/4_create_num_peaks_ML_input/corrected_has_RBP_KD_output/"
@@ -9990,7 +9990,7 @@ if __name__ == "__main__":
     
     elif args.job_type: 
 
-        analyzer = ShapNetworkInvestigator()
+        analyzer = FirstOrderShapInvestigator()
 
         if args.job_type == "data_qc_assertions":
             analyzer.run_data_quality_assertions()
