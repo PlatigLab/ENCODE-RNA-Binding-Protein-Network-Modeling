@@ -206,15 +206,21 @@ class ShapNetworkInvestigator:
         "Differential Symbols": {
             "dPSI": r"$\Delta \Psi$ (CTRL-KD)",
             "CTRL - KD Local SHAP": r"$\Delta \varphi_{i}$ (CTRL-KD)",
-            
-        }
+            "dPred": r"$\Delta \hat{\Psi}$ (CTRL-KD)",
+        },
 
+        "PSI": {
+            "Predicted": r"$\hat{\Psi}$",
+            "Actual": r"$\Psi$",
+        },     
+              
     }
 
     FIGURES = {
         "predicted_vs_actual_PSI_plot": {
             "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
             "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
+            "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
         }, 
         "global_SHAP_distribution": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
@@ -5826,39 +5832,72 @@ class ShapNetworkInvestigator:
 
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
 
-        assert underlying_data in ["All-Data", "Unique-Binding"], "underlying_data must be 'All-Data' or 'Unique-Binding'"
+        assert underlying_data in ["All-Data", "Unique-Binding", "Delta"], "underlying_data must be 'All-Data', 'Unique-Binding', or 'Delta'"
 
         # Prepare data for all cell lines
         dfs = {}
         r2_scores = {}
         for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
-            pred_file = os.path.join(self.PRED_DIR, "XGBRegressor", f"{model_hash}.feather")
-            assert os.path.exists(pred_file), f"Prediction file not found: {pred_file}"
 
-            # Load all columns needed for partitioning and plotting
-            preds = pl.scan_ipc(pred_file).filter(pl.col("Partition") == "Test")
+            if underlying_data != "Delta":
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
 
-            if underlying_data == "Unique-Binding":
-                # Get all columns ending with "_binding"
-                binding_cols = [col for col in preds.collect_schema().names() if col.endswith("_binding")]
-                # Group by all binding columns and aggregate mean of Target_PSI and Predictions
-                preds = preds.group_by(binding_cols).agg(
-                    [
-                        pl.col("Target_PSI").mean().alias("Target_PSI"),
-                        pl.col("Predictions").mean().alias("Predictions"),
-                    ]
+                cell_line_lf = self.get_SHAP_data_as_lazyframe(
+                    cell_line
+                )[0] # Get the first SHAP lazyframe
+
+                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+                cell_line_df = cell_line_lf.filter(
+                    pl.col("Partition") == "Test"
+                ).select(non_shap_cols).sort('index').collect()
+
+                model_prediction_input = cell_line_df.select(
+                    [col for col in cell_line_df.columns if "_binding" in col]
+                ).to_pandas()
+                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch for model prediction input"
+
+                predictions = model.predict(model_prediction_input)
+                cell_line_df = cell_line_df.with_columns(
+                    pl.Series("Predictions", predictions)
                 )
 
-            preds = preds.select(["Predictions", "Target_PSI"]).collect()
+                del model_prediction_input
+                gc.collect()
 
-            y_true = preds["Target_PSI"].to_numpy()
-            y_pred = preds["Predictions"].to_numpy()
+                if underlying_data == "Unique-Binding":
+                    # Get all columns ending with "_binding"
+                    binding_cols = [col for col in cell_line_df.collect_schema().names() if col.endswith("_binding")]
+                    # Group by all binding columns and aggregate mean of Target_PSI and Predictions
+                    cell_line_df = cell_line_df.group_by(binding_cols).agg(
+                        [
+                            pl.col("Target_PSI").mean().alias("Target_PSI"),
+                            pl.col("Predictions").mean().alias("Predictions"),
+                        ]
+                    )
+                
+                x_col = "Target_PSI"
+                y_col = "Predictions"
+
+            elif underlying_data == "Delta":
+
+                cell_line_df = self.get_delta_prediction_data(
+                    FDR_threshold = 1.01
+                ).filter(
+                    pl.col("Cell Line") == cell_line
+                )
+
+                x_col = "dPSI"
+                y_col = "CTRL - KD Model Prediction (Probability)"
+
+            y_true = cell_line_df[x_col].to_numpy()
+            y_pred = cell_line_df[y_col].to_numpy()
             dfs[cell_line] = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
 
             # Calculate R2 score only for the "Test" partition
             r2_scores[cell_line] = r2_score(y_true, y_pred)
 
-            del preds
+            del cell_line_df
             gc.collect()
 
         # Set up a single figure with subplots for each cell line
@@ -5885,9 +5924,6 @@ class ShapNetworkInvestigator:
                 ha="center", va="top"
             )
 
-            # Add line from (0,1) to (0,1)
-            ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
-
             # ax_joint.set_ylabel("Predicted PSI", fontsize=12)
             ax_joint.set_title(f"{cell_line}", fontsize=18)
             # ax_joint.legend(fontsize=10, loc="upper left")
@@ -5896,7 +5932,6 @@ class ShapNetworkInvestigator:
             ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
             ax_histx.hist(df["y_true"], bins=50, color="#4682B4", alpha=0.7, density=True, edgecolor="black")
             sns.kdeplot(df["y_true"], color="orange", lw=1, ax=ax_histx)
-            ax_histx.set_xlim(0, 1)
             ax_histx.axis("off")
             # Move the axis slightly down
             pos = ax_histx.get_position()
@@ -5906,8 +5941,13 @@ class ShapNetworkInvestigator:
             ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
             ax_histy.hist(df["y_pred"], bins=50, color="#4682B4", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
             sns.kdeplot(df["y_pred"], color="orange", lw=1, ax=ax_histy, vertical=True)
-            ax_histy.set_ylim(0, 1)
             ax_histy.axis("off")
+
+            if underlying_data != "Delta":
+                ax_histx.set_xlim(0, 1)
+                ax_histy.set_ylim(0, 1)
+                # Add line from (0,1) to (0,1)
+                ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
 
         # Add a separate horizontal colorbar below each joint subplot
         for idx in range(n):
@@ -5931,9 +5971,16 @@ class ShapNetworkInvestigator:
             )
             cbar_ax.set_xlabel('Counts (log scale)', fontsize=12)
 
-        fig.suptitle(f"Test Partition: Actual vs Predicted PSI\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
-        fig.supxlabel("Actual PSI", fontsize=20, y=-0.07)
-        fig.supylabel("Predicted PSI", fontsize=20, x=0.06, y=0.4)
+        if underlying_data != "Delta": 
+            actual_label = self.latex_symbols["PSI"]["Actual"]
+            predicted_label = self.latex_symbols["PSI"]["Predicted"]
+        else: 
+            actual_label = self.latex_symbols["Differential Symbols"]["dPSI"]
+            predicted_label = self.latex_symbols["Differential Symbols"]["dPred"]
+
+        fig.suptitle(f"Test Partition: {actual_label} vs {predicted_label}\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
+        fig.supxlabel(actual_label, fontsize=26, y=-0.07)
+        fig.supylabel(predicted_label , fontsize=26, x=0.06, y=0.4)
         plt.tight_layout()
 
         plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
