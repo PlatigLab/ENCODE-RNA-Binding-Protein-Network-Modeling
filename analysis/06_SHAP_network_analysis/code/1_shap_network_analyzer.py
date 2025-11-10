@@ -9015,7 +9015,6 @@ class ShapNetworkInvestigator:
             _, pvals_corrected, _, _ = multipletests(results_df["P-Value"], method='fdr_bh')
             results_df["FDR"] = pvals_corrected
 
-            # Save to ~/tmp.tsv
             results_df.sort_values(
                 by=["Cell Line", "dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"]
             ).to_csv(self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode], sep="\t", index=False)
@@ -9060,7 +9059,7 @@ class ShapNetworkInvestigator:
                                         (df["Cell Line"] == cell_line) &
                                         (df["rMATS FDR"] <= fdr_thr) &
                                         (df["dPSI"].abs() >= dpsi_thr) &
-                                        (df["CTRL - KD Local SHAP"].abs() >= delta_thr)
+                                        (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
                                     ].copy(deep=True)
                                 
                                 # Get confusion matrix
@@ -9125,8 +9124,7 @@ class ShapNetworkInvestigator:
         else: 
             raise ValueError("across_thresholds must be True or False")
 
-
-    def summarize_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, data_mode=None):
+    def run_fishers_test_across_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, data_mode=None):
         assert data_mode in ["test", "test candidate features"], "data_mode must be 'test' or 'test candidate features'"
     
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode]
@@ -9150,10 +9148,10 @@ class ShapNetworkInvestigator:
         log10_odds_minmax = {}
         for cell_line in cell_lines:
             sub = results_df[results_df["Cell Line"] == cell_line]
-            vals = sub["Log10 Odds Ratio"].replace([np.inf, -np.inf], np.nan).dropna()
+            vals = sub["(A*D / B*C) Odds Ratio"].replace([np.inf, -np.inf], np.nan).dropna()
             log10_odds_minmax[cell_line] = (vals.min(), vals.max())
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.5 * nrows), dpi=300, squeeze=False, sharex=True, sharey=True)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.5 * nrows), dpi=600, squeeze=False, sharex=True, sharey=True)
 
         # Store the mappable objects for each row to use for a single colorbar per row
         row_mappables = []
@@ -9170,7 +9168,7 @@ class ShapNetworkInvestigator:
                 ].copy(deep=True)
 
                 # Build matrix using pivot for Log10 Odds Ratio
-                matrix_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="Log10 Odds Ratio")
+                matrix_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="(A*D / B*C) Odds Ratio")
                 # Ensure correct order of rows and columns
                 matrix_df = matrix_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
                 matrix = matrix_df.to_numpy()
@@ -9197,7 +9195,7 @@ class ShapNetworkInvestigator:
                     vmin=vmin,
                     vmax=vmax,
                     ax=ax,
-                    center=0,
+                    center=1,
                     cbar=False,
                     annot=True,
                     annot_kws={"fontsize": 16, "color": "black",},
@@ -9218,7 +9216,7 @@ class ShapNetworkInvestigator:
                     label.set_fontweight("bold")
                 
                 if row_idx == 0:
-                    ax.set_title(f"{DELTA_LOCAL_SHAP_SYMBOL} ≥ {delta_shap_thr}", fontsize=20)
+                    ax.set_title(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥ {delta_shap_thr}", fontsize=20)
 
                 if col_idx == 0:
                     ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=20)
@@ -9234,7 +9232,7 @@ class ShapNetworkInvestigator:
                                     0.02,  # width
                                     0.6 / nrows])  # height
             plt.colorbar(row_mappables[row_idx].collections[0], cax=cbar_ax)
-            cbar_ax.set_title("log10(OR)", fontsize=12)
+            cbar_ax.set_title("Odds Ratio", fontsize=12)
 
         if data_mode == "test candidate features":
             note = "TEST (CANDIDATE FEATURES IN-SILICO KD)"
@@ -9246,12 +9244,12 @@ class ShapNetworkInvestigator:
             f"NOTE 1: * = Fisher's FDR < {FISHERS_FDR_CUTOFF}\n"
             f"NOTE 2: Color scale comparable across row (Cell Line)\n"
             f"NOTE 3: Gray indicates 'NaN' or 'Inf'\n\n" 
-            f"{note}:\nlog10(Odds Ratio) for Fisher's Exact Test Between {DPSI_SYMBOL} Sign and {DELTA_LOCAL_SHAP_SYMBOL} Sign",
+            f"{note}:\nOdds Ratio for Fisher's Exact Test Between {DPSI_SYMBOL} Sign and {DELTA_LOCAL_SHAP_SYMBOL} Sign",
             fontsize=22, y=1.02, x=0.45
         )
         
         fig.supxlabel("FDR", fontsize=30, y=0.01, x=0.48, fontweight="bold")
-        fig.supylabel(f"{DPSI_SYMBOL}", fontsize=30, x=0, fontweight="bold")
+        fig.supylabel(f"|{DPSI_SYMBOL}|", fontsize=30, x=0, fontweight="bold")
         
         plt.tight_layout(rect=[0, 0, 0.88, 1])
         plt.show()
