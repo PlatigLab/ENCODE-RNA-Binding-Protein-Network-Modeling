@@ -9917,8 +9917,7 @@ if __name__ == "__main__":
         "shap_additivity_assertions", 
         "no_shap_variance_per_binding_pattern", 
         "create_final_shap_cache", 
-        "global_SHAP_5_dfs_all_data", 
-        "global_SHAP_5_dfs_unique_binding",
+        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data",
         "global_SHAP_5_dfs_average_all_data",
         "global_SHAP_5_dfs_average_unique_binding", 
         "specialized_global_shap_unsigned_bound", 
@@ -9935,7 +9934,6 @@ if __name__ == "__main__":
         "is_position_3_4_activating_and_others_repressing", 
         "binding_vs_diff_events_fishers_FDR_0.05", 
         "binding_vs_diff_events_fishers_FDR_0.1",
-        "create_test_data_dpsi_vs_local_SHAP_scatterplot_data",
         "arbs_narbs_bound", 
         "arbs_narbs_unbound", 
     ]
@@ -9970,7 +9968,7 @@ if __name__ == "__main__":
     
     elif args.parallelize:
 
-        sbatch_prefix = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
+        sbatch_prefix = "sbatch -N2 --partition=parallel -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
         logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
