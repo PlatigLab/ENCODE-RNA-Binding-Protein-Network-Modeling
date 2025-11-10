@@ -8207,58 +8207,62 @@ class ShapNetworkInvestigator:
             return ax, legend
 
     
-    def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None): 
-
+    def plot_dpsi_vs_local_SHAP_for_test_data(self, FDR_threshold = None, plot_metric=None): 
         OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
 
         if os.path.exists(OUTPUT_FILE):
+            assert plot_metric in ["CTRL - KD Local SHAP", "CTRL - KD Model Prediction (Probability)"], "plot_metric must be either 'CTRL - KD Local SHAP' or 'CTRL - KD Model Prediction (Probability)'"
             
             logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")
-            logger.info(f"Plotting dPSI vs Local SHAP scatterplots for test partition (FDR <= {FDR_threshold}) ...")          
+            logger.info(f"Plotting for test partition (FDR <= {FDR_threshold} and metric: {plot_metric})...")         
             
-            combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
+            if plot_metric == "CTRL - KD Local SHAP":
+                combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
 
-            if FDR_threshold is not None:
-                combined_df = combined_df[combined_df["rMATS FDR"] <= FDR_threshold]
+                if FDR_threshold is not None:
+                    combined_df = combined_df[combined_df["rMATS FDR"] <= FDR_threshold]
+            
+            elif plot_metric == "CTRL - KD Model Prediction (Probability)":
+                # Load pre-filtered data
+                combined_df = self.get_delta_prediction_data(FDR_threshold=FDR_threshold).to_pandas()
             
             colors =['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33']
-            for plot_metric in ["CTRL - KD Local SHAP", "Bound Local SHAP"]:
-                logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
-                
-                # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
-                fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=200, sharex=True, sharey=True)
-                for i, cell_line in enumerate(self.cell_lines):
+            logger.info(f"Plotting dPSI vs {plot_metric} scatterplots for test partition per position...")
+            
+            # First figure: 2 columns (cell lines), dPSI vs Local SHAP scatterplot
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=300, sharex=True, sharey=True)
+            for i, cell_line in enumerate(self.cell_lines):
 
+                self.plot_dpsi_vs_local_SHAP_scatterplot(
+                    df= combined_df[combined_df["Cell Line"] == cell_line],
+                    ax=axes[i],
+                    plot_metric=plot_metric,
+                    title=cell_line
+                )
+
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold})", fontsize=20, y=1.02)
+            plt.tight_layout()
+            plt.show()
+
+            # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
+            fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=300, sharex=True, sharey=True)
+            for pos in range(1, 7):
+                for i, cell_line in enumerate(self.cell_lines):
+                    df_cell_position = combined_df[
+                        (combined_df["Cell Line"] == cell_line) &
+                        (combined_df["Position"] == pos)
+                    ]
                     self.plot_dpsi_vs_local_SHAP_scatterplot(
-                        df= combined_df[combined_df["Cell Line"] == cell_line],
-                        ax=axes[i],
+                        df=df_cell_position,
+                        ax=axes[pos-1, i],
                         plot_metric=plot_metric,
-                        title=cell_line
+                        title=f"{cell_line} - Pos. {pos}",
+                        color=colors[pos-1]
                     )
 
-                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold})", fontsize=20, y=1.02)
-                plt.tight_layout()
-                plt.show()
-
-                # Second figure: 6 rows (positions) x 2 columns (cell lines), colored by position
-                fig, axes = plt.subplots(6, 2, figsize=(10, 30), dpi=200, sharex=True, sharey=True)
-                for pos in range(1, 7):
-                    for i, cell_line in enumerate(self.cell_lines):
-                        df_cell_position = combined_df[
-                            (combined_df["Cell Line"] == cell_line) &
-                            (combined_df["Position"] == pos)
-                        ]
-                        self.plot_dpsi_vs_local_SHAP_scatterplot(
-                            df=df_cell_position,
-                            ax=axes[pos-1, i],
-                            plot_metric=plot_metric,
-                            title=f"{cell_line} - Pos. {pos}",
-                            color=colors[pos-1]
-                        )
-
-                fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
-                plt.tight_layout()
-                plt.show()
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
+            plt.tight_layout()
+            plt.show()
 
         else: 
             
