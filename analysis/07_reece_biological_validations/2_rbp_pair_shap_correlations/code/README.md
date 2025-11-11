@@ -9,10 +9,10 @@
 - Compares correlations of RBP PPI pairs from the Street et al paper to any 2 random RBPs
 
 
-# data_path.txt
+## data_path.txt
 
 - File path to big table
 
-# Ignore 
+## Ignore 
 
 - Extracting PPI data from paper supplements
