@@ -40,4 +40,8 @@ Too many analyses to list here but in summary, this contains several analyses re
 
 **NOTE**: Non-`SHAP` analyses (`ElasticNet` and `Model Performance`) are also included here.
 
+📂 `07_reece_biological_validations/`: 
 
+Contains Reece's analyses:
+* Volcano plots to compare global shap at a position and dPSI
+* Correlations of local SHAP values in PPI and non-PPI pairs
