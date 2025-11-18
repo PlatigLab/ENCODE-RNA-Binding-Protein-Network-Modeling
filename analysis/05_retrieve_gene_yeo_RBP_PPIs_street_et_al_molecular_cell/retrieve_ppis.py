@@ -104,11 +104,33 @@ def create_interaction_table_from_publication_defined_ENCODE(df: pl.DataFrame, o
         interactions = set()
         for row in cell_line_df.iter_rows(named=True):
             protein_a, protein_b = row["Protein A"], row["Protein B"]
+
+            # Handle special case for U2AF1 where they made a mistake in the naming
+            if ';' in protein_a: 
+                protein_a = protein_a.split(';')[1].strip()
+                assert protein_a == "U2AF1", f"Unexpected protein name after splitting: {protein_a}"
+            if ';' in protein_b:
+                protein_b = protein_b.split(';')[1].strip()
+                assert protein_b == "U2AF1", f"Unexpected protein name after splitting: {protein_b}"
+            
             # Sort the proteins alphabetically and add as a tuple
-            interactions.add(tuple(sorted((protein_a, protein_b))))
+            interactions.add(
+                tuple(
+                    sorted(
+                        (protein_a.lower(), protein_b.lower())
+                        )
+                    )
+            )
 
         # Add the interactions to the dictionary under the cell line
         interaction_dict[cell_line] = interactions
+
+    # Sort interactions for each cell line
+    for cell_line in interaction_dict:
+        interaction_dict[cell_line] = sorted(
+            interaction_dict[cell_line],
+            key=lambda x: (x[0], x[1])
+        )
 
     # Save the interaction dictionary as a JSON file
     with open(output_file, "w") as f:
