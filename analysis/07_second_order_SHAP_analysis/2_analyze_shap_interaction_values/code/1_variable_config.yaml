@@ -1,0 +1,31 @@
+CELL_LINES: ["HepG2", "K562"]
+
+# UBP IDs and Interaction Values
+UBP_ID_DIR: ../../1_generate_shap_interaction_values/outputs/ubp_id_tables/
+INTERACTION_VALUES_DIR: ../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/
+
+# PPI Info 
+PPI_INFO: 
+    cached_ppi_file: "../outputs/ppi_info/all_ppis.tsv"
+    
+    recy2h_ppi_dir: 
+        all_rbps_screened: "../../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx"
+        results: "../../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx"
+        uniprot_mapping: "../../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv"
+
+    street_et_al: 
+        all_rbps_screened: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s1_ip_ms_baits.xlsx"
+        table_s2_full_results: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s2_full_ppi.csv"
+        table_s3_output: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/OUTPUT_street_et_al_gene_yeo_molecular_cell_table_s3_encode_rbps.json"
+
+# Feature & RBP Info
+RBP_FEATURE_INFO_FILE: "../outputs/feature_info/rbp_feature_info.json"
+
+# Valid feature metrics that can be calculated
+VALID_FEATURE_METRICS: [
+    "Global-SHAP",
+    "Bound-Only",
+    "NOT-Bound-Only",
+    "Signed-Local-SHAP-Mean-Bound-Only",
+    "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+]
