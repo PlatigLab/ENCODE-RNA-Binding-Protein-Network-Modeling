@@ -521,3 +521,93 @@ class SecondOrderShapNetworkAnalyzer:
         logger.success(f"COMPLETED: Calculated '{metric}' for '{cell_line}' from column {start} to {stop}. Results saved to '{output_filename}'.")
 
 
+
+#########################################################################################################################
+# Non-class functions
+#########################################################################################################################
+
+
+def return_parallelization_start_stop(columns, config): 
+    cols_per_job = config["COLS_PER_JOB"]
+    num_columns = len(columns)
+    
+    chunks = []
+    for i in range(0, num_columns, cols_per_job):
+        start = i + 1  # 1-indexed, inclusive
+        stop = min(i + cols_per_job, num_columns)  # inclusive
+        chunks.append((start, stop))
+
+    expected_num_chunks = (num_columns // cols_per_job) + (1 if num_columns % cols_per_job != 0 else 0)
+    assert len(chunks) == expected_num_chunks, f"Expected {expected_num_chunks} chunks, got {len(chunks)}"
+
+    return chunks
+
+
+if __name__ == "__main__":
+
+    with open('./1_variable_config.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+
+    parser = argparse.ArgumentParser(description="Second Order SHAP Analysis")
+    parser.add_argument("--cell_line", choices=config["CELL_LINES"], help="Cell line to analyze")
+    parser.add_argument("--metric", choices=config["VALID_FEATURE_METRICS"], help="Metric to calculate")
+    parser.add_argument("--start", type=int, help="Start column (1-indexed, inclusive)")
+    parser.add_argument("--stop", type=int, help="Stop column (1-indexed, inclusive)")
+    parser.add_argument(
+        "--parallelize_metric_calc",
+        choices=config["VALID_FEATURE_METRICS"],
+        help="Metric to parallelize over (must be a valid metric)"
+    )
+    parser.add_argument(
+        "--parallelize_all_metric_calcs", 
+        action="store_true",
+        help="If set, will parallelize metric calculations for all metrics and cell lines."
+    )
+
+    args = parser.parse_args()
+
+    def parallelize_metric_calculation(config, args): 
+        analyzer = SecondOrderShapNetworkAnalyzer()
+
+        for cell_line in config["CELL_LINES"]:
+            features = analyzer.rbp_feature_metadata[cell_line]["Features"]
+            chunks = return_parallelization_start_stop(features, config)
+
+            counter = 0
+            for start, stop in chunks:
+                sbatch_prefixes = config["SBATCH_PREFIXES"]
+
+                standard_to_parallel_ratio = 2  # 2:1 ratio for 66%/33%
+                # Use standard_to_parallel_ratio to determine prefix: 2 out of 3 times use [0], 1 out of 3 times use [1]
+                prefix = sbatch_prefixes[0] if (counter % (standard_to_parallel_ratio + 1)) < standard_to_parallel_ratio else sbatch_prefixes[1]
+                
+                cmd = (
+                    f"{prefix} --output='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.out' "
+                    f"--error='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.err' "
+                    f"--wrap \"python3.11 {__file__} "
+                    f"--cell_line {cell_line} "
+                    f"--metric {args.parallelize_metric_calc} "
+                    f"--start {start} "
+                    f"--stop {stop}\""
+                )
+                os.system(cmd)
+                counter += 1
+
+    if args.parallelize_metric_calc:
+        parallelize_metric_calculation(config, args)
+    
+    elif args.parallelize_all_metric_calcs:
+        
+        for metric in config["VALID_FEATURE_METRICS"]:
+            args.parallelize_metric_calc = metric
+            parallelize_metric_calculation(config, args)
+    
+    elif args.metric and args.cell_line and args.start and args.stop:
+        
+        analyzer = SecondOrderShapNetworkAnalyzer()
+        analyzer.calculate_metrics_for_column_range(
+            cell_line=args.cell_line,
+            metric=args.metric,
+            start=args.start,
+            stop=args.stop
+        )
