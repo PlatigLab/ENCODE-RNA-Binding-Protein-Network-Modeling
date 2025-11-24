@@ -573,7 +573,15 @@ class SecondOrderShapNetworkAnalyzer:
 
         if OUTPUT_FILE.exists():
             logger.success(f"FROM CACHE: loading '{metric}' values from '{OUTPUT_FILE}'...")
-            return pl.read_csv(OUTPUT_FILE, separator="\t")
+            table = pl.read_csv(OUTPUT_FILE, separator="\t")
+            for col in table.columns:
+                if col.lower().startswith("position"):
+                    table = table.with_columns(pl.col(col).cast(pl.UInt8))
+                if col.startswith("# UBPs - "):
+                    table = table.with_columns(pl.col(col).cast(pl.UInt32))
+            
+            return table
+
 
         else:
             logger.info(f"SHAP avg file for '{metric}' not found. Aggregating cached metric files...")
@@ -649,6 +657,11 @@ class SecondOrderShapNetworkAnalyzer:
                 assert n_columns == n_features, (
                     f"Cell line '{cell_line}' has {n_columns} columns in results but {n_features} features in metadata."
                 )   
+
+            df = df.with_columns([
+                pl.col("RBP 1").str.to_uppercase(),
+                pl.col("RBP 2").str.to_uppercase()
+            ])
 
             df.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"SUCCESS: SHAP average file for '{metric}' saved to '{OUTPUT_FILE}'.")
