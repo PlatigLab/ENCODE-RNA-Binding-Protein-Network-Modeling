@@ -20,10 +20,9 @@ class SecondOrderShapNetworkAnalyzer:
             self.CONFIG = yaml.safe_load(file)
 
         self.load_features()
-        #TODO uncomment later
-        # self.load_ppi()
+        self.load_ppi()
 
-        logger.info("Class initialized and loaded.")
+        logger.success("Class initialized and loaded.")
 
 
     def load_features(self):
@@ -56,7 +55,6 @@ class SecondOrderShapNetworkAnalyzer:
             json.dump(rbp_feature_metadata, f, indent=4)
 
         self.rbp_feature_metadata = rbp_feature_metadata
-        logger.success("SUCCESS: Feature & RBP info loaded.")
 
 
     def load_ppi(self):
@@ -64,8 +62,9 @@ class SecondOrderShapNetworkAnalyzer:
         OUTPUT_FILE = self.CONFIG["PPI_INFO"]["cached_ppi_file"]
 
         if pathlib.Path(OUTPUT_FILE).exists(): 
-            raise NotImplementedError("Loading cached PPI file not yet implemented.")
-        
+            logger.success(f"FROM CACHE: loading PPI table from '{OUTPUT_FILE}'...")
+            self.ppi = pl.read_csv(OUTPUT_FILE, separator="\t")
+
         else:
             logger.info("Cached PPI file not found. Generating PPI table for both Rec-Y2H and Street et al. Molecular Cell 2024 datasets...")
 
@@ -74,7 +73,6 @@ class SecondOrderShapNetworkAnalyzer:
             recy2h_ppi_table = self.load_rec_y2h_ppi()
 
             #TODO impement Street et al. later
-
             final_ppi_table = recy2h_ppi_table
             # self.create_protein_synonym_lookup_table(mode="street_et_al")
             # street_et_al_ppi_table = self.load_street_et_al_ppi()
@@ -86,7 +84,11 @@ class SecondOrderShapNetworkAnalyzer:
             #     how="outer"
             # )
 
-            final_ppi_table.to_csv(
+            final_ppi_table["Interaction"] = final_ppi_table["Interaction"].str.upper()
+            
+            final_ppi_table.sort_values(
+                by=["Interaction"]
+            ).to_csv(
                 OUTPUT_FILE,
                 sep="\t",
                 index=False
