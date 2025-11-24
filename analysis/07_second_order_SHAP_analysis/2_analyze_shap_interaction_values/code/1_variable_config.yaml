@@ -25,10 +25,10 @@ RBP_FEATURE_INFO_FILE: "../outputs/feature_info/rbp_feature_info.json"
 
 # Valid feature metrics that can be calculated
 VALID_FEATURE_METRICS: [
-    "Global-SHAP",
-    "Bound-Only",
-    "NOT-Bound-Only",
     "Signed-Local-SHAP-Mean-Bound-Only",
+    "Bound-Only",
+    "Global-SHAP",
+    "NOT-Bound-Only",
     "Signed-Local-SHAP-Mean-NOT-Bound-Only"
 ]
 TMP_CACHE_DIR: "../TMP_CACHE/"
@@ -36,6 +36,11 @@ COLS_PER_JOB: 500
 
 # SLURM Batch Prefixes
 SBATCH_PREFIXES: [
-    "sbatch --account=platiglab --partition=standard -n4 --mem=32GB", 
-    "sbatch --account=platiglab --partition=parallel -N2 -n4 --mem=16GB",
+    "sbatch --account=platiglab --partition=standard -n8 --mem=64GB", 
+    "sbatch --account=platiglab --partition=parallel -N2 -n8 --mem=32GB",
 ]
+
+# SHAP cache dirctories
+
+# SHAP averages 
+SHAP_AVG_DIR: "../outputs/SHAP_cache/averages/"
