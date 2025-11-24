@@ -324,6 +324,16 @@ class SecondOrderShapNetworkAnalyzer:
             return tuple(sorted([feature + suffix for feature in feature_names]))
     
     
+    def split_rbp_position(self, individual_feature): 
+        
+        splitter = individual_feature.split("_")
+        assert len(splitter) >= 2, f"Feature name '{individual_feature}' does not split into RBP and position."
+        assert splitter[1].isdigit() and 1 <= int(splitter[1]) <= 6, f"Second element '{splitter[1]}' is not an integer between 1 and 6 inclusive."    
+
+        # return rbp and position as int
+        return splitter[0], int(splitter[1])
+    
+    
     def get_binding_val_from_metric(self, metric=None):
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized. Valid metrics are: {self.CONFIG['VALID_FEATURE_METRICS']}"
         assert metric != "Global-SHAP", "Global-SHAP metric does not correspond to a binding value."
@@ -465,7 +475,12 @@ class SecondOrderShapNetworkAnalyzer:
         assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
         assert start >= 1 and stop > start, "Start must be >= 1 and stop must be > start."
-        assert (stop - start + 1) == self.CONFIG["COLS_PER_JOB"], f"Column range size must equal COLS_PER_JOB ({self.CONFIG['COLS_PER_JOB']})."
+        
+        num_features = len(self.rbp_feature_metadata[cell_line]["Features"])
+        if not ((stop - start + 1) == self.CONFIG["COLS_PER_JOB"] or stop == num_features):
+            raise AssertionError(
+                f"Column range size must equal COLS_PER_JOB ({self.CONFIG['COLS_PER_JOB']}) unless this is the last chunk ending at the total number of features ({num_features})."
+            )
 
         features = self.rbp_feature_metadata[cell_line]["Features"]
         
