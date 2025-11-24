@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from loguru import logger
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 from tqdm import tqdm
+from itertools import combinations
 
 
 @dataclass
@@ -223,38 +224,66 @@ class SecondOrderShapNetworkAnalyzer:
 
     
     def load_rec_y2h_ppi(self): 
-        # Rec-Y2H PPI info
-        recy2h_results = self.CONFIG["PPI_INFO"]["recy2h_ppi_dir"]["results"]
+        logger.info("Creating rec-Y2H PPI table... ")
+        logger.warning("REMINDER: Rec-Y2H paper sampled ~98-99% of the entire 2-way RBP interactome but we are assuming that everything is tested and hence, if it is not significantly interacting, it is 'False'.")
 
-        # load all rec-Y2H screening results
+        # Load all RBPs screened for recy2h
+        all_rbps_screened_path = self.CONFIG["PPI_INFO"]["recy2h_ppi_dir"]["all_rbps_screened"]
+        all_rbps_screened = pd.read_excel(all_rbps_screened_path)
+        all_rbps = all_rbps_screened["Gene Symbol"].str.lower().unique().tolist()
+
+        # Generate all possible two-way combinations (sorted, no self-pairs)
+        rbp_pairs = [tuple(sorted(pair)) for pair in combinations(all_rbps, 2)]
+
+        # Load recy2h results and filter by sumIS >= 7.1
+        recy2h_results = self.CONFIG["PPI_INFO"]["recy2h_ppi_dir"]["results"]
         recy2h_df = pd.read_excel(recy2h_results)
-        # use threshold of sumIS >= 7.1 as in original paper
         recy2h_df = recy2h_df[recy2h_df["sumIS"] >= 7.1]
         recy2h_df["Protein A"] = recy2h_df["Protein A"].str.lower()
         recy2h_df["Protein B"] = recy2h_df["Protein B"].str.lower()
 
-        # Go through each interaction in rec-Y2H and if we have both proteins in our eCLIP data, add to final PPI table
-        recy2h_ppi_table = []
+        # Build lookup table: for each RBP, set of RBPs it interacts with
+        interaction_lookup = {}
         for _, row in recy2h_df.iterrows():
-            prot_a = row["Protein A"]
-            prot_b = row["Protein B"]
+            a, b = sorted([row["Protein A"], row["Protein B"]])
+            if a not in interaction_lookup:
+                interaction_lookup[a] = set()
 
+            interaction_lookup[a].add(b)
+            
+            # Also add reverse for completeness
+            if b not in interaction_lookup:
+                interaction_lookup[b] = set()
+            
+            interaction_lookup[b].add(a)
+
+        # For all pairs, check interaction and eCLIP status per cell line
+        recy2h_ppi_table = []
+
+        for rbp1, rbp2 in rbp_pairs:
+            # Check if interaction exists in lookup table
+            interacts = False
+            if rbp1 in interaction_lookup and rbp2 in interaction_lookup[rbp1]:
+                interacts = True
+                assert rbp2 in interaction_lookup and rbp1 in interaction_lookup[rbp2], "Interaction lookup table inconsistent."
+            elif rbp2 in interaction_lookup and rbp1 in interaction_lookup[rbp2]:
+                interacts = True
+                assert rbp1 in interaction_lookup and rbp2 in interaction_lookup[rbp1], "Interaction lookup table inconsistent."
+
+            # For each cell line, check if both RBPs have eCLIP
+            both_eclip = {}
             for cell_line in self.CONFIG["CELL_LINES"]:
+                both_eclip[cell_line] = (rbp1.upper() in self.rbp_feature_metadata[cell_line]["RBPs"]) and (rbp2.upper() in self.rbp_feature_metadata[cell_line]["RBPs"])
 
-                syn_a = self.protein_synonym_lookup[cell_line][prot_a]
-                syn_b = self.protein_synonym_lookup[cell_line][prot_b]
-
-                # Only include if both synonyms are found
-                if syn_a is not None and syn_b is not None:
-
-                    rbps_sorted = sorted([syn_a, syn_b])
-                    interaction = f"{rbps_sorted[0]}-{rbps_sorted[1]}"
-
-                    recy2h_ppi_table.append({
-                        "Cell Line": cell_line,
-                        "Interaction": interaction,
-                        "rec-Y2H | Table S2": True, 
-                    })
+            interaction = f"{rbp1}-{rbp2}"
+            row = {
+                "Interaction": interaction,
+                "rec-Y2H | Table S2": interacts,
+            }
+            # Add columns for each cell line
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                row[f"Both eCLIP - {cell_line}"] = both_eclip[cell_line]
+            recy2h_ppi_table.append(row)
 
         recy2h_ppi_table = pd.DataFrame(recy2h_ppi_table)
         return recy2h_ppi_table
