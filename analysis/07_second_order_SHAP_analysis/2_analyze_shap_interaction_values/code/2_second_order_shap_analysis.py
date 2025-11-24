@@ -286,3 +286,104 @@ class SecondOrderShapNetworkAnalyzer:
     #     street_et_al_ppi_table = pd.DataFrame(street_et_al_ppi_table)
     #     return street_et_al_ppi_table
 
+
+    def manually_set_num_tasks(self): 
+        return 4
+    
+
+    def is_interaction_or_main_effect(self, column=None):
+
+        assert column.endswith("-shap"), f"Feature name '{column}' must end with '-shap'."
+        
+        if column.endswith("-main-shap"): 
+            return "main"
+        elif column.endswith("-interaction-shap"):
+            return "interaction"
+        else:
+            raise ValueError(f"Feature name '{column}' not recognized as main effect or interaction feature.")
+
+
+    def get_rbp_position_from_column(self, column=None, binding_fmt=None): 
+        assert column.endswith("-shap"), f"Feature name '{column}' must end with '-shap'."
+        assert binding_fmt in [True, False,], "binding_fmt must be either True or False."
+        
+        if binding_fmt:
+            suffix = "_binding"
+        elif not binding_fmt:
+            suffix = ""
+
+        effect_type = self.is_interaction_or_main_effect(column)
+        
+        if effect_type == "main":
+            return column.replace("-main-shap", suffix)
+        
+        elif effect_type == "interaction":
+            feature_names = column.replace("-interaction-shap", "").split("-")
+            assert len(feature_names) == 2, f"Interaction feature name '{column}' does not split into two RBP names."
+            
+            return tuple(sorted([feature + suffix for feature in feature_names]))
+    
+    
+    def get_binding_val_from_metric(self, metric=None):
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized. Valid metrics are: {self.CONFIG['VALID_FEATURE_METRICS']}"
+        assert metric != "Global-SHAP", "Global-SHAP metric does not correspond to a binding value."
+        
+        if "NOT-Bound" in metric:
+            return 0
+        elif "Bound" in metric:
+            return 1
+        else:
+            raise ValueError(f"Metric '{metric}' does not correspond to a binding value.")
+        
+
+    def retrieve_UBP_ids_for_metric(self, cell_line=None, column=None, metric=None): 
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized. Valid metrics are: {self.CONFIG['VALID_FEATURE_METRICS']}"
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized. Valid cell lines are: {self.CONFIG['CELL_LINES']}"
+        assert column.endswith("-shap"), "Column name must end with '-shap'."
+
+        path = f'{self.CONFIG["UBP_ID_DIR"]}/{cell_line}_unique_binding_pattern_ID_reference_table.tsv.gz'
+
+        ubp_id_lf = pl.scan_csv(
+            path, 
+            separator="\t",
+        )
+
+        if "Bound" in metric: 
+            effect_type = self.is_interaction_or_main_effect(column)
+            binding_cols = self.get_rbp_position_from_column(
+                column = column, 
+                binding_fmt = True
+            )
+            
+            binding_val = self.get_binding_val_from_metric(metric)
+            
+            if effect_type == "main":
+
+                subset = ubp_id_lf.select(
+                    [self.CONFIG["UBP_COL_NAME"], binding_cols]
+                ).filter(
+                    # single column
+                    pl.col(binding_cols) == binding_val
+                )
+            elif effect_type == "interaction":
+                subset = ubp_id_lf.select(
+                    [self.CONFIG["UBP_COL_NAME"]] + list(binding_cols)
+                ).filter(
+                    (pl.col(binding_cols[0]) == binding_val) & 
+                    (pl.col(binding_cols[1]) == binding_val)
+                )
+        
+        elif metric== "Global-SHAP": 
+            subset = ubp_id_lf.select(
+                [self.CONFIG["UBP_COL_NAME"]]
+            )
+
+        else: 
+            raise ValueError(f"Metric '{metric}' not recognized.")
+        
+        unique_ids = subset.collect()[self.CONFIG["UBP_COL_NAME"]].to_list()
+        if len(unique_ids) != len(set(unique_ids)):
+            raise ValueError(f"Duplicate values found in {self.CONFIG['UBP_COL_NAME']} for cell line '{cell_line}', column '{column}', metric '{metric}'.")
+        
+        return unique_ids
+        
