@@ -536,6 +536,94 @@ class SecondOrderShapNetworkAnalyzer:
         logger.success(f"COMPLETED: Calculated '{metric}' for '{cell_line}' from column {start} to {stop}. Results saved to '{output_filename}'.")
 
 
+    def retrieve_shap_values_for_metric(self, metric = None): 
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+        OUTPUT_FILE = pathlib.Path(self.CONFIG["SHAP_AVG_DIR"]) / f"{metric}.tsv"
+
+        if OUTPUT_FILE.exists():
+            logger.success(f"FROM CACHE: loading '{metric}' values from '{OUTPUT_FILE}'...")
+            return pl.read_csv(OUTPUT_FILE, separator="\t")
+
+        else:
+            logger.info(f"SHAP avg file for '{metric}' not found. Aggregating cached metric files...")
+            
+            # Check that all expected cache files exist before aggregation
+            missing_files = []
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                features = self.rbp_feature_metadata[cell_line]["Features"]
+                chunks = return_parallelization_start_stop(features, self.CONFIG)
+
+                for start, stop in chunks:
+                    output_filename = f"{self.CONFIG['TMP_CACHE_DIR']}/{metric}_{cell_line}_{start}_{stop}.json"
+                    if not pathlib.Path(output_filename).exists():
+                        missing_files.append(output_filename)
+
+            if missing_files:
+                raise FileNotFoundError(f"Missing cache files: {missing_files}")
+
+            # Proceed with aggregation after confirming all files exist
+            results = []
+            cache_files = sorted(glob.glob(f"{self.CONFIG['TMP_CACHE_DIR']}/{metric}_*.json"))
+
+            for cache_file in cache_files:
+                with open(cache_file, "r") as f:
+                    data = json.load(f)
+                # Assert metric is the only key
+                assert list(data.keys()) == [metric], f"Expected only metric key in {cache_file}"
+
+                for cell_line, columns in data[metric].items():
+                    for column, vals in columns.items():
+                        num_ubps = vals["# UBPs"]
+                        value = vals["Value"]
+
+                        col_type = self.is_interaction_or_main_effect(column)
+                        rbp_info = self.get_rbp_position_from_column(column, binding_fmt=False)
+
+                        if col_type == "main":
+                            rbp1, pos1 = self.split_rbp_position(rbp_info)
+                            rbp2, pos2 = None, None
+
+                        elif col_type == "interaction":
+                            (f1, f2) = rbp_info
+                            rbp1, pos1 = self.split_rbp_position(f1)
+                            rbp2, pos2 = self.split_rbp_position(f2)
+
+                        else: 
+                            raise ValueError(f"Column type '{col_type}' not recognized.")
+
+                        results.append({
+                            "Cell Line": cell_line,
+                            "Column": column,
+                            "Column Type": col_type,
+                            "RBP 1": rbp1,
+                            "Position 1": pos1,
+                            "RBP 2": rbp2,
+                            "Position 2": pos2,
+                            f"# UBPs - {metric}": num_ubps,
+                            f"Value - {metric}": value
+                        })
+
+            df = pl.DataFrame(results)
+            df = df.sort(["Cell Line", "RBP 1", "Position 1", "RBP 2", "Position 2"])
+
+            # Check for duplicates in ("Cell Line", "Column")
+            dupes = df.group_by(["Cell Line", "Column"]).len(name="count").filter(pl.col("count") > 1)
+            if dupes.height > 0:
+                raise ValueError(f"Duplicate (Cell Line, Column) pairs found: {dupes}")
+
+            # For each cell line, check number of columns matches number of features
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                n_features = len(self.rbp_feature_metadata[cell_line]["Features"])
+                n_columns = df.filter(pl.col("Cell Line") == cell_line)["Column"].n_unique()
+                assert n_columns == n_features, (
+                    f"Cell line '{cell_line}' has {n_columns} columns in results but {n_features} features in metadata."
+                )   
+
+            df.write_csv(OUTPUT_FILE, separator="\t")
+            logger.success(f"SUCCESS: SHAP average file for '{metric}' saved to '{OUTPUT_FILE}'.")
+
+
+
 
 #########################################################################################################################
 # Non-class functions
