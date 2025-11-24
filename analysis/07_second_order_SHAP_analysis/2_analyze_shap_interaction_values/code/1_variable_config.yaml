@@ -2,6 +2,9 @@ CELL_LINES: ["HepG2", "K562"]
 
 # UBP IDs and Interaction Values
 UBP_ID_DIR: "../../1_generate_shap_interaction_values/outputs/ubp_ID_tables/"
+UBP_COL_NAME: "Unique Binding Pattern ID #"
+
+INTERACTION_VALUES_DIR: "../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/"
 
 # PPI Info 
 PPI_INFO: 
@@ -27,4 +30,12 @@ VALID_FEATURE_METRICS: [
     "NOT-Bound-Only",
     "Signed-Local-SHAP-Mean-Bound-Only",
     "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+]
+TMP_CACHE_DIR: "../TMP_CACHE/"
+COLS_PER_JOB: 500
+
+# SLURM Batch Prefixes
+SBATCH_PREFIXES: [
+    "sbatch --account=platiglab --partition=standard -n4 --mem=32GB", 
+    "sbatch --account=platiglab --partition=parallel -N2 -n4 --mem=16GB",
 ]
