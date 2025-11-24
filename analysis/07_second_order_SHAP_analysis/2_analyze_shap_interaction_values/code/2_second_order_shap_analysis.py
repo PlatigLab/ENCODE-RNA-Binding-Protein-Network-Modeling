@@ -646,7 +646,12 @@ def return_parallelization_start_stop(columns, config):
     return chunks
 
 
-if __name__ == "__main__":
+def is_file_cached(metric, cell_line, start, stop, config):
+    output_filename = f"{config['TMP_CACHE_DIR']}/{metric}_{cell_line}_{start}_{stop}.json"
+    return pathlib.Path(output_filename).exists()
+
+
+if __name__ == "__main__": 
 
     with open('./1_variable_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
@@ -678,23 +683,25 @@ if __name__ == "__main__":
 
             counter = 0
             for start, stop in chunks:
-                sbatch_prefixes = config["SBATCH_PREFIXES"]
-
-                standard_to_parallel_ratio = 2  # 2:1 ratio for 66%/33%
-                # Use standard_to_parallel_ratio to determine prefix: 2 out of 3 times use [0], 1 out of 3 times use [1]
-                prefix = sbatch_prefixes[0] if (counter % (standard_to_parallel_ratio + 1)) < standard_to_parallel_ratio else sbatch_prefixes[1]
                 
-                cmd = (
-                    f"{prefix} --output='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.out' "
-                    f"--error='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.err' "
-                    f"--wrap \"python3.11 {__file__} "
-                    f"--cell_line {cell_line} "
-                    f"--metric {args.parallelize_metric_calc} "
-                    f"--start {start} "
-                    f"--stop {stop}\""
-                )
-                os.system(cmd)
-                counter += 1
+                if not is_file_cached(args.parallelize_metric_calc, cell_line, start, stop, config):
+                    sbatch_prefixes = config["SBATCH_PREFIXES"]
+
+                    standard_to_parallel_ratio = 2  # 2:1 ratio for 66%/33%
+                    # Use standard_to_parallel_ratio to determine prefix: 2 out of 3 times use [0], 1 out of 3 times use [1]
+                    prefix = sbatch_prefixes[0] if (counter % (standard_to_parallel_ratio + 1)) < standard_to_parallel_ratio else sbatch_prefixes[1]
+                    
+                    cmd = (
+                        f"{prefix} --output='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.out' "
+                        f"--error='../SLURM_logs/{args.parallelize_metric_calc}_{cell_line}_{start}_{stop}.err' "
+                        f"--wrap \"python3.11 {__file__} "
+                        f"--cell_line {cell_line} "
+                        f"--metric {args.parallelize_metric_calc} "
+                        f"--start {start} "
+                        f"--stop {stop}\""
+                    )
+                    os.system(cmd)
+                    counter += 1
 
     if args.parallelize_metric_calc:
         parallelize_metric_calculation(config, args)
