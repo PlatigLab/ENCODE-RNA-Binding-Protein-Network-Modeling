@@ -387,3 +387,137 @@ class SecondOrderShapNetworkAnalyzer:
         
         return unique_ids
         
+
+    def calculate_metric_for_column(self, cell_line=None, column=None, metric=None): 
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized. Valid metrics are: {self.CONFIG['VALID_FEATURE_METRICS']}"
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized. Valid cell lines are: {self.CONFIG['CELL_LINES']}"
+        assert column.endswith("-shap"), "Feature name must end with '-shap'."
+
+        ubp_ids = self.retrieve_UBP_ids_for_metric(
+            cell_line=cell_line,
+            column=column,
+            metric=metric
+        )
+
+        # No UBP ids found for this metric
+        if len(ubp_ids) == 0:
+            logger.warning(
+                f"NOTE: No UBPs for '{metric}' on '{column}' in cell line '{cell_line}'."
+            )
+            final_value = float("nan")
+
+        else: 
+
+            interaction_values_files = sorted(
+                glob.glob(
+                    f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
+                )
+            )
+
+            # Use polars to scan the feather files and select only the required columns
+            lf = pl.scan_ipc(interaction_values_files).select(
+                [self.CONFIG["UBP_COL_NAME"], column]
+            ).filter(
+                pl.col(self.CONFIG["UBP_COL_NAME"]).is_in(ubp_ids)
+            )
+
+            # Check for duplicate UBP IDs and that all of them were pulled correctly
+            all_ubp_ids = lf.select(self.CONFIG["UBP_COL_NAME"]).collect()[self.CONFIG["UBP_COL_NAME"]].to_list()
+            if len(all_ubp_ids) != len(set(all_ubp_ids)):
+                raise ValueError(f"Duplicate UBP IDs found in the filtered data for cell line '{cell_line}', column '{column}', metric '{metric}'.")
+            assert sorted(all_ubp_ids) == sorted(ubp_ids), "Mismatch between retrieved UBP IDs and those in the filtered data."
+
+            if metric.startswith("Signed-"):
+                final_value = lf.select(
+                        pl.col(column).mean()
+                    ).collect().item()
+                    
+            else: 
+                final_value = lf.select(
+                    pl.col(column).abs().mean()
+                ).collect().item()
+            
+        return {
+                metric: {
+                    cell_line: {
+                        column: {
+                            "Value": final_value,
+                            "# UBPs": len(ubp_ids)
+                        }
+                    }
+                }
+            }
+
+    
+    def calculate_metrics_for_column_range(self, cell_line=None, metric=None, start=None, stop=None, ):
+        """
+        Calculates the metric for a range of columns for a given cell line using parallel processing.
+
+        Args:
+            cell_line (str): The cell line to use.
+            metric (str): The metric to calculate.
+            start (int): 1-indexed start position in the column list (inclusive).
+            stop (int): 1-indexed stop position in the column list (inclusive).
+
+        Returns:
+            List of results from calculate_metric_for_column for each column.
+        """
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+        assert start >= 1 and stop > start, "Start must be >= 1 and stop must be > start."
+        assert (stop - start + 1) == self.CONFIG["COLS_PER_JOB"], f"Column range size must equal COLS_PER_JOB ({self.CONFIG['COLS_PER_JOB']})."
+
+        features = self.rbp_feature_metadata[cell_line]["Features"]
+        
+        # Convert 1-indexed to 0-indexed python slice
+        selected_features = features[start-1:stop]
+        assert len(selected_features) == (stop - start + 1), "Selected features length mismatch."
+        assert len(selected_features) == len(set(selected_features)), "Duplicate features found in selected range."
+
+        results = []
+        with ThreadPoolExecutor(max_workers=self.manually_set_num_tasks()) as executor:
+            futures = [
+                executor.submit(
+                    self.calculate_metric_for_column,
+                    cell_line=cell_line,
+                    column=feature,
+                    metric=metric
+                )
+                for feature in selected_features
+            ]
+
+            desc = f"{cell_line} | {metric} | cols {start}-{stop}"
+            for future in tqdm(as_completed(futures), total=len(futures), desc=desc, file=sys.stdout):
+                result = future.result()
+                results.append(result)
+    
+        # Ensure all results have the same metric, cell line, and merge feature keys
+        merged = {}
+        for res in results:
+            # Each res is {metric: {cell_line: {column: {...}}}}
+            assert len(res) == 1
+            metric_key = next(iter(res))
+            assert metric_key == metric
+
+            assert len(res[metric_key]) == 1
+            cell_line_key = next(iter(res[metric_key]))
+            assert cell_line_key == cell_line
+
+            feature_dict = res[metric_key][cell_line_key]
+            assert len(feature_dict) == 1
+            
+            if not merged:
+                merged = {metric: {cell_line: {}}}
+            merged[metric][cell_line].update(feature_dict)
+
+        num_features = len(merged[metric][cell_line])
+        expected_num = stop - start + 1
+        assert num_features == expected_num, f"Expected {expected_num} features, got {num_features}"
+
+        output_filename = f"{self.CONFIG['TMP_CACHE_DIR']}/{metric}_{cell_line}_{start}_{stop}.json"
+        with open(output_filename, "w") as f:
+            json.dump(merged, f, indent=4)
+        
+        logger.success(f"COMPLETED: Calculated '{metric}' for '{cell_line}' from column {start} to {stop}. Results saved to '{output_filename}'.")
+
+
