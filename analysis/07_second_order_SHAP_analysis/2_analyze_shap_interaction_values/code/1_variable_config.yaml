@@ -1,8 +1,7 @@
 CELL_LINES: ["HepG2", "K562"]
 
 # UBP IDs and Interaction Values
-UBP_ID_DIR: ../../1_generate_shap_interaction_values/outputs/ubp_id_tables/
-INTERACTION_VALUES_DIR: ../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/
+UBP_ID_DIR: "../../1_generate_shap_interaction_values/outputs/ubp_ID_tables/"
 
 # PPI Info 
 PPI_INFO: 
