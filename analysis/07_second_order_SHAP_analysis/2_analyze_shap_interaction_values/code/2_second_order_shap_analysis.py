@@ -665,6 +665,117 @@ class SecondOrderShapNetworkAnalyzer:
             logger.success(f"SUCCESS: SHAP average file for '{metric}' saved to '{OUTPUT_FILE}'.")
 
 
+    def convert_long_metric_table_to_symmetric_matrix(self, df=None, metric=None):
+        assert isinstance(df, pl.DataFrame), "df must be a polars DataFrame."
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+        assert df["Cell Line"].n_unique() == 1, "Only one cell line allowed in the DataFrame."
+
+        val_col = f"Value - {metric}"
+        assert val_col in df.columns, f"Value column '{val_col}' not found in DataFrame."
+        num_ubp_col = f"# UBPs - {metric}"
+        assert num_ubp_col in df.columns, f"Num UBPs column '{num_ubp_col}' not found in DataFrame."
+
+        # Create string columns for binding features by joining RBP and Position with "_"
+        df = df.with_columns([
+            (pl.col("RBP 1") + "_" + pl.col("Position 1").cast(pl.Utf8)).alias("Binding Feature 1"),
+            (pl.col("RBP 2") + "_" + pl.col("Position 2").cast(pl.Utf8)).alias("Binding Feature 2")
+        ])
+        
+        # Assert no duplicate rows for (Binding Feature 1, Binding Feature 2)
+        dupes = df.group_by(["Binding Feature 1", "Binding Feature 2"]).len().filter(pl.col("len") > 1)
+        if dupes.height > 0:
+            raise ValueError(f"Duplicate rows found for (Binding Feature 1, Binding Feature 2): {dupes}")
+
+        sort_columns = ["Position 1", "Position 2", "RBP 1", "RBP 2"]
+        df = df.sort(sort_columns).drop(sort_columns)
+
+        # Only swap rows where "Column Type" is "interaction" to avoid duplicating diagonal elements
+        df_swapped = (
+            df.filter(pl.col("Column Type") == "interaction")
+              .rename({
+                  "Binding Feature 1": "Binding Feature 2",
+                  "Binding Feature 2": "Binding Feature 1"
+              })
+              .select(df.columns)
+        )
+
+        # Concatenate original and swapped DataFrames to ensure symmetry (without duplicating diagonals)
+        df_full = pl.concat([df, df_swapped], how="vertical")
+
+        # Assert that for "interaction" type, each unique "Column" appears exactly twice (symmetric pairs)
+        interaction_counts = (
+            df_full.filter(pl.col("Column Type") == "interaction")
+                   .group_by("Column")
+                   .len()
+        )
+        if not (interaction_counts["len"] == 2).all():
+            raise AssertionError("Not all interaction columns have exactly 2 rows in the symmetric matrix.")
+
+        # Assert that for "main" type, each unique "Column" appears exactly once
+        main_counts = (
+            df_full.filter(pl.col("Column Type") == "main")
+                   .group_by("Column")
+                   .len()
+        )
+        if not (main_counts["len"] == 1).all():
+            raise AssertionError("Not all main columns have exactly 1 row in the symmetric matrix.")
+
+        pivot_tables = {
+            metric: {}
+        }
+        for pivot_col in [val_col, num_ubp_col]:
+            pivot_table = (
+                df_full.pivot(
+                    values=pivot_col,
+                    index="Binding Feature 1",
+                    columns="Binding Feature 2"
+                )
+            )
+            
+            pivot_tables[metric][pivot_col] = pivot_table
+
+        for pivot_col, pivot_table in pivot_tables[metric].items():
+            # Check for null values in the pivot table
+            if pivot_table.null_count().sum_horizontal().item() > 0:
+                raise ValueError(f"Null values found in pivot table for {pivot_col}")
+
+            # If the binding value for the metric is 0, assert no NaNs anywhere
+            if metric != "Global-SHAP":
+                binding_val = self.get_binding_val_from_metric(metric)
+                if binding_val == 0:
+                    if pivot_table.drop("Binding Feature 1").select(pl.all().is_nan().sum()).sum_horizontal().item() > 0: 
+                        raise AssertionError("NaN values found in pivot table when binding value is 0.")
+            else: 
+                if pivot_table.drop("Binding Feature 1").select(pl.all().is_nan().sum()).sum_horizontal().item() > 0:
+                    raise AssertionError("NaN values found in pivot table for Global-SHAP.")
+
+            # Check that columns and index are the same (excluding the index column itself)
+            columns_without_index = [col for col in pivot_table.columns if col != "Binding Feature 1"]
+            if not (columns_without_index == pivot_table["Binding Feature 1"].to_list()):
+                raise AssertionError("Pivot table columns and index do not match.")
+
+            # Check that index values are increasing by position
+            index_series = pivot_table["Binding Feature 1"].to_list()
+            max_pos = 1
+            for idx in index_series:
+                pos = int(idx.split("_")[1])
+                if pos < max_pos:
+                    raise AssertionError("Index positions are not monotonically increasing.")
+                max_pos = max(max_pos, pos)
+
+            # If metric is Global-SHAP, assert all values in num_ubp pivot table are the same
+            if metric == "Global-SHAP" and pivot_col.startswith("# UBPs"):
+                vals = pivot_table.drop("Binding Feature 1").to_numpy().flatten()
+                vals = vals[~np.isnan(vals)]
+                if not np.all(vals == vals[0]):
+                    raise AssertionError("Not all values in num_ubp pivot table are the same for Global-SHAP.")
+
+            # Convert to numpy, drop index column, and check symmetry
+            mat = pivot_table.drop("Binding Feature 1").to_numpy()
+            if not np.allclose(mat, mat.T, equal_nan=True): 
+                raise AssertionError(f"Pivot table for {pivot_col} is not symmetric.")
+
+        return pivot_tables
 
 
 
