@@ -714,6 +714,11 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, will parallelize metric calculations for all metrics and cell lines."
     )
+    parser.add_argument(
+        "--aggregate_all_metrics", 
+        action="store_true",
+        help="If set, will aggregate all metrics after parallelized calculations are done."
+    )
 
     args = parser.parse_args()
 
@@ -754,6 +759,12 @@ if __name__ == "__main__":
         for metric in config["VALID_FEATURE_METRICS"]:
             args.parallelize_metric_calc = metric
             parallelize_metric_calculation(config, args)
+    
+    elif args.aggregate_all_metrics:
+        analyzer = SecondOrderShapNetworkAnalyzer()
+        
+        for metric in config["VALID_FEATURE_METRICS"]:
+            analyzer.retrieve_shap_values_for_metric(metric=metric)
     
     elif args.metric and args.cell_line and args.start and args.stop:
         
