@@ -36,8 +36,8 @@ COLS_PER_JOB: 500
 
 # SLURM Batch Prefixes
 SBATCH_PREFIXES: [
-    "sbatch --account=platiglab --partition=standard -n8 --mem=64GB", 
-    "sbatch --account=platiglab --partition=parallel -N2 -n8 --mem=32GB",
+    "sbatch --account=platiglab --partition=standard -n8 --mem=64GB --time=23:00:00", 
+    "sbatch --account=platiglab --partition=parallel -N2 -n8 --mem=32GB --time=23:00:00",
 ]
 
 # SHAP cache dirctories
