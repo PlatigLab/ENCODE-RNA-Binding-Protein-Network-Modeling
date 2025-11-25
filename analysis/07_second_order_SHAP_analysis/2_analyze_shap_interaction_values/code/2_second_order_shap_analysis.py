@@ -1,6 +1,6 @@
 import yaml, pathlib, glob, json, argparse, os, sys
 
-import pandas as pd, polars as pl
+import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt
 
 from dataclasses import dataclass
 from loguru import logger
@@ -161,12 +161,6 @@ class SecondOrderShapNetworkAnalyzer:
         
         elif mode == "street_et_al":
             raise NotImplementedError("Street et al. mode not yet implemented.")
-            all_rbps_screened_df = pd.read_excel(
-                all_rbps_screened_path, 
-                sheet_name="All baits", 
-                header=1
-            )
-            return all_rbps_screened_df
         
 
         # Build lookup table to relate RBP names they mention to the RBP names we have for our eCLIP
@@ -352,7 +346,7 @@ class SecondOrderShapNetworkAnalyzer:
             feature_names = column.replace("-interaction-shap", "").split("-")
             assert len(feature_names) == 2, f"Interaction feature name '{column}' does not split into two RBP names."
             
-            return tuple(sorted([feature + suffix for feature in feature_names]))
+            return tuple([feature + suffix for feature in feature_names])
     
     
     def split_rbp_position(self, individual_feature): 
@@ -620,7 +614,7 @@ class SecondOrderShapNetworkAnalyzer:
 
                         if col_type == "main":
                             rbp1, pos1 = self.split_rbp_position(rbp_info)
-                            rbp2, pos2 = None, None
+                            rbp2, pos2 = rbp1, pos1
 
                         elif col_type == "interaction":
                             (f1, f2) = rbp_info
@@ -643,7 +637,7 @@ class SecondOrderShapNetworkAnalyzer:
                         })
 
             df = pl.DataFrame(results)
-            df = df.sort(["Cell Line", "RBP 1", "Position 1", "RBP 2", "Position 2"])
+            df = df.sort(["Cell Line", "Position 1", "Position 2", "RBP 1", "RBP 2"])
 
             # Check for duplicates in ("Cell Line", "Column")
             dupes = df.group_by(["Cell Line", "Column"]).len(name="count").filter(pl.col("count") > 1)
@@ -663,8 +657,13 @@ class SecondOrderShapNetworkAnalyzer:
                 pl.col("RBP 2").str.to_uppercase()
             ])
 
+            # Assert that Position 1 is always <= Position 2
+            if not (df["Position 1"] <= df["Position 2"]).all():
+                raise AssertionError("Found rows where Position 1 > Position 2.")
+
             df.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"SUCCESS: SHAP average file for '{metric}' saved to '{OUTPUT_FILE}'.")
+
 
 
 
