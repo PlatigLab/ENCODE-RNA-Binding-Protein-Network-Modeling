@@ -8,7 +8,7 @@ INTERACTION_VALUES_DIR: "../../1_generate_shap_interaction_values/outputs/flatte
 
 # PPI Info 
 PPI_INFO: 
-    cached_ppi_file: "../outputs/ppi_info/all_ppis.tsv"
+    cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
     
     recy2h_ppi_dir: 
         all_rbps_screened: "../../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx"
