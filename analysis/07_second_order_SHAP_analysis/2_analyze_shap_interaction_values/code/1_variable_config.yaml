@@ -7,6 +7,9 @@ UBP_COL_NAME: "Unique Binding Pattern ID #"
 INTERACTION_VALUES_DIR: "../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/"
 
 # PPI Info 
+
+PPI_MODES: ["recy2h", "street_et_al", "combined"]
+
 PPI_INFO: 
     cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
     

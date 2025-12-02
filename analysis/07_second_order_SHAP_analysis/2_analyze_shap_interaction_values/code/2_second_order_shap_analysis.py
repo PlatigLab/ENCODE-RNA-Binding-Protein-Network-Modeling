@@ -786,6 +786,33 @@ class SecondOrderShapNetworkAnalyzer:
         return pivot_tables
 
 
+    def get_RBPs_with_min_1_ppi(self, cell_line=None, ppi_mode=None):
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
+        assert ppi_mode in self.CONFIG["PPI_MODES"], f"PPI mode '{ppi_mode}' not recognized."
+
+        if ppi_mode == "recy2h":
+            interaction_col = "rec-Y2H | Table S2"
+
+        elif ppi_mode == "street_et_al":
+            raise NotImplementedError("Street et al. PPI mode not yet implemented.")
+        elif ppi_mode == "combined": 
+            raise NotImplementedError("Combined PPI mode not yet implemented.")
+
+        filtered = self.ppi.filter(
+            (pl.col(interaction_col) == True) &
+            (pl.col(f"Both eCLIP - {cell_line}") == True)
+        )
+
+        rbps = set()
+        for interaction in filtered["Interaction"].to_list():
+            parts = interaction.split("-")
+            assert len(parts) == 2, f"Interaction '{interaction}' does not split into two RBPs"
+            rbps.update(parts)
+        
+        return rbps
+    
+
+
 
 #########################################################################################################################
 # Non-class functions
