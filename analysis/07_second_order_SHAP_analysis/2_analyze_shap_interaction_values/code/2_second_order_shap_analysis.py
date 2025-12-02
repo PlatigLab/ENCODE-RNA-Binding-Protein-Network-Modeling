@@ -7,6 +7,8 @@ from loguru import logger
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 from tqdm import tqdm
 from itertools import combinations
+from scipy.stats import pearsonr, spearmanr
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 
 
 @dataclass
@@ -811,6 +813,142 @@ class SecondOrderShapNetworkAnalyzer:
         
         return rbps
     
+    # NOTE: this is a DRAFT function and should not be trusted yet
+    def plot_double_triangular_heatmaps(self, matrices = None):
+        assert isinstance(matrices, dict), "matrices must be a dictionary."
+
+        # Extract matrices
+        shap_matrix = matrices[list(matrices.keys())[0]]["SHAP"]
+        ubp_matrix = matrices[list(matrices.keys())[0]]["UBPs"]
+
+        # Ensure index/columns match and are in the same order
+        assert (shap_matrix.index == shap_matrix.columns).all()
+        assert (ubp_matrix.index == ubp_matrix.columns).all()
+        assert (shap_matrix.index == ubp_matrix.index).all()
+
+        # Extract dimensions and Labels
+        N = shap_matrix.shape[0]
+        feature_labels = shap_matrix.index.tolist()
+        
+        # Convert to NumPy for efficient plotting
+        shap_data = shap_matrix.to_numpy()
+        ubps_data = ubp_matrix.to_numpy()
+
+        # --- 2. Create Masks ---
+        # SHAP: Keep Lower Triangle + Diagonal (Mask Upper)
+        shap_masked = np.ma.masked_where(np.triu(np.ones_like(shap_data, dtype=bool), k=1), shap_data)
+
+        # UBPs: Keep Upper Triangle + Diagonal (Mask Lower)
+        ubps_masked = np.ma.masked_where(np.tril(np.ones_like(ubps_data, dtype=bool), k=-1), ubps_data)
+
+        # --- 3. Setup Figure ---
+        # We use a large figure size to give the small font a chance to render cleanly
+        _, ax = plt.subplots(figsize=(20, 18), dpi=500)
+        
+        # Calculate offset in data coordinates based on gap percentage
+        offset = N * 0.02
+        
+        # --- 4. Plot Heatmaps ---
+        
+        # Plot SHAP (Lower Triangle)
+        # Extent = (left, right, bottom, top). Note Y is inverted (0 at top).
+        img_shap = ax.imshow(
+            shap_masked, 
+            cmap='bwr', 
+            interpolation='nearest',
+            origin='upper',
+            extent=(0, N, N, 0)
+        )
+
+        # Plot UBPs (Upper Triangle)
+        # Shifted by 'offset' to the right (+X) and up (-Y) to create the gap
+        img_ubps = ax.imshow(
+            ubps_masked, 
+            cmap='PuBuGn', 
+            interpolation='nearest',
+            origin='upper',
+            extent=(offset, N + offset, N - offset, -offset)
+        )
+
+        # --- 5. Configure Axes and Labels ---
+        
+        # Set plot bounds to include the shifted area
+        ax.set_xlim(0, N + offset)
+        ax.set_ylim(N, -offset) 
+        
+        # Generate ticks for EVERY row/column
+        # We place ticks in the center of the pixels (0.5, 1.5, ... N-0.5)
+        tick_locations = np.arange(N) + 0.5
+        
+        # Set Ticks
+        ax.set_xticks(tick_locations)
+        ax.set_yticks(tick_locations)
+        
+        # Set Labels with HARDCODED fontsize=1
+        ax.set_xticklabels(feature_labels, rotation=90, ha='center', fontsize=1)
+        ax.set_yticklabels(feature_labels, fontsize=1)
+        
+        # Remove spines (borders) for a cleaner "floating triangles" look
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        # Remove tick markers (lines), keep text only
+        ax.tick_params(length=0)
+
+        # --- 6. Add Colorbars (Legends) ---
+        divider = make_axes_locatable(ax)
+
+        # Left Colorbar (SHAP)
+        cax_shap = divider.append_axes("left", size="3%", pad="10%") 
+        cbar_shap = plt.colorbar(img_shap, cax=cax_shap)
+        cax_shap.yaxis.set_ticks_position('left')
+        cax_shap.yaxis.set_label_position('left')
+        cbar_shap.set_label('TODO', rotation=90, labelpad=5, fontsize=10)
+
+        # Right Colorbar (UBPs)
+        cax_ubps = divider.append_axes("right", size="3%", pad="5%")
+        cbar_ubps = plt.colorbar(img_ubps, cax=cax_ubps)
+        cbar_ubps.set_label('TODO', rotation=270, labelpad=15, fontsize=10)
+
+        ax.set_title(f"\nNOTE 1: This is draft and should not be trusted as Yogi has not finished validations!\
+                     \nNOTE2: Yogi already knows several issues and fixes for improving plot\
+                     \n\n ⬇️⬅️ Bottom Left is Bound-Only Signed Mean ⬆️➡️ Top Right is # UBPs for that calculation (REMINDER: symmetric) ", fontsize=20, x=0.45, y=1.02)
+
+        # # --- 7. Draw black grid lines around each cell ---
+        # # Draw vertical and horizontal lines to create cell borders
+        # for i in range(N + 1):
+        #     # Vertical lines
+        #     ax.plot([i, i], [0, N], color='black', linewidth=0.1, zorder=10)
+        #     # Horizontal lines
+        #     ax.plot([0, N], [i, i], color='black', linewidth=0.1, zorder=10)
+        # # Also draw grid for the shifted upper triangle
+        # for i in range(N + 1):
+        #     # Vertical lines for shifted grid
+        #     ax.plot([i + offset, i + offset], [-offset, N - offset], color='black', linewidth=0.5, zorder=10)
+        #     # Horizontal lines for shifted grid
+        #     ax.plot([offset, N + offset], [i - offset, i - offset], color='black', linewidth=0.5, zorder=10)
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def tmp(self): 
+        # for cell_line in ["K562"]: 
+            
+        #     table = self.retrieve_shap_values_for_metric(metric="Signed-Local-SHAP-Mean-Bound-Only")
+
+        #     pivot_tables = self.convert_long_metric_table_to_symmetric_matrix(
+        #         df=table.filter(pl.col("Cell Line") == cell_line),
+        #         metric="Signed-Local-SHAP-Mean-Bound-Only"
+        #     )
+
+        pass
+
+
+
+
+
+
 
 
 
