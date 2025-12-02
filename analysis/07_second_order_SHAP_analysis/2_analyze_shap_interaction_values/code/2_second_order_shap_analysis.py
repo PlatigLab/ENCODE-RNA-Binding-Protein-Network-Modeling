@@ -732,12 +732,16 @@ class SecondOrderShapNetworkAnalyzer:
                 )
             )
             
-            pivot_tables[metric][pivot_col] = pivot_table
+            if pivot_col.startswith("# UBPs"):
+                key = "UBPs"
+            elif pivot_col.startswith("Value"):
+                key = "SHAP"
+            pivot_tables[metric][key] = pivot_table
 
-        for pivot_col, pivot_table in pivot_tables[metric].items():
+        for table_type, pivot_table in pivot_tables[metric].items():
             # Check for null values in the pivot table
             if pivot_table.null_count().sum_horizontal().item() > 0:
-                raise ValueError(f"Null values found in pivot table for {pivot_col}")
+                raise ValueError(f"Null values found in pivot table for {table_type}")
 
             # If the binding value for the metric is 0, assert no NaNs anywhere
             if metric != "Global-SHAP":
@@ -764,7 +768,7 @@ class SecondOrderShapNetworkAnalyzer:
                 max_pos = max(max_pos, pos)
 
             # If metric is Global-SHAP, assert all values in num_ubp pivot table are the same
-            if metric == "Global-SHAP" and pivot_col.startswith("# UBPs"):
+            if metric == "Global-SHAP" and table_type == "UBPs":
                 vals = pivot_table.drop("Binding Feature 1").to_numpy().flatten()
                 vals = vals[~np.isnan(vals)]
                 if not np.all(vals == vals[0]):
@@ -773,7 +777,11 @@ class SecondOrderShapNetworkAnalyzer:
             # Convert to numpy, drop index column, and check symmetry
             mat = pivot_table.drop("Binding Feature 1").to_numpy()
             if not np.allclose(mat, mat.T, equal_nan=True): 
-                raise AssertionError(f"Pivot table for {pivot_col} is not symmetric.")
+                raise AssertionError(f"Pivot table for {table_type} is not symmetric.")
+            
+        for table_type, pivot_table in pivot_tables[metric].items():
+            df = pivot_table.to_pandas().set_index("Binding Feature 1")
+            pivot_tables[metric][table_type] = df
 
         return pivot_tables
 
