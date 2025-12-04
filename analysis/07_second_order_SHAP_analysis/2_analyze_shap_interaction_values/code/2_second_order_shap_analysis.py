@@ -961,6 +961,170 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
 
 
+    def plot_side_by_side_heatmaps(self, matrices=None, **kwargs):
+        # --- 1. Set up _DEFAULTS and update with kwargs ---
+        _DEFAULTS = {
+            "figsize": (18, 8),
+            "dpi": 100,
+            "cmap_shap": "bwr",
+            "cmap_ubps": "PuBuGn",
+            "colorbar_shap_label": "SHAP Value",
+            "colorbar_ubps_label": "# UBPs",
+            "tick_fontsize": 8,
+            "label_fontsize": 12,
+            "title_fontsize": 14,
+            "legend_fontsize": 14,
+            "legend_loc": "lower center",
+            "legend_ncol": 6,
+            "legend_bbox_to_anchor": (0.5, -0.02),
+            "mask_color": "white",
+            'cell_linewidth': 0.1,
+            'label_padding': 15, 
+            "annotation_width": 1,  # Slightly wider than before
+            "annotation_height": 1,
+            "annotation_offset": 0.3,  # Single offset value for both row and column annotations
+            "row_colors": ['#c51b7d','#e9a3c9','#fde0ef','#e6f5d0','#a1d76a','#4d9221'],
+        }
+        opts = self.update_default_dict(_DEFAULTS, dict(kwargs) if kwargs else {})
+
+        # --- 2. Extract matrices and assert index/columns match ---
+        shap_matrix = matrices[list(matrices.keys())[0]]["SHAP"]
+        ubps_matrix = matrices[list(matrices.keys())[0]]["UBPs"]
+        metric = list(matrices.keys())[0]
+
+        assert (shap_matrix.index.equals(shap_matrix.columns)), "SHAP matrix index and columns do not match"
+        assert (ubps_matrix.index.equals(ubps_matrix.columns)), "UBPs matrix index and columns do not match"
+        assert (shap_matrix.index.equals(ubps_matrix.index)), "SHAP and UBPs matrix indices do not match"
+        assert (shap_matrix.columns.equals(ubps_matrix.columns)), "SHAP and UBPs matrix columns do not match"
+
+        feature_labels = shap_matrix.index.tolist()
+        N = len(feature_labels)
+
+        if metric.startswith("Signed-"):
+            # For signed metrics, center the colormap at 0
+            opts['cmap_center'] = 0
+        else:
+            opts['cmap_center'] = None
+
+        # --- 3. Prepare position color annotations for rows and columns ---
+        row_colors = opts["row_colors"]
+        assert len(row_colors) == 6, "There must be 6 colors for 6 positions"
+        row_pos = []
+        for label in feature_labels:
+            _, pos = self.split_rbp_position(label)
+            row_pos.append(pos)
+        row_color_map = [row_colors[p-1] for p in row_pos]
+
+        # --- 4. Mask upper triangle (keep diagonal and lower) ---
+        mask = np.triu(np.ones((N, N), dtype=bool), k=1)
+
+        # --- 5. Create figure and axes ---
+        fig, axes = plt.subplots(1, 2, figsize=opts["figsize"], dpi=opts["dpi"])
+        ax1, ax2 = axes
+
+        # --- 6. Plot SHAP heatmap (left) ---
+        sns.heatmap(
+            shap_matrix,
+            ax=ax1,
+            mask=mask,
+            cmap=opts["cmap_shap"],
+            center=opts['cmap_center'],
+            square=True,
+            linecolor="black", 
+            cbar_kws={"shrink": 0.8}  # Shrink colorbar to fit better
+        )
+        # Set colorbar label above the colorbar
+        cbar_shap = ax1.collections[0].colorbar
+        cbar_shap.ax.set_ylabel(opts["colorbar_shap_label"], labelpad=30, rotation=0, fontsize=opts["label_fontsize"])
+        cbar_shap.ax.yaxis.set_label_coords(0.5, 1.04)
+
+        ax1.set_title(metric, fontsize=opts["title_fontsize"])
+        ax1.set_xticks(np.arange(N) + 0.5)
+        ax1.set_yticks(np.arange(N) + 0.5)
+
+        ax1.set_xticklabels(feature_labels, rotation=90, fontsize=opts["tick_fontsize"])
+        ax1.set_yticklabels(feature_labels, fontsize=opts["tick_fontsize"])
+
+        ax1.tick_params(axis='both', which='both', length=0, pad=opts["label_padding"])  
+        ax1.set_ylabel("")
+        ax1.set_xlabel("")
+        
+
+        # --- 7. Plot UBPs heatmap (right) ---
+        sns.heatmap(
+            ubps_matrix,
+            ax=ax2,
+            mask=mask,
+            cmap=opts["cmap_ubps"],
+            square=True,
+            linecolor="black", 
+            cbar_kws={"shrink": 0.8}  # Shrink colorbar to fit better
+        )
+        # Set colorbar label at the top with labelpad=10
+        cbar_ubps = ax2.collections[0].colorbar
+        cbar_ubps.ax.set_ylabel(opts["colorbar_ubps_label"], labelpad=20, rotation=0, fontsize=opts["label_fontsize"])
+        cbar_ubps.ax.yaxis.set_label_coords(0.5, 1.04)
+
+        ax2.set_title("UBPs", fontsize=opts["title_fontsize"])
+        ax2.set_xticks(np.arange(N) + 0.5)
+        ax2.set_yticks(np.arange(N) + 0.5)
+
+        ax2.set_xticklabels(feature_labels, rotation=90, fontsize=opts["tick_fontsize"])
+        ax2.set_yticklabels(feature_labels, fontsize=opts["tick_fontsize"])
+
+        ax2.tick_params(axis='both', which='both', length=0, pad=opts["label_padding"])
+        ax2.set_ylabel("")
+        ax2.set_xlabel("")
+
+        # --- 8. Annotate row and column positions outside the heatmap ---
+        # Draw colored rectangles for row positions (left of heatmap)
+
+        annotation_width = opts["annotation_width"]
+        annotation_height = opts["annotation_height"]
+        for ax in [ax1, ax2]:
+            for i, color in enumerate(row_color_map):
+                # Row annotation (left of y-labels)
+                ax.add_patch(plt.Rectangle(
+                    (-annotation_width - opts["annotation_offset"], i), annotation_width, annotation_height, color=color, transform=ax.transData, clip_on=False, linewidth=0
+                ))
+            # Column annotation (bottom of x-labels)
+            for i, color in enumerate(row_color_map):
+                ax.add_patch(plt.Rectangle(
+                    (i, N + 0.05 + opts["annotation_offset"]), annotation_height, annotation_width, color=color, transform=ax.transData, clip_on=False, linewidth=0
+                ))
+
+        # --- 8b. Draw grid rectangles only for diagonal and lower triangle cells ---
+        for ax, matrix in zip([ax1, ax2], [shap_matrix, ubps_matrix]):
+            for i in range(N):
+                for j in range(i+1):  # Only diagonal and lower triangle
+                    rect = plt.Rectangle(
+                        (j, i), 1, 1,
+                        fill=False,
+                        edgecolor='black',
+                        linewidth=opts['cell_linewidth'],
+                        zorder=10
+                    )
+                    ax.add_patch(rect)
+
+        # --- 9. Add legend for position colors ---
+        legend_handles = []
+        for idx, color in enumerate(row_colors):
+            patch = mpatches.Patch(color=color, label=f"Position {idx+1}")
+            legend_handles.append(patch)
+
+        fig.legend(
+            handles=legend_handles,
+            loc=opts["legend_loc"],
+            ncol=opts["legend_ncol"],
+            bbox_to_anchor=opts["legend_bbox_to_anchor"],
+            fontsize=opts["legend_fontsize"],
+            frameon=True
+        )
+
+        plt.tight_layout(rect=[0, 0.05, 1, 1])
+        plt.show()
+
+
     def tmp(self): 
         # for cell_line in ["K562"]: 
             
