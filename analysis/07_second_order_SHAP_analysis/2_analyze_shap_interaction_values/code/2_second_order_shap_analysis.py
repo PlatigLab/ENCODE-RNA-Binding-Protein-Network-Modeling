@@ -16,6 +16,12 @@ class SecondOrderShapNetworkAnalyzer:
 
     YAML_CONFIG_FILE = "./1_variable_config.yaml"
 
+
+#########################################################
+############ INITIALIZATION FUNCTIONS ###################
+#########################################################
+
+
     def __post_init__(self):
         
         with open(self.YAML_CONFIG_FILE, "r") as file:
@@ -313,9 +319,12 @@ class SecondOrderShapNetworkAnalyzer:
     #     street_et_al_ppi_table = pd.DataFrame(street_et_al_ppi_table)
     #     return street_et_al_ppi_table
 
+#########################################################
+################ "UTIL" FUNCTIONS #######################
+#########################################################
 
     def manually_set_num_tasks(self): 
-        return 4
+        return 12
     
 
     def is_interaction_or_main_effect(self, column=None):
@@ -423,7 +432,27 @@ class SecondOrderShapNetworkAnalyzer:
             raise ValueError(f"Duplicate values found in {self.CONFIG['UBP_COL_NAME']} for cell line '{cell_line}', column '{column}', metric '{metric}'.")
         
         return unique_ids
+    
+
+    def update_default_dict(self, default=None, new=None): 
+        assert isinstance(default, dict), "default must be a dictionary."
+        assert isinstance(new, dict), "new must be a dictionary."
         
+        extra_keys = set(new.keys()) - set(default.keys())
+        assert not extra_keys, f"Keys {extra_keys} in 'new' are not present in 'default'."
+        
+        for key in new:
+            default[key] = new[key]
+        
+        return default
+
+
+
+
+#########################################################
+################ ANALYSIS FUNCTIONS #####################
+#########################################################
+
 
     def calculate_metric_for_column(self, cell_line=None, column=None, metric=None): 
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized. Valid metrics are: {self.CONFIG['VALID_FEATURE_METRICS']}"
