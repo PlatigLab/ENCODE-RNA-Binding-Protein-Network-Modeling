@@ -1,6 +1,6 @@
 import yaml, pathlib, glob, json, argparse, os, sys
 
-import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt
+import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as mpatches
 
 from dataclasses import dataclass
 from loguru import logger
@@ -961,7 +961,7 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
 
 
-    def plot_side_by_side_heatmaps(self, matrices=None, **kwargs):
+    def plot_side_by_side_heatmaps(self, matrices=None, show=False, **kwargs):
         # --- 1. Set up _DEFAULTS and update with kwargs ---
         _DEFAULTS = {
             "figsize": (18, 8),
@@ -971,9 +971,9 @@ class SecondOrderShapNetworkAnalyzer:
             "colorbar_shap_label": "SHAP Value",
             "colorbar_ubps_label": "# UBPs",
             "tick_fontsize": 8,
-            "label_fontsize": 12,
+            "legend_titlesize": 12,
             "title_fontsize": 14,
-            "legend_fontsize": 14,
+            "pos_legend_fontsize": 14,
             "legend_loc": "lower center",
             "legend_ncol": 6,
             "legend_bbox_to_anchor": (0.5, -0.02),
@@ -1035,10 +1035,10 @@ class SecondOrderShapNetworkAnalyzer:
         )
         # Set colorbar label above the colorbar
         cbar_shap = ax1.collections[0].colorbar
-        cbar_shap.ax.set_ylabel(opts["colorbar_shap_label"], labelpad=30, rotation=0, fontsize=opts["label_fontsize"])
+        cbar_shap.ax.set_ylabel(opts["colorbar_shap_label"], labelpad=30, rotation=0, fontsize=opts["legend_titlesize"])
         cbar_shap.ax.yaxis.set_label_coords(0.5, 1.04)
 
-        ax1.set_title(metric, fontsize=opts["title_fontsize"])
+        ax1.set_title(metric, fontsize=opts["title_fontsize"], y=0.93)
         ax1.set_xticks(np.arange(N) + 0.5)
         ax1.set_yticks(np.arange(N) + 0.5)
 
@@ -1062,10 +1062,10 @@ class SecondOrderShapNetworkAnalyzer:
         )
         # Set colorbar label at the top with labelpad=10
         cbar_ubps = ax2.collections[0].colorbar
-        cbar_ubps.ax.set_ylabel(opts["colorbar_ubps_label"], labelpad=20, rotation=0, fontsize=opts["label_fontsize"])
+        cbar_ubps.ax.set_ylabel(opts["colorbar_ubps_label"], labelpad=20, rotation=0, fontsize=opts["legend_titlesize"])
         cbar_ubps.ax.yaxis.set_label_coords(0.5, 1.04)
 
-        ax2.set_title("UBPs", fontsize=opts["title_fontsize"])
+        ax2.set_title("UBPs", fontsize=opts["title_fontsize"], y=0.93)
         ax2.set_xticks(np.arange(N) + 0.5)
         ax2.set_yticks(np.arange(N) + 0.5)
 
@@ -1109,7 +1109,7 @@ class SecondOrderShapNetworkAnalyzer:
         # --- 9. Add legend for position colors ---
         legend_handles = []
         for idx, color in enumerate(row_colors):
-            patch = mpatches.Patch(color=color, label=f"Position {idx+1}")
+            patch = mpatches.Patch(color=color, label=f"{idx+1}")
             legend_handles.append(patch)
 
         fig.legend(
@@ -1117,12 +1117,19 @@ class SecondOrderShapNetworkAnalyzer:
             loc=opts["legend_loc"],
             ncol=opts["legend_ncol"],
             bbox_to_anchor=opts["legend_bbox_to_anchor"],
-            fontsize=opts["legend_fontsize"],
-            frameon=True
+            fontsize=opts["pos_legend_fontsize"],
+            frameon=True,
+            title="Position", 
+            title_fontsize=opts["legend_titlesize"]
         )
 
         plt.tight_layout(rect=[0, 0.05, 1, 1])
-        plt.show()
+        
+        if show:
+            plt.show()
+        elif not show: 
+            return fig
+
 
 
     def tmp(self): 
