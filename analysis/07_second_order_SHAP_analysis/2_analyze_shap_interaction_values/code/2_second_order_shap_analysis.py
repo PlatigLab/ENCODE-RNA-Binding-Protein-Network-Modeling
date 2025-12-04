@@ -472,6 +472,8 @@ class SecondOrderShapNetworkAnalyzer:
             rbp1 = rbp1.upper()
             rbp2 = rbp2.upper()
 
+        assert rbp1 != rbp2, "Self-interactions are not allowed."
+
         interaction = "-".join(
             sorted([rbp1, rbp2])
         )
