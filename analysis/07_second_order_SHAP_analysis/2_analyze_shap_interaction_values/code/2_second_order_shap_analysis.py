@@ -507,9 +507,9 @@ class SecondOrderShapNetworkAnalyzer:
         
         elif ppi_result is True:
             if pos1 == pos2:
-                return "Same Position"
+                return "Same-Position"
             elif pos1 != pos2:
-                return "Different Position"
+                return "Different-Position"
             
 
 
