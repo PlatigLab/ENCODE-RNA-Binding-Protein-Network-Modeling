@@ -450,6 +450,65 @@ class SecondOrderShapNetworkAnalyzer:
         return default
 
 
+    def is_ppi(self, pair, ppi_source=None): 
+        assert isinstance(pair, str), "pair must be a string."
+        assert ppi_source in self.CONFIG["PPI_SOURCES"], f"ppi_source must be one of {self.CONFIG['PPI_SOURCES']}."
+        assert len(pair.split('-')) == 2, "pair must be in following example formats: 'RBP1-RBP2' or 'RBP1_Pos1-RBP2_Pos2'."
+        assert " " not in pair, "pair must not contain spaces."
+
+        pair = pair.upper()
+        
+        if "_" in pair: 
+            parts = pair.split('-')
+            for part in parts:
+                subparts = part.split('_')
+                assert subparts[-1].isdigit() and 1 <= int(subparts[-1]) <= 6, f"Element '{subparts[-1]}' is not an integer between 1 and 6 inclusive."
+
+            rbp1 = parts[0].split('_')[0].upper()
+            rbp2 = parts[1].split('_')[0].upper()
+        
+        else: 
+            rbp1, rbp2 = pair.split('-')
+            rbp1 = rbp1.upper()
+            rbp2 = rbp2.upper()
+
+        interaction = "-".join(
+            sorted([rbp1, rbp2])
+        )
+        assert self.ppi.filter(pl.col("Interaction") == "-".join(sorted([rbp1, rbp2], reverse=True))).height == 0, f"Interaction '{rbp2}-{rbp1}' found in PPI table; interactions should be sorted alphabetically."
+        filtered = self.ppi.filter(pl.col("Interaction") == interaction)
+        assert filtered.height <= 1, f"More than one row found for interaction '{interaction}' in PPI table."
+
+        if filtered.height == 0:
+            return None
+        else:
+            return filtered[self.ppi_source_columns[ppi_source]].item()
+
+    
+    def return_ppi_type(self, pair, ppi_source=None):
+        # pair is expected to be in the format 'RBP1_Pos1-RBP2_Pos2'
+        assert isinstance(pair, str), "pair must be a string."
+        assert ppi_source in self.CONFIG["PPI_SOURCES"], f"ppi_source must be one of {self.CONFIG['PPI_SOURCES']}."
+        assert len(pair.split('-')) == 2, "pair must be in the format 'RBP1_Pos1-RBP2_Pos2'."
+        assert " " not in pair, "pair must not contain spaces."
+
+        part1, part2 = pair.split('-')
+        _, pos1 = self.split_rbp_position(part1)
+        _, pos2 = self.split_rbp_position(part2)
+
+        ppi_result = self.is_ppi(pair, ppi_source=ppi_source)
+        
+        if ppi_result is None:
+            return None
+        elif ppi_result is False:
+            return False
+        
+        elif ppi_result is True:
+            if pos1 == pos2:
+                return "Same Position"
+            elif pos1 != pos2:
+                return "Different Position"
+            
 
 
 #########################################################
