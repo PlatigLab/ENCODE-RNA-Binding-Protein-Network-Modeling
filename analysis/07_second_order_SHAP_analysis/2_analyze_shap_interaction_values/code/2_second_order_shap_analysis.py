@@ -1262,17 +1262,17 @@ class SecondOrderShapNetworkAnalyzer:
             }
         }
 
-        logger.info("Retrieved data and starting to plot side-by-side heatmaps...")
-        fig = self.plot_side_by_side_heatmaps(matrices=filtered_matrices, **kwargs)
+        fig = self.plot_side_by_side_heatmaps(matrices=filtered_matrices, ppi_source=ppi_source, **kwargs)
+        highlight_str = kwargs['highlight'] if 'highlight' in kwargs and kwargs['highlight'] is not None else "None"
 
         fig.suptitle(
-            f"{cell_line}\nRBPs with ≥1 PPI ({ppi_source}) | Metric: {metric}",
-            fontsize=30,
+            f"{cell_line}\nHighlight: {highlight_str} | RBPs with ≥1 PPI ({ppi_source}) | Metric: {metric}",
+            fontsize=26,
             y=1.08
         )
 
         plt.savefig(
-            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source}_{metric}_side_by_side_heatmap.png",
+            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source}_{metric}_highlight_{highlight_str}_side_by_side_heatmap.png",
             bbox_inches='tight',
             dpi=600
         )

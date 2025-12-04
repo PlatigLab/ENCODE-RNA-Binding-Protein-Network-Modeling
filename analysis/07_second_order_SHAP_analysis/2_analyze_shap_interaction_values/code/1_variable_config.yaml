@@ -16,7 +16,7 @@ FIGURES:
 
 # PPI Info 
 PPI_SOURCES: ["recy2h", "street_et_al", "combined"]
-PPI_TYPES: ["Same Position", "Different Position"]
+PPI_TYPES: ["Same-Position", "Different-Position", "All-Positions"]
 
 PPI_INFO: 
     cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
