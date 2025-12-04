@@ -72,6 +72,9 @@ class SecondOrderShapNetworkAnalyzer:
         if pathlib.Path(OUTPUT_FILE).exists(): 
             logger.success(f"FROM CACHE: loading PPI table from '{OUTPUT_FILE}'...")
             self.ppi = pl.read_csv(OUTPUT_FILE, separator="\t")
+            self.ppi_source_columns = {
+                "recy2h": "rec-Y2H | Table S2",
+            }
 
         else:
             logger.info("Cached PPI file not found. Generating PPI table for both Rec-Y2H and Street et al. Molecular Cell 2024 datasets...")
@@ -822,7 +825,7 @@ class SecondOrderShapNetworkAnalyzer:
         assert ppi_source in self.CONFIG["PPI_SOURCES"], f"PPI mode '{ppi_source}' not recognized."
 
         if ppi_source == "recy2h":
-            interaction_col = "rec-Y2H | Table S2"
+            interaction_col = self.ppi_source_columns["recy2h"]
 
         elif ppi_source == "street_et_al":
             raise NotImplementedError("Street et al. PPI mode not yet implemented.")
