@@ -1,4 +1,4 @@
-import yaml, pathlib, glob, json, argparse, os, sys
+import yaml, pathlib, glob, json, argparse, os, sys, copy
 
 import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as mpatches
 
@@ -1025,12 +1025,14 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
 
 
-    def plot_side_by_side_heatmaps(self, matrices=None, show=False, **kwargs):
+    def plot_side_by_side_heatmaps(self, matrices=None, ppi_source=None, show=False, **kwargs):
+
         # --- 1. Set up _DEFAULTS and update with kwargs ---
         _DEFAULTS = {
             "figsize": (18, 8),
             "dpi": 100,
             "cmap_shap": "bwr",
+            "highlight": None, 
             "cmap_ubps": "PuBuGn",
             "colorbar_shap_label": "SHAP Value",
             "colorbar_ubps_label": "# UBPs",
@@ -1050,6 +1052,7 @@ class SecondOrderShapNetworkAnalyzer:
             "row_colors": ['#c51b7d','#e9a3c9','#fde0ef','#e6f5d0','#a1d76a','#4d9221'],
         }
         opts = self.update_default_dict(_DEFAULTS, dict(kwargs) if kwargs else {})
+        assert opts["highlight"] in self.CONFIG["PPI_TYPES"] or opts["highlight"] is None, f"highlight type '{opts["highlight"]}' not recognized."
 
         # --- 2. Extract matrices and assert index/columns match ---
         shap_matrix = matrices[list(matrices.keys())[0]]["SHAP"]
@@ -1060,7 +1063,7 @@ class SecondOrderShapNetworkAnalyzer:
         assert (ubps_matrix.index.equals(ubps_matrix.columns)), "UBPs matrix index and columns do not match"
         assert (shap_matrix.index.equals(ubps_matrix.index)), "SHAP and UBPs matrix indices do not match"
         assert (shap_matrix.columns.equals(ubps_matrix.columns)), "SHAP and UBPs matrix columns do not match"
-
+        
         feature_labels = shap_matrix.index.tolist()
         N = len(feature_labels)
 
@@ -1070,6 +1073,37 @@ class SecondOrderShapNetworkAnalyzer:
         else:
             opts['cmap_center'] = None
 
+        # --- 2a. Build highlight cells for lower triangle and diagonal ---
+        if opts['highlight'] is not None:
+            highlight_cells = {}
+
+            for i in range(N):
+                for j in range(i + 1):  # includes diagonal
+                    if i == j:
+                        highlight_cells[(i, j)] = False  # diagonal is always False
+                    else:
+                        feature_i = feature_labels[i]
+                        feature_j = feature_labels[j]
+                        pair = f"{feature_i}-{feature_j}"
+
+                        # self-interactions do not count (e.g. RBFOX2-RBFOX2)
+                        if self.split_rbp_position(feature_i)[0] == self.split_rbp_position(feature_j)[0]:
+                            highlight_cells[(i, j)] = False
+
+                        else: 
+                            ppi_type = self.return_ppi_type(pair, ppi_source=ppi_source)
+
+                            if ppi_type is not None and ppi_type == opts['highlight']:
+                                highlight_cells[(i, j)] = True
+                            else:
+                                highlight_cells[(i, j)] = False
+                                
+                    if not highlight_cells[(i, j)]:
+                        shap_matrix.iloc[i, j] = np.nan
+                        shap_matrix.iloc[j, i] = np.nan  # Symmetric
+                        ubps_matrix.iloc[i, j] = np.nan
+                        ubps_matrix.iloc[j, i] = np.nan  
+    
         # --- 3. Prepare position color annotations for rows and columns ---
         row_colors = opts["row_colors"]
         assert len(row_colors) == 6, "There must be 6 colors for 6 positions"
@@ -1158,17 +1192,25 @@ class SecondOrderShapNetworkAnalyzer:
                 ))
 
         # --- 8b. Draw grid rectangles only for diagonal and lower triangle cells ---
-        for ax, matrix in zip([ax1, ax2], [shap_matrix, ubps_matrix]):
-            for i in range(N):
-                for j in range(i+1):  # Only diagonal and lower triangle
-                    rect = plt.Rectangle(
-                        (j, i), 1, 1,
-                        fill=False,
-                        edgecolor='black',
-                        linewidth=opts['cell_linewidth'],
-                        zorder=10
-                    )
-                    ax.add_patch(rect)
+        for i in range(N):
+            for j in range(i+1):  # Only diagonal and lower triangle
+                fill = False
+                facecolor = 'none'
+
+                if opts['highlight'] is not None and highlight_cells[(i, j)] != True: 
+                    fill = True
+                    facecolor = 'gray'
+                
+                rect = plt.Rectangle(
+                    (j, i), 1, 1,
+                    fill=fill,
+                    facecolor=facecolor,
+                    edgecolor='black',
+                    linewidth=opts['cell_linewidth'],
+                    zorder=10
+                )
+                ax1.add_patch(copy.deepcopy(rect))
+                ax2.add_patch(copy.deepcopy(rect))
 
         # --- 9. Add legend for position colors ---
         legend_handles = []
