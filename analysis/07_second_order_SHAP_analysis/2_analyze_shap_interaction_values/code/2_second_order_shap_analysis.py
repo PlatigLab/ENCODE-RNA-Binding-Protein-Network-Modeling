@@ -1131,6 +1131,48 @@ class SecondOrderShapNetworkAnalyzer:
             return fig
 
 
+    def plot_side_by_side_heatmaps_for_min_1_ppi(self, cell_line = None, ppi_mode=None, metric=None, **kwargs): 
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
+        assert ppi_mode in self.CONFIG["PPI_MODES"], f"PPI mode '{ppi_mode}' not recognized."
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+
+        rbps_with_ppi = self.get_RBPs_with_min_1_ppi(cell_line=cell_line, ppi_mode=ppi_mode)
+        logger.info(f"Cell line '{cell_line}' has {len(rbps_with_ppi)} RBPs with at least 1 PPI in mode '{ppi_mode}'.")
+        
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+        pivot_tables = self.convert_long_metric_table_to_symmetric_matrix(
+            df=table.filter(pl.col("Cell Line") == cell_line),
+            metric=metric
+        )
+
+        # Filter pivot tables to only include RBPs with at least 1 PPI
+        filtered_index = [idx for idx in pivot_tables[metric]["SHAP"].index if idx.split("_")[0] in rbps_with_ppi]
+        filtered_columns = [col for col in pivot_tables[metric]["SHAP"].columns if col.split("_")[0] in rbps_with_ppi]
+
+        filtered_matrices = {
+            metric: {
+                "SHAP": pivot_tables[metric]["SHAP"].loc[filtered_index, filtered_columns],
+                "UBPs": pivot_tables[metric]["UBPs"].loc[filtered_index, filtered_columns]
+            }
+        }
+
+        logger.info("Retrieved data and starting to plot side-by-side heatmaps...")
+        fig = self.plot_side_by_side_heatmaps(matrices=filtered_matrices, **kwargs)
+
+        fig.suptitle(
+            f"{cell_line}\nRBPs with ≥1 PPI ({ppi_mode}) | Metric: {metric}",
+            fontsize=30,
+            y=1.08
+        )
+
+        plt.savefig(
+            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_mode}_{metric}_side_by_side_heatmap.png",
+            bbox_inches='tight',
+            dpi=600
+        )
+        plt.show()
+
+
 
     def tmp(self): 
         # for cell_line in ["K562"]: 
@@ -1151,11 +1193,9 @@ class SecondOrderShapNetworkAnalyzer:
 
 
 
-
-#########################################################################################################################
-# Non-class functions
-#########################################################################################################################
-
+#########################################################
+############## NON-CLASS FUNCTIONS ######################
+#########################################################
 
 def return_parallelization_start_stop(columns, config): 
     cols_per_job = config["COLS_PER_JOB"]
