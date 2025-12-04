@@ -15,7 +15,8 @@ FIGURES:
     side_by_side_heatmap_dir: "../outputs/figures/side_by_side_heatmaps/"
 
 # PPI Info 
-PPI_MODES: ["recy2h", "street_et_al", "combined"]
+PPI_SOURCES: ["recy2h", "street_et_al", "combined"]
+PPI_TYPES: ["Same Position", "Different Position"]
 
 PPI_INFO: 
     cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"

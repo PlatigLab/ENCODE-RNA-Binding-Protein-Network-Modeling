@@ -817,16 +817,16 @@ class SecondOrderShapNetworkAnalyzer:
         return pivot_tables
 
 
-    def get_RBPs_with_min_1_ppi(self, cell_line=None, ppi_mode=None):
+    def get_RBPs_with_min_1_ppi(self, cell_line=None, ppi_source=None):
         assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
-        assert ppi_mode in self.CONFIG["PPI_MODES"], f"PPI mode '{ppi_mode}' not recognized."
+        assert ppi_source in self.CONFIG["PPI_SOURCES"], f"PPI mode '{ppi_source}' not recognized."
 
-        if ppi_mode == "recy2h":
+        if ppi_source == "recy2h":
             interaction_col = "rec-Y2H | Table S2"
 
-        elif ppi_mode == "street_et_al":
+        elif ppi_source == "street_et_al":
             raise NotImplementedError("Street et al. PPI mode not yet implemented.")
-        elif ppi_mode == "combined": 
+        elif ppi_source == "combined": 
             raise NotImplementedError("Combined PPI mode not yet implemented.")
 
         filtered = self.ppi.filter(
@@ -1131,13 +1131,13 @@ class SecondOrderShapNetworkAnalyzer:
             return fig
 
 
-    def plot_side_by_side_heatmaps_for_min_1_ppi(self, cell_line = None, ppi_mode=None, metric=None, **kwargs): 
+    def plot_side_by_side_heatmaps_for_min_1_ppi(self, cell_line = None, ppi_source=None, metric=None, **kwargs): 
         assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
-        assert ppi_mode in self.CONFIG["PPI_MODES"], f"PPI mode '{ppi_mode}' not recognized."
+        assert ppi_source in self.CONFIG["PPI_SOURCES"], f"PPI mode '{ppi_source}' not recognized."
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
 
-        rbps_with_ppi = self.get_RBPs_with_min_1_ppi(cell_line=cell_line, ppi_mode=ppi_mode)
-        logger.info(f"Cell line '{cell_line}' has {len(rbps_with_ppi)} RBPs with at least 1 PPI in mode '{ppi_mode}'.")
+        rbps_with_ppi = self.get_RBPs_with_min_1_ppi(cell_line=cell_line, ppi_source=ppi_source)
+        logger.info(f"Cell line '{cell_line}' has {len(rbps_with_ppi)} RBPs with at least 1 PPI in mode '{ppi_source}'.")
         
         table = self.retrieve_shap_values_for_metric(metric=metric)
         pivot_tables = self.convert_long_metric_table_to_symmetric_matrix(
@@ -1160,13 +1160,13 @@ class SecondOrderShapNetworkAnalyzer:
         fig = self.plot_side_by_side_heatmaps(matrices=filtered_matrices, **kwargs)
 
         fig.suptitle(
-            f"{cell_line}\nRBPs with ≥1 PPI ({ppi_mode}) | Metric: {metric}",
+            f"{cell_line}\nRBPs with ≥1 PPI ({ppi_source}) | Metric: {metric}",
             fontsize=30,
             y=1.08
         )
 
         plt.savefig(
-            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_mode}_{metric}_side_by_side_heatmap.png",
+            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source}_{metric}_side_by_side_heatmap.png",
             bbox_inches='tight',
             dpi=600
         )
