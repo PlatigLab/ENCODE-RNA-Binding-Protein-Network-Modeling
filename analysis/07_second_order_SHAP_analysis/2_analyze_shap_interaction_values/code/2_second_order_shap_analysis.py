@@ -1093,8 +1093,18 @@ class SecondOrderShapNetworkAnalyzer:
                         else: 
                             ppi_type = self.return_ppi_type(pair, ppi_source=ppi_source)
 
-                            if ppi_type is not None and ppi_type == opts['highlight']:
-                                highlight_cells[(i, j)] = True
+                            if ppi_type is not None:   
+                                if ppi_type == False: 
+                                    highlight_cells[(i, j)] = False
+
+                                elif type(ppi_type) == str:
+                                    if opts['highlight'] == "All-Positions": 
+                                        highlight_cells[(i, j)] = True
+                                    elif opts['highlight'] == ppi_type:
+                                        highlight_cells[(i, j)] = True
+                                    else:
+                                        highlight_cells[(i, j)] = False
+
                             else:
                                 highlight_cells[(i, j)] = False
                                 
@@ -1199,7 +1209,7 @@ class SecondOrderShapNetworkAnalyzer:
 
                 if opts['highlight'] is not None and highlight_cells[(i, j)] != True: 
                     fill = True
-                    facecolor = 'gray'
+                    facecolor = 'lightgray'
                 
                 rect = plt.Rectangle(
                     (j, i), 1, 1,
