@@ -510,7 +510,26 @@ class SecondOrderShapNetworkAnalyzer:
                 return "Same-Position"
             elif pos1 != pos2:
                 return "Different-Position"
-            
+
+
+    def add_ppi_stats_to_long_df(self, df=None): 
+        assert isinstance(df, pl.DataFrame), "df must be a polars DataFrame."
+        assert df["Column Type"].unique().to_list() == ["interaction"], "Only interaction columns are supported."
+        assert not (df["RBP 1"] == df["RBP 2"]).any(), "There are rows where 'RBP 1' equals 'RBP 2'."
+
+        for ppi_source in self.CONFIG["PPI_SOURCES"]:
+            col_name = f"{ppi_source} | PPI Type"
+            df = df.with_columns(
+                pl.col("Column").map_elements(
+                    lambda pair: str(self.return_ppi_type(pair.replace('-interaction-shap', ''), ppi_source=ppi_source)),
+                    return_dtype=pl.String
+                ).alias(col_name)
+            )
+
+            assert df[col_name].unique().len() == 4, f"Expected 4 unique values in column '{col_name}'."
+
+        logger.success("PPI designation columns added to DataFrame.")
+        return df
 
 
 #########################################################
