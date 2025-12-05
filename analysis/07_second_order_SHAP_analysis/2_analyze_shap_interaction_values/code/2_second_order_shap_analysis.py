@@ -9,6 +9,7 @@ from tqdm import tqdm
 from itertools import combinations
 from scipy.stats import pearsonr, spearmanr
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+from sklearn.metrics import roc_curve, precision_recall_curve, auc
 
 
 @dataclass
@@ -1309,6 +1310,119 @@ class SecondOrderShapNetworkAnalyzer:
         )
         plt.show()
 
+    
+    def plot_roc_and_prc_curves_for_metric(self, metric = None): 
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+        
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+        # no main effect columns or different position but same RBP columns since those are not distinct-RBP PPIs
+        table = table.filter(
+            (pl.col("Column Type") == "interaction")
+            & (pl.col("RBP 1") != pl.col("RBP 2"))
+        )
+
+        table = self.add_ppi_stats_to_long_df(df = table)
+        logger.warning("REMINDER: All values that are not 'Same Position' or 'Different Position' for 'PPI Type' are treated as 'False'!")
+
+        ppi_sources = self.CONFIG["PPI_SOURCES"]
+        ppi_types = self.CONFIG["PPI_TYPES"]
+
+        abs_shap = table[f"Value - {metric}"].abs()
+
+        result_dict = {}
+        for ppi_source in ppi_sources:
+            result_dict[ppi_source] = {}
+            for ppi_type in ppi_types:
+                # Custom logic for PPI column
+                if ppi_type == "All-Positions":
+                    ppi_bool = table[f"{ppi_source} | PPI Type"].str.contains("-Position")
+                else:
+                    ppi_bool = (table[f"{ppi_source} | PPI Type"] == ppi_type)
+                
+                # Build polars DataFrame and include Cell Line column
+                df = pl.DataFrame({
+                    "Abs. SHAP Value": abs_shap,
+                    "PPI": ppi_bool,
+                    "Cell Line": table["Cell Line"]
+                })
+
+                # Remove rows where "Abs. SHAP Value" is NaN
+                df = df.filter(~pl.col("Abs. SHAP Value").is_nan())           
+                # Sort by absolute SHAP value descending
+                df = df.sort("Abs. SHAP Value", descending=True)
+
+                # Assert no nulls in "Abs. SHAP Value"
+                assert df["Abs. SHAP Value"].null_count() == 0, "Nulls found in 'Abs. SHAP Value' column."
+                # Assert that there are no negative values in "Abs. SHAP Value" column
+                assert (df["Abs. SHAP Value"] >= 0).all(), "Negative values found in 'Abs. SHAP Value' column."
+                # Assert no nulls or NaNs in "PPI" column
+                assert df["PPI"].null_count() == 0, "Nulls found in 'PPI' column."
+                
+                result_dict[ppi_source][ppi_type] = df
+        
+        # Assert that all DataFrames have the same number of values
+        num_values = [result_dict[source][ppi_type].shape[0] for source in result_dict for ppi_type in result_dict[source]]
+        assert len(set(num_values)) == 1, f"Mismatch in number of values across all DataFrames: {num_values}"
+
+        cell_lines = self.CONFIG["CELL_LINES"]
+        curve_types = ["roc", "prc"]
+        sns.set_palette("Set1")
+
+        fig, axes = plt.subplots(
+            nrows=2, ncols=2, figsize=(12, 12), dpi=400,
+            sharex=True, sharey=True
+        )
+
+        for row_idx, cell_line in enumerate(cell_lines):
+            for col_idx, curve_type in enumerate(curve_types):
+                ax = axes[row_idx, col_idx]
+                for ppi_source in ppi_sources:
+                    for ppi_type in ppi_types:
+                        df = result_dict[ppi_source][ppi_type]
+                        # Filter for current cell line
+                        df_cl = df.filter(pl.col("Cell Line") == cell_line)
+                        y_true = df_cl["PPI"].to_numpy()
+                        y_score = df_cl["Abs. SHAP Value"].to_numpy()
+                        
+                        if curve_type == "roc":
+                            fpr, tpr, _ = roc_curve(y_true, y_score)
+                            roc_auc = auc(fpr, tpr)
+                            ax.plot(fpr, tpr, label=f"{ppi_source} | {ppi_type} (AUC={roc_auc:.2f})")
+                        else:
+                            precision, recall, _ = precision_recall_curve(y_true, y_score)
+                            prc_auc = auc(recall, precision)
+                            ax.plot(recall, precision, label=f"{ppi_source} | {ppi_type} (AUC={prc_auc:.2f})")
+                
+                if curve_type == "roc":
+                    ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline (AUC=0.50)")
+                    ax.set_xlabel("False Positive Rate", fontsize=12)
+                    ax.set_ylabel("True Positive Rate", fontsize=12)
+                    ax.set_title(f"ROC Curve - {cell_line}", fontweight='bold', fontsize=16)
+                
+                else:
+                    pos_rate = np.mean(y_true)
+                    ax.plot([0, 1], [pos_rate, pos_rate], 'k--', lw=1, label=f"Baseline (AUC={pos_rate:.2f})")
+                    ax.set_xlabel("Recall", fontsize=12)
+                    ax.set_ylabel("Precision", fontsize=12)
+                    ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
+                
+                ax.legend(loc="best", fontsize=12, frameon=True)
+        
+        fig.suptitle(
+            "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
+            "\nNOTE 2: Anything not True for PPI status is treated as False (i.e. Nulls are treated as False)" +
+            "\n\nROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
+            fontsize=16, y=1.01
+        )
+
+        plt.tight_layout()
+        plt.savefig(
+            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_curves.png",
+            bbox_inches='tight',
+            dpi=300
+        )
+
+        plt.show()
 
 
     def tmp(self): 
