@@ -527,6 +527,8 @@ class SecondOrderShapNetworkAnalyzer:
             )
 
             assert df[col_name].unique().len() == 4, f"Expected 4 unique values in column '{col_name}'."
+            assert df[col_name].null_count() == 0, f"Null values found in column '{col_name}'."
+            assert df[col_name].is_nan().sum() == 0, f"NaN values found in column '{col_name}'."
 
         logger.success("PPI designation columns added to DataFrame.")
         return df
