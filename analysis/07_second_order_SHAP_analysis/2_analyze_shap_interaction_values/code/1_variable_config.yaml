@@ -16,7 +16,7 @@ FIGURES:
     prc_roc_curves_dir: '../outputs/figures/roc_prc_curves/'
 
 # PPI Info 
-PPI_SOURCES: ["recy2h",]
+PPI_SOURCES: ["Rec-Y2H", "Street et al | IP-MS", Street et al | IP/SEC-MS (Both)"]
 PPI_TYPES: ["Same-Position", "Different-Position", "All-Positions"]
 
 PPI_INFO: 
