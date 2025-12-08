@@ -911,17 +911,9 @@ class SecondOrderShapNetworkAnalyzer:
         assert cell_line in self.CONFIG["CELL_LINES"], f"Cell line '{cell_line}' not recognized."
         assert ppi_source in self.CONFIG["PPI_SOURCES"], f"PPI mode '{ppi_source}' not recognized."
 
-        if ppi_source == "recy2h":
-            interaction_col = self.ppi_source_columns["recy2h"]
-
-        elif ppi_source == "street_et_al":
-            raise NotImplementedError("Street et al. PPI mode not yet implemented.")
-        elif ppi_source == "combined": 
-            raise NotImplementedError("Combined PPI mode not yet implemented.")
-
         filtered = self.ppi.filter(
-            (pl.col(interaction_col) == True) &
-            (pl.col(f"Both eCLIP - {cell_line}") == True)
+            (pl.col(ppi_source) == True) &
+            (pl.col(f"{cell_line} - Both eCLIP") == True)
         )
 
         rbps = set()
