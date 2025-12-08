@@ -1112,7 +1112,7 @@ class SecondOrderShapNetworkAnalyzer:
                             ppi_type = self.return_ppi_type(pair, ppi_source=ppi_source)
 
                             if ppi_type is not None:   
-                                if ppi_type == False: 
+                                if type(ppi_type) == bool and ppi_type == False:
                                     highlight_cells[(i, j)] = False
 
                                 elif type(ppi_type) == str:
