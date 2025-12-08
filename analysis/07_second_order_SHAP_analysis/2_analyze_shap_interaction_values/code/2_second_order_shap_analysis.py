@@ -484,14 +484,15 @@ class SecondOrderShapNetworkAnalyzer:
             sorted([rbp1, rbp2])
         )
         assert self.ppi.filter(pl.col("Interaction") == "-".join(sorted([rbp1, rbp2], reverse=True))).height == 0, f"Interaction '{rbp2}-{rbp1}' found in PPI table; interactions should be sorted alphabetically."
+        
         filtered = self.ppi.filter(pl.col("Interaction") == interaction)
-        assert filtered.height <= 1, f"More than one row found for interaction '{interaction}' in PPI table."
+        assert filtered.height == 1, f"Interaction '{interaction}' not found in PPI table."
 
-        if filtered.height == 0:
-            return None
-        else:
-            return filtered[self.ppi_source_columns[ppi_source]].item()
-
+        value = filtered[ppi_source].item()
+        assert value is None or isinstance(value, bool), f"PPI value for interaction '{interaction}' from source '{ppi_source}' is not None or boolean."
+        
+        return value
+    
     
     def return_ppi_type(self, pair, ppi_source=None):
         # pair is expected to be in the format 'RBP1_Pos1-RBP2_Pos2'
