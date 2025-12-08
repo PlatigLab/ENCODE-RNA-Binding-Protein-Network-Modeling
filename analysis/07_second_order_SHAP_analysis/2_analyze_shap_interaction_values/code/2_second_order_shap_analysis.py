@@ -1323,29 +1323,32 @@ class SecondOrderShapNetworkAnalyzer:
         ppi_sources = self.CONFIG["PPI_SOURCES"]
         ppi_types = self.CONFIG["PPI_TYPES"]
 
-        abs_shap = table[f"Value - {metric}"].abs()
-
         result_dict = {}
         for ppi_source in ppi_sources:
             result_dict[ppi_source] = {}
             for ppi_type in ppi_types:
-                # Custom logic for PPI column
+                # Filter table to only rows where the value of ppi_source column is not "None" string
+                only_tested = table.filter(pl.col(ppi_source) != "None")
+                assert only_tested[ppi_source].n_unique() ==3, f"Expected 3 unique values in column '{ppi_source}' after filtering, found {only_tested[ppi_source].n_unique()}."
+                
+                # All positions means any position with interaction
                 if ppi_type == "All-Positions":
-                    ppi_bool = table[f"{ppi_source} | PPI Type"].str.contains("-Position")
+                    ppi_bool = (only_tested[ppi_source].str.ends_with("-Position"))
                 else:
-                    ppi_bool = (table[f"{ppi_source} | PPI Type"] == ppi_type)
+                    ppi_bool = (only_tested[ppi_source] == ppi_type)
+
+                abs_shap = only_tested[f"Value - {metric}"].abs().to_list()
+                assert len(abs_shap) == len(ppi_bool) == only_tested["Cell Line"].shape[0], "Length mismatch between abs_shap, ppi_bool, and Cell Line column."
                 
                 # Build polars DataFrame and include Cell Line column
                 df = pl.DataFrame({
                     "Abs. SHAP Value": abs_shap,
                     "PPI": ppi_bool,
-                    "Cell Line": table["Cell Line"]
+                    "Cell Line": only_tested["Cell Line"]
                 })
 
                 # Remove rows where "Abs. SHAP Value" is NaN
                 df = df.filter(~pl.col("Abs. SHAP Value").is_nan())           
-                # Sort by absolute SHAP value descending
-                df = df.sort("Abs. SHAP Value", descending=True)
 
                 # Assert no nulls in "Abs. SHAP Value"
                 assert df["Abs. SHAP Value"].null_count() == 0, "Nulls found in 'Abs. SHAP Value' column."
@@ -1353,12 +1356,17 @@ class SecondOrderShapNetworkAnalyzer:
                 assert (df["Abs. SHAP Value"] >= 0).all(), "Negative values found in 'Abs. SHAP Value' column."
                 # Assert no nulls or NaNs in "PPI" column
                 assert df["PPI"].null_count() == 0, "Nulls found in 'PPI' column."
+                # Assert every value in "PPI" is exactly True or False (boolean)
+                assert all(val == True or val == False for val in df["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
+                # Assert that there is at least one True value in the "PPI" column
+                assert df["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}"
                 
                 result_dict[ppi_source][ppi_type] = df
-        
-        # Assert that all DataFrames have the same number of values
-        num_values = [result_dict[source][ppi_type].shape[0] for source in result_dict for ppi_type in result_dict[source]]
-        assert len(set(num_values)) == 1, f"Mismatch in number of values across all DataFrames: {num_values}"
+
+        # Assert that for each PPI source, all PPI types have the same number of rows
+        for source in result_dict:
+            num_values = [result_dict[source][ppi_type].shape[0] for ppi_type in result_dict[source]]
+            assert len(set(num_values)) == 1, f"Mismatch in number of values for PPI source '{source}': {num_values}"
 
         cell_lines = self.CONFIG["CELL_LINES"]
         curve_types = ["roc", "prc"]
@@ -1375,19 +1383,23 @@ class SecondOrderShapNetworkAnalyzer:
                 for ppi_source in ppi_sources:
                     for ppi_type in ppi_types:
                         df = result_dict[ppi_source][ppi_type]
-                        # Filter for current cell line
-                        df_cl = df.filter(pl.col("Cell Line") == cell_line)
+
+                        # Filter for current cell line and then sort by "Abs. SHAP Value" descending, then by "PPI" descending
+                        df_cl = df.filter(pl.col("Cell Line") == cell_line).sort(["Abs. SHAP Value", "PPI"], descending=True)
+
+                        logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, N points: {df_cl.shape[0]}")
+                        
                         y_true = df_cl["PPI"].to_numpy()
                         y_score = df_cl["Abs. SHAP Value"].to_numpy()
                         
                         if curve_type == "roc":
                             fpr, tpr, _ = roc_curve(y_true, y_score)
                             roc_auc = auc(fpr, tpr)
-                            ax.plot(fpr, tpr, label=f"{ppi_source} | {ppi_type} (AUC={roc_auc:.2f})")
+                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.2f})", alpha=0.2)
                         else:
                             precision, recall, _ = precision_recall_curve(y_true, y_score)
                             prc_auc = auc(recall, precision)
-                            ax.plot(recall, precision, label=f"{ppi_source} | {ppi_type} (AUC={prc_auc:.2f})")
+                            ax.plot(recall, precision, label=f"{ppi_source} & {ppi_type} (AUC={prc_auc:.2f})", alpha=0.2)
                 
                 if curve_type == "roc":
                     ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline (AUC=0.50)")
@@ -1402,13 +1414,15 @@ class SecondOrderShapNetworkAnalyzer:
                     ax.set_ylabel("Precision", fontsize=12)
                     ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
                 
-                ax.legend(loc="best", fontsize=12, frameon=True)
+                ax.legend(loc="best", fontsize=7, frameon=True)
         
         fig.suptitle(
             "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
-            "\nNOTE 2: Anything not True for PPI status is treated as False (i.e. Nulls are treated as False)" +
+            "\nNOTE 2: Null values removed from curve creation to keep only True Positive and True Negatives" +
+            "\nNOTE 3: lots of interaction features with 0 averaged SHAPs. Sorted so that within 0 values, True PPI comes first" +
+            "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
             "\n\nROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
-            fontsize=16, y=1.01
+            fontsize=13, y=1.02
         )
 
         plt.tight_layout()
