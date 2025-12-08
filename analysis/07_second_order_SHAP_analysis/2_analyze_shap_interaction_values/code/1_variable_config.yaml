@@ -19,18 +19,20 @@ FIGURES:
 PPI_SOURCES: ["Rec-Y2H", "Street et al | IP-MS", "Street et al | IP/SEC-MS (Both)"]
 PPI_TYPES: ["Same-Position", "Different-Position", "All-Positions"]
 
-PPI_INFO: 
-    cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
-    
-    recy2h_ppi_dir: 
-        all_rbps_screened: "../../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx"
-        results: "../../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx"
-        uniprot_mapping: "../../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv"
+PPI_INFO: "../../../05_generate_eCLIP_RBP_PPIs/all_eCLIP_RBP_PPI_combination_PPI_annotations.tsv"
 
-    street_et_al: 
-        all_rbps_screened: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s1_ip_ms_baits.xlsx"
-        table_s2_full_results: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s2_full_ppi.csv"
-        table_s3_output: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/OUTPUT_street_et_al_gene_yeo_molecular_cell_table_s3_encode_rbps.json"
+
+    # cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
+    
+    # recy2h_ppi_dir: 
+    #     all_rbps_screened: "../../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx"
+    #     results: "../../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx"
+    #     uniprot_mapping: "../../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv"
+
+    # street_et_al: 
+    #     all_rbps_screened: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s1_ip_ms_baits.xlsx"
+    #     table_s2_full_results: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s2_full_ppi.csv"
+    #     table_s3_output: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/OUTPUT_street_et_al_gene_yeo_molecular_cell_table_s3_encode_rbps.json"
 
 
 CELL_LINES: ["HepG2", "K562"]
