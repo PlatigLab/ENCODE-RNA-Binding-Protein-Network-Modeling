@@ -525,17 +525,15 @@ class SecondOrderShapNetworkAnalyzer:
         assert not (df["RBP 1"] == df["RBP 2"]).any(), "There are rows where 'RBP 1' equals 'RBP 2'."
 
         for ppi_source in self.CONFIG["PPI_SOURCES"]:
-            col_name = f"{ppi_source} | PPI Type"
             df = df.with_columns(
                 pl.col("Column").map_elements(
                     lambda pair: str(self.return_ppi_type(pair.replace('-interaction-shap', ''), ppi_source=ppi_source)),
                     return_dtype=pl.String
-                ).alias(col_name)
+                ).alias(ppi_source)
             )
 
-            assert df[col_name].unique().len() == 4, f"Expected 4 unique values in column '{col_name}'."
-            assert df[col_name].null_count() == 0, f"Null values found in column '{col_name}'."
-            assert df[col_name].is_nan().sum() == 0, f"NaN values found in column '{col_name}'."
+            assert df[ppi_source].unique().len() == 4, f"Expected 4 unique values in column '{ppi_source} but got {df[ppi_source].unique().to_list()}."
+            assert df[ppi_source].null_count() == 0, f"Null values found in column '{ppi_source}'."
 
         logger.success("PPI designation columns added to DataFrame.")
         return df
