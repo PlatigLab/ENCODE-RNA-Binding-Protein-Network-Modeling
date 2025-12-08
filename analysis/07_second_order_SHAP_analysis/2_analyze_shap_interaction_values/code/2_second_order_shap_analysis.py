@@ -1298,9 +1298,12 @@ class SecondOrderShapNetworkAnalyzer:
             fontsize=26,
             y=1.08
         )
-
+        
+        ppi_source_str = ppi_source.translate(
+            str.maketrans(" |/()", "_____")
+        )
         plt.savefig(
-            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source}_{metric}_highlight_{highlight_str}_side_by_side_heatmap.png",
+            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source_str}_{metric}_highlight_{highlight_str}_side_by_side_heatmap.png",
             bbox_inches='tight',
             dpi=600
         )
