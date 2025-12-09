@@ -1326,13 +1326,34 @@ class SecondOrderShapNetworkAnalyzer:
         #TODO remove later 
         # table.write_csv("./tmp.tsv", separator="\t")
         table = pl.read_csv("./tmp.tsv", separator="\t")
+        
+        union_col = "Rec-Y2H/Street et al. IP-MS (Union)"
+        # Build union column as a list
+        union_col_values = []
+        for rec_val, ip_val in zip(table["Rec-Y2H"].to_list(), table["Street et al | IP-MS"].to_list()):
+            # If either column ends with "-Position", take that string (prefer rec_y2h if both)
+            if rec_val.endswith("-Position"):
+                union_col_values.append(rec_val)
+            elif ip_val.endswith("-Position"):
+                union_col_values.append(ip_val)
+            # If both are "False"
+            elif rec_val == "False" and ip_val == "False":
+                union_col_values.append("False")
+            # All other cases
+            else:
+                union_col_values.append("None")
 
-        ppi_sources = self.CONFIG["PPI_SOURCES"]
+        # Add union column to table
+        table = table.with_columns(
+            pl.Series(union_col, union_col_values)
+        )
+
+        ppi_sources = self.CONFIG["PPI_SOURCES"] + [union_col]
         ppi_types = self.CONFIG["PPI_TYPES"]
         cell_lines = self.CONFIG["CELL_LINES"]
         curve_types = ["roc", "prc"]
         
-        sns.set_palette("Set1")
+        sns.set_palette("Set3")
         fig, axes = plt.subplots(
             nrows=2, ncols=2, figsize=(12, 12), dpi=400,
             # sharex=True, sharey=True
@@ -1343,7 +1364,7 @@ class SecondOrderShapNetworkAnalyzer:
         for row_idx, cell_line in enumerate(cell_lines):
             for col_idx, curve_type in enumerate(curve_types):
                 ax = axes[row_idx, col_idx]
-                for ppi_source in ppi_sources:
+                for ppi_source in ppi_sources: 
                     for ppi_type in ppi_types:
                         # Filter table to only rows where the value of ppi_source column is not "None" string
                         curve_input = table.filter(
@@ -1403,7 +1424,7 @@ class SecondOrderShapNetworkAnalyzer:
                         if curve_type == "roc":
                             fpr, tpr, _ = roc_curve(y_true, y_score)
                             roc_auc = roc_auc_score(y_true, y_score)
-                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.8)
+                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.5)
                             
                             row_dict = {
                                 "Cell Line": cell_line,
@@ -1429,8 +1450,8 @@ class SecondOrderShapNetworkAnalyzer:
                         else:
                             precision, recall, _ = precision_recall_curve(y_true, y_score)
                             prc_auc = auc(recall, precision)
-                            tmp = (curve_input["PPI"].sum() / curve_input.shape[0]) 
-                            ax.plot(recall, precision, label=f"{ppi_source} & {ppi_type} (AUC={prc_auc:.3f}) [{tmp:.3f}]", alpha=0.6)
+                            baseline = (curve_input["PPI"].sum() / curve_input.shape[0]) 
+                            ax.plot(recall, precision, label=f"{ppi_source} & {ppi_type} (AUC={prc_auc:.3f}) [Baseline: {baseline:.3f}]", alpha=0.5)
                 
                 if curve_type == "roc":
                     ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
@@ -1450,8 +1471,9 @@ class SecondOrderShapNetworkAnalyzer:
             "\nNOTE 2: Null values removed from curve creation to keep only True Positive and True Negatives" +
             "\nNOTE 3: All 0 SHAPs removed from curve creation" +
             "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
-            '\nNOTE 5: "Same" and "Different" position PPIs subset to only interactions at "Same" or "Different" positions, respectively' +
+            '\nNOTE 5: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
             "\nNOTE 6: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
+            "\nNOTE 7: Union PPI is: True (either resource) --> True, False --> if both are False, else None (and hence, removed)" +
             "\n\nROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
             fontsize=13, y=1.01
         )
