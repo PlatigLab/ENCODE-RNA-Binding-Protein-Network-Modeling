@@ -1439,8 +1439,6 @@ class SecondOrderShapNetworkAnalyzer:
                     ax.set_title(f"ROC Curve - {cell_line}", fontweight='bold', fontsize=16)
                 
                 else:
-                    pos_rate = np.mean(y_true)
-                    ax.plot([0, 1], [pos_rate, pos_rate], 'k--', lw=1, label=f"Baseline [] (AUC={pos_rate:.3f})")
                     ax.set_xlabel("Recall", fontsize=12)
                     ax.set_ylabel("Precision", fontsize=12)
                     ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
