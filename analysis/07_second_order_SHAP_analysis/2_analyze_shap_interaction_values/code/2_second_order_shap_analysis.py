@@ -1360,7 +1360,6 @@ class SecondOrderShapNetworkAnalyzer:
         )
 
         summary= []
-        
         for row_idx, cell_line in enumerate(cell_lines):
             for col_idx, curve_type in enumerate(curve_types):
                 ax = axes[row_idx, col_idx]
@@ -1424,7 +1423,7 @@ class SecondOrderShapNetworkAnalyzer:
                         if curve_type == "roc":
                             fpr, tpr, _ = roc_curve(y_true, y_score)
                             roc_auc = roc_auc_score(y_true, y_score)
-                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.5)
+                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.7)
                             
                             row_dict = {
                                 "Cell Line": cell_line,
@@ -1432,14 +1431,10 @@ class SecondOrderShapNetworkAnalyzer:
                                 "PPI Type": ppi_type,
                                 "Curve": curve_type,
                                 "AUC": roc_auc, 
-                                "# Points": curve_input.shape[0], 
-                                "% Points": (curve_input.shape[0] / table.filter(pl.col("Cell Line") == cell_line).shape[0]) * 100,
-                                "# True PPIs": curve_input["PPI"].sum(), 
-                                "% Point w/ True PPI": (curve_input["PPI"].sum() / curve_input.shape[0]) * 100,
-                                "% True PPIs (Denominator: True + False Only)": (curve_input["PPI"].sum() / table.filter(
-                                        (pl.col("Cell Line") == cell_line) & 
-                                        (pl.col(ppi_source) != "None")
-                                    ).shape[0]) * 100
+                                "ROC Input Table: # INTER-RBP Interaction Features (Rows)": curve_input.shape[0], 
+                                "# Rows as % of INTER-RBP Interaction Effects": (curve_input.shape[0] / table.filter(pl.col("Cell Line") == cell_line).shape[0]) * 100,
+                                "ROC Input Table: # True PPIs": curve_input["PPI"].sum(), 
+                                "% Rows w/ True PPI": (curve_input["PPI"].sum() / curve_input.shape[0]) * 100,
                             }
                             
                             for thresh in self.CONFIG["PARTIAL_AUC_THRESHOLDS"]:
@@ -1464,7 +1459,12 @@ class SecondOrderShapNetworkAnalyzer:
                     ax.set_ylabel("Precision", fontsize=12)
                     ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
                 
-                ax.legend(loc="best", fontsize=6, frameon=True)
+                if curve_type == "prc":
+                    legend_fontsize = 7
+                elif curve_type == "roc":
+                    legend_fontsize = 5
+
+                ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
         
         fig.suptitle(
             "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
@@ -1482,7 +1482,7 @@ class SecondOrderShapNetworkAnalyzer:
         plt.savefig(
             f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_curves.png",
             bbox_inches='tight',
-            dpi=300
+            dpi=400
         )
 
         plt.show()
