@@ -1321,7 +1321,6 @@ class SecondOrderShapNetworkAnalyzer:
         # )
 
         # table = self.add_ppi_stats_to_long_df(df = table)
-        # logger.warning("REMINDER: All values that are not 'Same Position' or 'Different Position' for 'PPI Type' are treated as 'False'!")
 
         #TODO remove later 
         # table.write_csv("./tmp.tsv", separator="\t")
@@ -1336,8 +1335,8 @@ class SecondOrderShapNetworkAnalyzer:
                 union_col_values.append(rec_val)
             elif ip_val.endswith("-Position"):
                 union_col_values.append(ip_val)
-            # If both are "False"
-            elif rec_val == "False" and ip_val == "False":
+            # If either column is "False", take "False"
+            elif rec_val == "False" or ip_val == "False":
                 union_col_values.append("False")
             # All other cases
             else:
@@ -1354,7 +1353,6 @@ class SecondOrderShapNetworkAnalyzer:
         curve_types = ["roc", "prc"]
         
         sns.set_palette("Set3")
-
 
         summary= []
         for plot_type in ["FEATURE-SPECIFIC", "RBP-SPECIFIC_MAX_VALUE"]:
@@ -1486,7 +1484,7 @@ class SecondOrderShapNetworkAnalyzer:
                     if curve_type == "prc":
                         legend_fontsize = 7
                     elif curve_type == "roc":
-                        legend_fontsize = 5
+                        legend_fontsize = 5.5
 
                     ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
             
@@ -1502,7 +1500,7 @@ class SecondOrderShapNetworkAnalyzer:
                 "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
                 '\nNOTE 5: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
                 "\nNOTE 6: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
-                "\nNOTE 7: Union PPI is: True (either resource) --> True, False --> if both are False, else None (and hence, removed)" +
+                "\nNOTE 7: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
                 note +
                 f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
                 fontsize=13, y=1.01
