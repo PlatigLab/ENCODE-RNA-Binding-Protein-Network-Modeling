@@ -1354,142 +1354,172 @@ class SecondOrderShapNetworkAnalyzer:
         curve_types = ["roc", "prc"]
         
         sns.set_palette("Set3")
-        fig, axes = plt.subplots(
-            nrows=2, ncols=2, figsize=(12, 12), dpi=400,
-            # sharex=True, sharey=True
-        )
+
 
         summary= []
-        for row_idx, cell_line in enumerate(cell_lines):
-            for col_idx, curve_type in enumerate(curve_types):
-                ax = axes[row_idx, col_idx]
-                for ppi_source in ppi_sources: 
-                    for ppi_type in ppi_types:
-                        # Filter table to only rows where the value of ppi_source column is not "None" string
-                        curve_input = table.filter(
-                            (pl.col(ppi_source) != "None") & 
-                            (pl.col("Cell Line") == cell_line)
-                        )
-                        assert curve_input[ppi_source].n_unique() ==3, f"Expected 3 unique values in column '{ppi_source}' after filtering, found {curve_input[ppi_source].n_unique()}."
+        for plot_type in ["FEATURE-SPECIFIC", "RBP-SPECIFIC_MAX_VALUE"]:
+            fig, axes = plt.subplots(
+                nrows=2, ncols=2, figsize=(12, 12), dpi=400,
+                sharex=True, sharey=True
+            )
 
-                        # if same or different position only, then you need to subset to only those interaction columns 
-                        # or else IT WOULD BE OVERLY HARSH to call QKI_3-RBFOX2_4 as "False PPI" when looking at "Same-Position" only
-                        if ppi_type == "Same-Position":
-                            curve_input = curve_input.filter(
-                                (pl.col("Position 1") == pl.col("Position 2"))
+            for row_idx, cell_line in enumerate(cell_lines):
+                for col_idx, curve_type in enumerate(curve_types):
+                    ax = axes[row_idx, col_idx]
+                    for ppi_source in ppi_sources: 
+                        for ppi_type in ppi_types:
+                            # Filter table to only rows where the value of ppi_source column is not "None" string
+                            curve_input = table.filter(
+                                (pl.col(ppi_source) != "None") & 
+                                (pl.col("Cell Line") == cell_line)
                             )
-                        elif ppi_type == "Different-Position":
-                            curve_input = curve_input.filter(
-                                (pl.col("Position 1") != pl.col("Position 2"))
-                            )
-                        
-                        # Same and different positions allowed
-                        if ppi_type == "All-Positions":
-                            ppi_bool = (curve_input[ppi_source].str.ends_with("-Position"))
-                        # Must match specific PPI type
-                        else:
-                            ppi_bool = (curve_input[ppi_source] == ppi_type)
+                            assert curve_input[ppi_source].n_unique() ==3, f"Expected 3 unique values in column '{ppi_source}' after filtering, found {curve_input[ppi_source].n_unique()}."
 
-                        # Add PPI column and Abs. SHAP Value column
-                        curve_input = curve_input.with_columns([
-                            pl.lit(ppi_bool).alias("PPI"),
-                            pl.col(f"Value - {metric}").abs().alias("Abs. SHAP Value")
-                        ])
-                        
-                        # Remove rows where "Abs. SHAP Value" is NaN
-                        # This occurs for "Bound-Only" metrics when there was no binding observed
-                        curve_input = curve_input.filter(~pl.col("Abs. SHAP Value").is_nan())  
-                        # Remove rows where "Abs. SHAP Value" is 0
-                        curve_input = curve_input.filter(pl.col("Abs. SHAP Value") > 0)
-                        # Drop all columns in ppi_sources from curve_input
-                        curve_input = curve_input.drop(ppi_sources)
-
-                        # Assert no nulls in the entire dataframe
-                        assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
-                        # Assert that there are no 0 or negative values in "Abs. SHAP Value"
-                        assert (curve_input["Abs. SHAP Value"] > 0).all(), "'Abs. SHAP Value' contains 0 or negative values."
-                        # Assert every value in "PPI" is exactly True or False (boolean)
-                        assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
-                        # Assert that there is at least one True value in the "PPI" column
-                        assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}"
-
-                        # Sort by "Abs. SHAP Value" descending, then by "PPI" descending
-                        curve_input = curve_input.sort(["Abs. SHAP Value", "PPI"], descending=True)
-                        logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, N points: {curve_input.shape[0]}")
-
-                        y_true = curve_input["PPI"].to_numpy()
-                        y_score = curve_input["Abs. SHAP Value"].to_numpy()
-                        
-                        if curve_type == "roc":
-                            fpr, tpr, _ = roc_curve(y_true, y_score)
-                            roc_auc = roc_auc_score(y_true, y_score)
-                            ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.7)
+                            # if same or different position only, then you need to subset to only those interaction columns 
+                            # or else IT WOULD BE OVERLY HARSH to call QKI_3-RBFOX2_4 as "False PPI" when looking at "Same-Position" only
+                            if ppi_type == "Same-Position":
+                                curve_input = curve_input.filter(
+                                    (pl.col("Position 1") == pl.col("Position 2"))
+                                )
+                            elif ppi_type == "Different-Position":
+                                curve_input = curve_input.filter(
+                                    (pl.col("Position 1") != pl.col("Position 2"))
+                                )
                             
-                            row_dict = {
-                                "Cell Line": cell_line,
-                                "PPI Source": ppi_source,
-                                "PPI Type": ppi_type,
-                                "Curve": curve_type,
-                                "AUC": roc_auc, 
-                                "ROC Input Table: # INTER-RBP Interaction Features (Rows)": curve_input.shape[0], 
-                                "# Rows as % of INTER-RBP Interaction Effects": (curve_input.shape[0] / table.filter(pl.col("Cell Line") == cell_line).shape[0]) * 100,
-                                "ROC Input Table: # True PPIs": curve_input["PPI"].sum(), 
-                                "% Rows w/ True PPI": (curve_input["PPI"].sum() / curve_input.shape[0]) * 100,
-                            }
+                            # Same and different positions allowed
+                            if ppi_type == "All-Positions":
+                                ppi_bool = (curve_input[ppi_source].str.ends_with("-Position"))
+                            # Must match specific PPI type
+                            else:
+                                ppi_bool = (curve_input[ppi_source] == ppi_type)
+
+                            # Add PPI column and Abs. SHAP Value column
+                            curve_input = curve_input.with_columns([
+                                pl.lit(ppi_bool).alias("PPI"),
+                                pl.col(f"Value - {metric}").abs().alias("Abs. SHAP Value")
+                            ])
                             
-                            for thresh in self.CONFIG["PARTIAL_AUC_THRESHOLDS"]:
-                                partial_auc = roc_auc_score(y_true, y_score, max_fpr=thresh)
-                                row_dict[f"Partial AUC @ FPR={thresh}"] = partial_auc
-                            summary.append(row_dict)
+                            # Remove rows where "Abs. SHAP Value" is NaN
+                            # This occurs for "Bound-Only" metrics when there was no binding observed
+                            curve_input = curve_input.filter(~pl.col("Abs. SHAP Value").is_nan())  
+                            # Remove rows where "Abs. SHAP Value" is 0
+                            curve_input = curve_input.filter(pl.col("Abs. SHAP Value") > 0)
+                            # Drop all columns in ppi_sources from curve_input
+                            curve_input = curve_input.drop(ppi_sources)
 
-                        else:
-                            precision, recall, _ = precision_recall_curve(y_true, y_score)
-                            prc_auc = auc(recall, precision)
-                            baseline = (curve_input["PPI"].sum() / curve_input.shape[0]) 
-                            ax.plot(recall, precision, label=f"{ppi_source} & {ppi_type} (AUC={prc_auc:.3f}) [Baseline: {baseline:.3f}]", alpha=0.5)
-                
-                if curve_type == "roc":
-                    ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
-                    ax.set_xlabel("False Positive Rate", fontsize=12)
-                    ax.set_ylabel("True Positive Rate", fontsize=12)
-                    ax.set_title(f"ROC Curve - {cell_line}", fontweight='bold', fontsize=16)
-                
-                else:
-                    ax.set_xlabel("Recall", fontsize=12)
-                    ax.set_ylabel("Precision", fontsize=12)
-                    ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
-                
-                if curve_type == "prc":
-                    legend_fontsize = 7
-                elif curve_type == "roc":
-                    legend_fontsize = 5
+                            if plot_type == "RBP-SPECIFIC_MAX_VALUE":
+                                # Create a new column with sorted tuple of RBP 1 and RBP 2
+                                curve_input = curve_input.with_columns(
+                                    pl.struct(["RBP 1", "RBP 2"]).map_elements(lambda x: "-".join(sorted([x["RBP 1"], x["RBP 2"]]))).alias("RBP_PAIR")
+                                )
+                                # Sort by Abs. SHAP Value descending and keep only the first occurrence per RBP_PAIR (max value)
+                                curve_input = curve_input.sort("Abs. SHAP Value", descending=True).unique(
+                                    subset=["RBP_PAIR"], 
+                                    keep="first", 
+                                    maintain_order=True    
+                                )
+                                
+                            # Sort by "Abs. SHAP Value" descending, then by "PPI" descending
+                            curve_input = curve_input.sort(["Abs. SHAP Value", "PPI"], descending=True)
+                            
+                            # Assert no nulls in the entire dataframe
+                            assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
+                            # Assert that there are no 0 or negative values in "Abs. SHAP Value"
+                            assert (curve_input["Abs. SHAP Value"] > 0).all(), "'Abs. SHAP Value' contains 0 or negative values."
+                            # Assert every value in "PPI" is exactly True or False (boolean)
+                            assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
+                            # Assert that there is at least one True value in the "PPI" column
+                            assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}"
 
-                ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
-        
-        fig.suptitle(
-            "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
-            "\nNOTE 2: Null values removed from curve creation to keep only True Positive and True Negatives" +
-            "\nNOTE 3: All 0 SHAPs removed from curve creation" +
-            "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
-            '\nNOTE 5: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
-            "\nNOTE 6: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
-            "\nNOTE 7: Union PPI is: True (either resource) --> True, False --> if both are False, else None (and hence, removed)" +
-            "\n\nROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
-            fontsize=13, y=1.01
-        )
 
-        plt.tight_layout()
-        plt.savefig(
-            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_curves.png",
-            bbox_inches='tight',
-            dpi=400
-        )
+                            logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, N points: {curve_input.shape[0]}")
 
-        plt.show()
+                            y_true = curve_input["PPI"].to_numpy()
+                            y_score = curve_input["Abs. SHAP Value"].to_numpy()
+                            
+                            if curve_type == "roc":
+                                fpr, tpr, _ = roc_curve(y_true, y_score)
+                                roc_auc = roc_auc_score(y_true, y_score)
+                                ax.plot(fpr, tpr, label=f"{ppi_source} & {ppi_type} (AUC={roc_auc:.3f})", alpha=0.7)
+                                
+                                row_dict = {
+                                    "Plot Type": plot_type,
+                                    "Cell Line": cell_line,
+                                    "PPI Source": ppi_source,
+                                    "PPI Type": ppi_type,
+                                    "Curve": curve_type,
+                                    "AUC": roc_auc, 
+                                    "ROC Input Table: # INTER-RBP Interaction Features (Rows)": curve_input.shape[0], 
+                                    "# Rows as % of All INTER-RBP Interaction Effects": (curve_input.shape[0] / table.filter(pl.col("Cell Line") == cell_line).shape[0]) * 100,
+                                    "ROC Input Table: # True PPIs": curve_input["PPI"].sum(), 
+                                    "% Rows w/ True PPI": (curve_input["PPI"].sum() / curve_input.shape[0]) * 100,
+                                }
+                                
+                                for thresh in self.CONFIG["SHAP_PERCENTILE_THRESHOLDS"]:
+                                    shap_value_at_thresh = np.quantile(curve_input["Abs. SHAP Value"].to_numpy(), thresh)
+                                    row_dict[f"Abs. SHAP - {thresh*100} Percentile"] = shap_value_at_thresh
+                                row_dict["Abs. SHAP - Min Val"] = curve_input["Abs. SHAP Value"].min()
+
+                                for thresh in self.CONFIG["PARTIAL_AUC_THRESHOLDS"]:
+                                    partial_auc = roc_auc_score(y_true, y_score, max_fpr=thresh)
+                                    row_dict[f"Partial AUC @ FPR={thresh}"] = partial_auc
+                                    
+                                summary.append(row_dict)
+
+                            else:
+                                precision, recall, _ = precision_recall_curve(y_true, y_score)
+                                prc_auc = auc(recall, precision)
+                                baseline = (curve_input["PPI"].sum() / curve_input.shape[0]) 
+                                ax.plot(recall, precision, label=f"{ppi_source} & {ppi_type} (AUC={prc_auc:.3f}) [Baseline: {baseline:.3f}]", alpha=0.5)
+                    
+                    if curve_type == "roc":
+                        ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
+                        ax.set_xlabel("False Positive Rate", fontsize=12)
+                        ax.set_ylabel("True Positive Rate", fontsize=12)
+                        ax.set_title(f"ROC Curve - {cell_line}", fontweight='bold', fontsize=16)
+                    
+                    else:
+                        ax.set_xlabel("Recall", fontsize=12)
+                        ax.set_ylabel("Precision", fontsize=12)
+                        ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
+                    
+                    if curve_type == "prc":
+                        legend_fontsize = 7
+                    elif curve_type == "roc":
+                        legend_fontsize = 5
+
+                    ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
+            
+            if plot_type == "RBP-SPECIFIC_MAX_VALUE":
+                note = "\nNOTE 8: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
+            else: 
+                note = ""
+
+            fig.suptitle(
+                "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
+                "\nNOTE 2: Null values removed from curve creation to keep only True Positive and True Negatives" +
+                "\nNOTE 3: All 0 SHAPs removed from curve creation" +
+                "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
+                '\nNOTE 5: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
+                "\nNOTE 6: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
+                "\nNOTE 7: Union PPI is: True (either resource) --> True, False --> if both are False, else None (and hence, removed)" +
+                note +
+                f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
+                fontsize=13, y=1.01
+            )
+
+            plt.tight_layout()
+            plt.savefig(
+                f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{plot_type}-{metric}-roc_prc_curves.png",
+                bbox_inches='tight',
+                dpi=400
+            )
+
+            plt.show()
 
         summary_df = pl.DataFrame(summary).sort("AUC", descending=True)
         summary_df.write_csv(
-            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_summary_and_partial_aucs.tsv",
+            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_summary_partial_auc_and_value_percentiles.tsv",
             separator="\t"
         )
 
