@@ -1400,8 +1400,6 @@ class SecondOrderShapNetworkAnalyzer:
                             # Remove rows where "Abs. SHAP Value" is NaN
                             # This occurs for "Bound-Only" metrics when there was no binding observed
                             curve_input = curve_input.filter(~pl.col("Abs. SHAP Value").is_nan())  
-                            # Remove rows where "Abs. SHAP Value" is 0
-                            curve_input = curve_input.filter(pl.col("Abs. SHAP Value") > 0)
                             # Drop all columns in ppi_sources from curve_input
                             curve_input = curve_input.drop(ppi_sources)
 
@@ -1422,15 +1420,19 @@ class SecondOrderShapNetworkAnalyzer:
                             
                             # Assert no nulls in the entire dataframe
                             assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
-                            # Assert that there are no 0 or negative values in "Abs. SHAP Value"
-                            assert (curve_input["Abs. SHAP Value"] > 0).all(), "'Abs. SHAP Value' contains 0 or negative values."
+
+                            # assert at least one row with 0 "Abs. SHAP Value"
+                            zero_abs_shap_rows = (curve_input["Abs. SHAP Value"] == 0).sum()
+                            assert zero_abs_shap_rows > 0, f"Expected rows with 0 'Abs. SHAP Value', found none for {ppi_source} & {ppi_type}."
+
+                            # Assert that there are no negative values in "Abs. SHAP Value"
+                            assert (curve_input["Abs. SHAP Value"] >= 0).all(), "'Abs. SHAP Value' contains negative values."
                             # Assert every value in "PPI" is exactly True or False (boolean)
                             assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
                             # Assert that there is at least one True value in the "PPI" column
                             assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}"
 
-
-                            logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, N points: {curve_input.shape[0]}")
+                            logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, # points: {curve_input.shape[0]}")
 
                             y_true = curve_input["PPI"].to_numpy()
                             y_score = curve_input["Abs. SHAP Value"].to_numpy()
@@ -1451,6 +1453,8 @@ class SecondOrderShapNetworkAnalyzer:
                                     "# Rows as % of All INTER-RBP Interaction Effects": (curve_input.shape[0] / table.filter(pl.col("Cell Line") == cell_line).shape[0]) * 100,
                                     "ROC Input Table: # True PPIs": curve_input["PPI"].sum(), 
                                     "% Rows w/ True PPI": (curve_input["PPI"].sum() / curve_input.shape[0]) * 100,
+                                    "# Rows w/ 0 Abs. SHAP Value": zero_abs_shap_rows,
+                                    "% Rows w/ 0 Abs. SHAP Value": (zero_abs_shap_rows / curve_input.shape[0]) * 100
                                 }
                                 
                                 for thresh in self.CONFIG["SHAP_PERCENTILE_THRESHOLDS"]:
@@ -1489,18 +1493,17 @@ class SecondOrderShapNetworkAnalyzer:
                     ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
             
             if plot_type == "RBP-SPECIFIC_MAX_VALUE":
-                note = "\nNOTE 8: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
+                note = "\nNOTE 7: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
             else: 
                 note = ""
 
             fig.suptitle(
                 "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
-                "\nNOTE 2: Null values removed from curve creation to keep only True Positive and True Negatives" +
-                "\nNOTE 3: All 0 SHAPs removed from curve creation" +
-                "\nNOTE 4: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
-                '\nNOTE 5: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
-                "\nNOTE 6: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
-                "\nNOTE 7: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
+                "\nNOTE 2: Null PPI values removed from curve creation to keep only True Positive and True Negatives" +
+                "\nNOTE 3: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
+                '\nNOTE 4: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
+                "\nNOTE 5: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
+                "\nNOTE 6: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
                 note +
                 f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
                 fontsize=13, y=1.01
