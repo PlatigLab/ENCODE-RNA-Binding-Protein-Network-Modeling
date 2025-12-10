@@ -59,4 +59,4 @@ SHAP_AVG_DIR: "../outputs/SHAP_cache/averages/"
 # Partial AUC thresholds
 PARTIAL_AUC_THRESHOLDS: [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
 # SHAP percentile thresholds 
-SHAP_PERCENTILE_THRESHOLDS: [.01, .05, .1, .25, .5]
+SHAP_PERCENTILE_THRESHOLDS: [50, 75, 90, 95, 99]

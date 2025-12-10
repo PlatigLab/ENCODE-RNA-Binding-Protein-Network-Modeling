@@ -1427,6 +1427,9 @@ class SecondOrderShapNetworkAnalyzer:
 
                             # Assert that there are no negative values in "Abs. SHAP Value"
                             assert (curve_input["Abs. SHAP Value"] >= 0).all(), "'Abs. SHAP Value' contains negative values."
+                            # Assert that there is at least one value above 0 in "Abs. SHAP Value"
+                            assert (curve_input["Abs. SHAP Value"] > 0).sum() > 0, "No values above 0 found in 'Abs. SHAP Value' column."
+
                             # Assert every value in "PPI" is exactly True or False (boolean)
                             assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
                             # Assert that there is at least one True value in the "PPI" column
@@ -1457,10 +1460,12 @@ class SecondOrderShapNetworkAnalyzer:
                                     "% Rows w/ 0 Abs. SHAP Value": (zero_abs_shap_rows / curve_input.shape[0]) * 100
                                 }
                                 
-                                for thresh in self.CONFIG["SHAP_PERCENTILE_THRESHOLDS"]:
-                                    shap_value_at_thresh = np.quantile(curve_input["Abs. SHAP Value"].to_numpy(), thresh)
-                                    row_dict[f"Abs. SHAP - {thresh*100} Percentile"] = shap_value_at_thresh
                                 row_dict["Abs. SHAP - Min Val"] = curve_input["Abs. SHAP Value"].min()
+                                for thresh in self.CONFIG["SHAP_PERCENTILE_THRESHOLDS"]:
+                                    # Use thresh as percentile (0-100) for the top X% highest values
+                                    shap_value_at_thresh = np.percentile(curve_input["Abs. SHAP Value"].to_numpy(), thresh)
+                                    row_dict[f"Abs. SHAP - {thresh}th Percentile"] = shap_value_at_thresh
+                                row_dict["Abs. SHAP - Max Val"] = curve_input["Abs. SHAP Value"].max()
 
                                 for thresh in self.CONFIG["PARTIAL_AUC_THRESHOLDS"]:
                                     partial_auc = roc_auc_score(y_true, y_score, max_fpr=thresh)
