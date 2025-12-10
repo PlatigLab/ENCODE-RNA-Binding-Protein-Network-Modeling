@@ -1433,9 +1433,16 @@ class SecondOrderShapNetworkAnalyzer:
                             # Assert every value in "PPI" is exactly True or False (boolean)
                             assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
                             # Assert that there is at least one True value in the "PPI" column
-                            assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}"
+                            assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}."
 
-                            logger.info(f"Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, # points: {curve_input.shape[0]}")
+                            ppi_source_str_conversion = ppi_source.translate(
+                                str.maketrans(" |/()", "_____")
+                            )
+                            curve_input.write_csv(
+                                f"{self.CONFIG["FIGURES"]["prc_roc_curves_dir"]}/{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
+                                separator="\t"
+                            )
+                            logger.info(f"Plot Type: {plot_type}, Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, # points: {curve_input.shape[0]}")
 
                             y_true = curve_input["PPI"].to_numpy()
                             y_score = curve_input["Abs. SHAP Value"].to_numpy()
