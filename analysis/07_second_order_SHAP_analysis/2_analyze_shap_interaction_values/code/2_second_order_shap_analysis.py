@@ -1435,7 +1435,7 @@ class SecondOrderShapNetworkAnalyzer:
                                 str.maketrans(" |/()", "_____")
                             )
                             curve_input.write_csv(
-                                f"{self.CONFIG["FIGURES"]["prc_roc_curves_dir"]}/curve_inputs/{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
+                                f"{self.CONFIG["FIGURES"]["prc_roc_curves_dir"]}/curve_inputs/{metric}_{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
                                 separator="\t"
                             )
                             logger.info(f"Plot Type: {plot_type}, Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, # points: {curve_input.shape[0]}")
