@@ -1313,18 +1313,14 @@ class SecondOrderShapNetworkAnalyzer:
     def plot_roc_and_prc_curves_for_metric(self, metric = None): 
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
         
-        # table = self.retrieve_shap_values_for_metric(metric=metric)
-        # # no main effect columns or different position but same RBP columns since those are not distinct-RBP PPIs
-        # table = table.filter(
-        #     (pl.col("Column Type") == "interaction")
-        #     & (pl.col("RBP 1") != pl.col("RBP 2"))
-        # )
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+        # no main effect columns or different position but same RBP columns since those are not distinct-RBP PPIs
+        table = table.filter(
+            (pl.col("Column Type") == "interaction")
+            & (pl.col("RBP 1") != pl.col("RBP 2"))
+        )
 
-        # table = self.add_ppi_stats_to_long_df(df = table)
-
-        #TODO remove later 
-        # table.write_csv("./tmp.tsv", separator="\t")
-        table = pl.read_csv("./tmp.tsv", separator="\t")
+        table = self.add_ppi_stats_to_long_df(df = table)
         
         union_col = "Rec-Y2H/Street et al. IP-MS (Union)"
         # Build union column as a list
