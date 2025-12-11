@@ -1561,6 +1561,169 @@ class SecondOrderShapNetworkAnalyzer:
         )
 
         return summary_df
+    
+
+    def plot_actual_psi_by_binding_for_PPI(self,):
+        
+        # Collect summary statistics for all plots
+        summary_rows = []
+        category_names = [
+            "Both",
+            "XOR_1st_Feature",
+            "XOR_2nd_Feature"
+        ]
+        stat_names = ["n", "mean", "median", "mad"]
+
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            first_order_shap_table = pl.scan_ipc(
+                f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
+            )
+            cols = [col for col in first_order_shap_table.collect_schema().names() if col.endswith("_binding")] + ["Target_PSI"]
+            first_order_shap_table = first_order_shap_table.select(cols).collect()
+
+            features = self.rbp_feature_metadata[cell_line]["Features"]
+            for column in tqdm(features, desc=f"{cell_line} | PSI by binding features"):
+                col_type = self.is_interaction_or_main_effect(column)
+                rbp_info = self.get_rbp_position_from_column(column, binding_fmt=True)
+
+                if col_type == "interaction":
+                    f1_binding, f2_binding = rbp_info  # e.g., "RBFOX2_3_binding", "QKI_2_binding"
+                    rbp1_name, _ = self.split_rbp_position(f1_binding.replace("_binding", ""))
+                    rbp2_name, _ = self.split_rbp_position(f2_binding.replace("_binding", ""))
+
+                    # avoiding INTRA-RBP interactions
+                    if rbp1_name != rbp2_name:
+                        first_rbp, second_rbp = sorted([rbp1_name, rbp2_name])
+                        interaction_str = f"{first_rbp}-{second_rbp}"
+
+                        # Filter self.ppi for the exact interaction (should be exactly one row)
+                        ppi_row = self.ppi.filter(pl.col("Interaction") == interaction_str)
+                        assert ppi_row.height == 1, f"Expected 1 row for interaction '{interaction_str}', found {ppi_row.height}"
+
+                        # For all PPI source columns, get those that are True for this row
+                        ppi_sources_true = sorted([col for col in self.CONFIG["PPI_SOURCES"] if ppi_row[col].item() == True])
+
+                        # check that there is PPI in some resource
+                        if len(ppi_sources_true) > 0:
+                            # Masks and PSI extraction
+                            both = first_order_shap_table.filter(
+                                (pl.col(f1_binding) == 1) & (pl.col(f2_binding) == 1)
+                            ).select("Target_PSI")["Target_PSI"].to_list()
+                            first_only = first_order_shap_table.filter(
+                                (pl.col(f1_binding) == 1) & (pl.col(f2_binding) == 0)
+                            ).select("Target_PSI")["Target_PSI"].to_list()
+                            second_only = first_order_shap_table.filter(
+                                (pl.col(f1_binding) == 0) & (pl.col(f2_binding) == 1)
+                            ).select("Target_PSI")["Target_PSI"].to_list()
+
+                            # need to have examples of both binding
+                            if len(both) != 0:
+                                plot_data = [both, first_only, second_only]
+
+                                first_feature_name = f1_binding.replace("_binding", "")
+                                second_feature_name = f2_binding.replace("_binding", "")
+                                labels = [
+                                    f"Both\n{first_feature_name} & {second_feature_name}",
+                                    f"XOR {first_feature_name}",
+                                    f"XOR {second_feature_name}"
+                                ]
+
+                                # Stats: (n, mean, median, MAD)
+                                stats = []
+                                for arr in plot_data:
+                                    if len(arr) > 0:
+                                        med = float(np.median(arr))
+                                        n = int(len(arr))
+                                        mean_val = float(np.mean(arr))
+                                        mad_val = float(np.median(np.abs(np.asarray(arr) - med)))
+                                        stats.append((n, mean_val, med, mad_val))
+                                    else:
+                                        stats.append((0, float("nan"), float("nan"), float("nan")))
+
+                                # Build a DataFrame for seaborn
+                                flat_data = [(lbl, val) for lbl, arr in zip(labels, plot_data) for val in arr]
+                                plot_df = pd.DataFrame(flat_data, columns=["Group", "PSI"])
+
+                                # Consistent colors: both, first-only, second-only
+                                colors = ['#66c2a5', '#fc8d62', '#8da0cb']
+
+                                plt.figure(figsize=(6, 3), dpi=200)
+                                ax = sns.violinplot(
+                                    data=plot_df,
+                                    x="Group",
+                                    y="PSI",
+                                    order=labels,
+                                    hue="Group",
+                                    palette=colors,
+                                    cut=0,
+                                    legend=False
+                                )
+
+                                ax.set_title(
+                                    f"PPI found in {len(ppi_sources_true)}: {', '.join(ppi_sources_true)}\n{cell_line} - {first_feature_name} & {second_feature_name}",
+                                    fontsize=10, x=0.5
+                                )
+                                ax.set_xlabel("Binding Category")
+                                ax.set_ylabel("Actual PSI")
+
+                                ax.tick_params(axis='x', labelsize=8)
+
+                                # Legend with counts, mean, median, MAD
+                                legend_patches = []
+                                for lbl, col, (n, mean, median, mad_val) in zip(labels, colors, stats):
+                                    legend_patches.append(
+                                        mpatches.Patch(
+                                            facecolor=col,
+                                            label=f"{lbl.replace('\n', ' ')}\n#: {n:,} | Avg: {mean:.3g}",
+                                            edgecolor="black",
+                                            linewidth=0.7,
+                                            alpha=1.0
+                                        )
+                                    )
+                                ax.legend(
+                                    handles=legend_patches,
+                                    loc="center left",
+                                    bbox_to_anchor=(1.01, 0.5),
+                                    frameon=True,
+                                    fontsize=8,
+                                    borderaxespad=0.5,
+                                    handleheight=2,
+                                    handlelength=2,
+                                    labelspacing=1.5,
+                                    borderpad=1
+                                )
+
+                                plt.tight_layout()
+                                plt.savefig(
+                                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}/all_plots/{cell_line}_{first_feature_name}_{second_feature_name}_PPI_actual_psi_by_binding_violinplot.png",
+                                    dpi=200,
+                                    bbox_inches='tight'
+                                )
+                                plt.close()
+
+                                # Collect summary statistics for this plot
+                                summary_row = {
+                                    "Cell Line": cell_line,
+                                    "Interaction Column": column, 
+                                    "Feature 1": first_feature_name,
+                                    "Feature 2": second_feature_name,
+                                }
+                                # Use category_names for summary columns
+                                for cat_idx, cat in enumerate(category_names):
+                                    n, mean, median, mad = stats[cat_idx]
+                                    summary_row[f"{cat} - #"] = n
+                                    summary_row[f"{cat} - Mean"] = mean
+                                    summary_row[f"{cat} - Median"] = median
+                                    summary_row[f"{cat} - Median Abs. Dev."] = mad
+                                summary_rows.append(summary_row)
+
+        
+        # Create polars DataFrame and write as TSV
+        summary_df = pl.DataFrame(summary_rows).sort(["Cell Line", "Interaction Column"])
+        output_path = f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}/summary_table_for_PPI_ONLY_actual_psi_by_binding.tsv"
+        
+        summary_df.write_csv(output_path, separator="\t")
+        logger.success(f"Summary table written to {output_path}")
 
 
     def tmp(self): 
