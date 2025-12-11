@@ -692,8 +692,10 @@ class SecondOrderShapNetworkAnalyzer:
             for col in table.columns:
                 if col.lower().startswith("position"):
                     table = table.with_columns(pl.col(col).cast(pl.UInt8))
-                if col.startswith("# UBPs - "):
+                elif col.startswith("# UBPs - "):
                     table = table.with_columns(pl.col(col).cast(pl.UInt32))
+                elif "rec-y2h" in col.lower() or "street et al" in col.lower():
+                    table = table.with_columns(pl.col(col).cast(pl.String))
             
             return table
 
@@ -749,6 +751,7 @@ class SecondOrderShapNetworkAnalyzer:
                             "Cell Line": cell_line,
                             "Column": column,
                             "Column Type": col_type,
+                            "Sorted RBP Pair": "-".join(sorted([rbp1, rbp2])),
                             "RBP 1": rbp1,
                             "Position 1": pos1,
                             "RBP 2": rbp2,
