@@ -775,12 +775,59 @@ class SecondOrderShapNetworkAnalyzer:
 
             df = df.with_columns([
                 pl.col("RBP 1").str.to_uppercase(),
-                pl.col("RBP 2").str.to_uppercase()
+                pl.col("RBP 2").str.to_uppercase(), 
+                pl.col("Sorted RBP Pair").str.to_uppercase()
             ])
 
             # Assert that Position 1 is always <= Position 2
             if not (df["Position 1"] <= df["Position 2"]).all():
                 raise AssertionError("Found rows where Position 1 > Position 2.")
+
+            # no main effect columns or different position but same RBP columns since those are not distinct-RBP PPIs
+            ppi_annotation = df.filter(
+                (pl.col("Column Type") == "interaction")
+                & (pl.col("RBP 1") != pl.col("RBP 2"))
+            )
+            ppi_annotation = self.add_ppi_stats_to_long_df(df = ppi_annotation)
+
+            union_col = "Rec-Y2H/Street et al. IP-MS (Union)"
+            # Build union column as a list
+            union_col_values = []
+            for rec_val, ip_val in zip(ppi_annotation["Rec-Y2H"].to_list(), ppi_annotation["Street et al | IP-MS"].to_list()):
+                # If either column ends with "-Position", take that string (prefer rec_y2h if both)
+                if rec_val.endswith("-Position"):
+                    union_col_values.append(rec_val)
+                elif ip_val.endswith("-Position"):
+                    union_col_values.append(ip_val)
+                # If either column is "False", take "False"
+                elif rec_val == "False" or ip_val == "False":
+                    union_col_values.append("False")
+                # All other cases
+                else:
+                    union_col_values.append("None")
+
+            # Add union column to ppi_annotation
+            ppi_annotation = ppi_annotation.with_columns(
+                pl.Series(union_col, union_col_values)
+            )
+
+            # Keep only "Column" and PPI source columns from ppi_annotation
+            ppi_cols = self.CONFIG["PPI_SOURCES"]
+            ppi_annotation = ppi_annotation.select(["Column", "Cell Line",] + ppi_cols + [union_col])
+
+            assert ppi_annotation.null_count().sum_horizontal().item() == 0, "Null values found in PPI annotation table."
+            assert df.null_count().sum_horizontal().item() == 0, "Null values found in SHAP aggregation table before PPI join."
+
+            # Perform left join and validate row count unchanged
+            prev_rows = df.height
+            df = df.join(ppi_annotation, on=["Cell Line", "Column"], how="left", validate="1:1", maintain_order="left")
+            
+            assert df.height == prev_rows, "Row count changed after left join; expected no change."
+            # Final validation: assert no nulls in INTER-RBP interaction rows
+            assert df.filter(
+                (pl.col("Column Type") == "interaction") & 
+                (pl.col("RBP 1") != pl.col("RBP 2"))
+            ).null_count().sum_horizontal().item() == 0, "Null values found in the aggregated SHAP table."
 
             df.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"SUCCESS: SHAP average file for '{metric}' saved to '{OUTPUT_FILE}'.")
