@@ -1364,36 +1364,14 @@ class SecondOrderShapNetworkAnalyzer:
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
         
         table = self.retrieve_shap_values_for_metric(metric=metric)
-        # no main effect columns or different position but same RBP columns since those are not distinct-RBP PPIs
+        # ONLY include INTER-RBP interaction rows as those are only eligible for PPI evaluation
         table = table.filter(
             (pl.col("Column Type") == "interaction")
             & (pl.col("RBP 1") != pl.col("RBP 2"))
         )
+        assert table.null_count().sum_horizontal().item() == 0, "Null values found in SHAP table after filtering for interaction rows."
 
-        table = self.add_ppi_stats_to_long_df(df = table)
-        
-        union_col = "Rec-Y2H/Street et al. IP-MS (Union)"
-        # Build union column as a list
-        union_col_values = []
-        for rec_val, ip_val in zip(table["Rec-Y2H"].to_list(), table["Street et al | IP-MS"].to_list()):
-            # If either column ends with "-Position", take that string (prefer rec_y2h if both)
-            if rec_val.endswith("-Position"):
-                union_col_values.append(rec_val)
-            elif ip_val.endswith("-Position"):
-                union_col_values.append(ip_val)
-            # If either column is "False", take "False"
-            elif rec_val == "False" or ip_val == "False":
-                union_col_values.append("False")
-            # All other cases
-            else:
-                union_col_values.append("None")
-
-        # Add union column to table
-        table = table.with_columns(
-            pl.Series(union_col, union_col_values)
-        )
-
-        ppi_sources = self.CONFIG["PPI_SOURCES"] + [union_col]
+        ppi_sources = [col for col in table.columns if "rec-y2h" in col.lower() or "street et al" in col.lower()]
         ppi_types = self.CONFIG["PPI_TYPES"]
         cell_lines = self.CONFIG["CELL_LINES"]
         curve_types = ["roc", "prc"]
