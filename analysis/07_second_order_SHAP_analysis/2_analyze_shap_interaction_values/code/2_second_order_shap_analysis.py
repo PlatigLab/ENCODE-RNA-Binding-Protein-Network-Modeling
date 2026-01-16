@@ -10,6 +10,7 @@ from itertools import combinations
 from scipy.stats import pearsonr, spearmanr
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from sklearn.metrics import roc_curve, precision_recall_curve, auc, roc_auc_score
+from statannotations.Annotator import Annotator
 
 
 @dataclass
@@ -1724,6 +1725,99 @@ class SecondOrderShapNetworkAnalyzer:
         
         summary_df.write_csv(output_path, separator="\t")
         logger.success(f"Summary table written to {output_path}")
+
+
+    def ppi_vs_non_ppi_shap_value_distributions(self, metric=None):
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+        
+        # ONLY include INTER-RBP interaction rows at the same position
+        table = table.filter(
+            (pl.col("Column Type") == "interaction")
+            & (pl.col("RBP 1") != pl.col("RBP 2"))
+            & (pl.col("Position 1") == pl.col("Position 2"))
+        )
+        assert table.null_count().sum_horizontal().item() == 0, "Null values found in SHAP table after filtering for interaction rows."
+
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            df_cell = table.filter(
+                (pl.col("Cell Line") == cell_line) &
+                (~pl.col(f"Value - {metric}").is_nan())
+            )
+
+            for ppi_source in self.CONFIG["PPI_SOURCES"]:
+                
+                # Only keep rows where ppi_source is either "False" or endswith "-Position"
+                df_ppi = df_cell.filter(
+                    (pl.col(ppi_source) == "False") | (pl.col(ppi_source).str.ends_with("-Position"))
+                )
+                assert "None" not in df_ppi[ppi_source].unique().to_list(), f"'None' values found in column '{ppi_source}' after filtering."
+
+                for analysis_type in ["RBP-SPECIFIC", "FEATURE-SPECIFIC"]:
+                
+                    df = df_ppi.with_columns([
+                        pl.col(ppi_source).str.ends_with("-Position").alias("PPI"),
+                        pl.col(f"Value - {metric}").abs().alias("Abs. SHAP Value"),
+                    ])
+
+                    if analysis_type == "RBP-SPECIFIC":
+                        df = df.with_columns([
+                            pl.struct(["RBP 1", "RBP 2"]).map_elements(lambda x: "-".join(sorted([x["RBP 1"], x["RBP 2"]]))).alias("RBP_PAIR")
+                        ])
+
+                        df = (
+                            df.sort("Abs. SHAP Value", descending=True)
+                            .unique(subset=["RBP_PAIR"], keep="first", maintain_order=True)
+                        )
+
+                    df_plot = df.select([
+                        "Abs. SHAP Value", "PPI"
+                    ]).to_pandas()
+
+                    df_plot["PPI"] = df_plot["PPI"].map({True: "PPI", False: "Non-PPI"})
+
+                    # Now do the plotting after df_plot is created
+                    # Example plot (replace with your actual plotting code as needed)
+                    plt.figure(figsize=(5,4), dpi=100)
+                    
+                    ax = sns.violinplot(data=df_plot, x="PPI", y="Abs. SHAP Value", order=["PPI", "Non-PPI"], cut=0)
+
+                    # Calculate max value and set y limit
+                    max_val = df_plot["Abs. SHAP Value"].max()
+                    y_text = max_val * 1.05
+
+                    # Annotate number of points for each group
+                    for i, group in enumerate(["PPI", "Non-PPI"]):
+                        n_points = (df_plot["PPI"] == group).sum()
+                        ax.text(i, y_text, f"n={n_points}", ha="center", va="bottom", fontsize=8, color="brown")
+
+                    ax.set_ylim(top=y_text * 1.1)  # Add extra space above annotation
+                    
+                    pairs = [("PPI", "Non-PPI")]
+                    annotator = Annotator(ax, pairs, data=df_plot, x="PPI", y="Abs. SHAP Value", order=["PPI", "Non-PPI"])
+                    
+                    annotator.configure(test='Mann-Whitney-gt', text_format='star', loc='inside', text_offset=1)
+                    annotator.apply_test().annotate(line_offset_to_group=1)
+
+                    if analysis_type == "RBP-SPECIFIC":
+                        suffix = f"RBP-SPECIFIC means max value across all position combos for a unique RBP pair\n"
+                    else:
+                        suffix = ""
+
+                    plt.title(
+                        "NOTE 1: Only INTER-RBP interactions\n"
+                        "NOTE 2: Only SAME POSITION interactions\n"
+                        "NOTE 3: Remove NaN values (no binding observed)\n"
+                        "NOTE 4: not tested PPIs are removed\n"
+                        "NOTE 5: Mann Whitney U test used for PPI > Non-PPI\n"
+                        f"{suffix}\n"
+                        f"{cell_line}: {ppi_source} ({analysis_type})", fontsize=8)
+                    plt.ylabel(f"|{metric}|", fontsize=6,)
+                    plt.xlabel("PPI Status", fontsize=10, x=0.4)
+
+                    plt.tight_layout()
+                    plt.show()
 
 
     def tmp(self): 
