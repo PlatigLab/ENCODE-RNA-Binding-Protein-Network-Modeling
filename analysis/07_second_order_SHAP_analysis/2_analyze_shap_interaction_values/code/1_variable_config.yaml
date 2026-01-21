@@ -42,7 +42,7 @@ CELL_LINES: ["HepG2", "K562"]
 UBP_ID_DIR: "../../1_generate_shap_interaction_values/outputs/ubp_ID_tables/"
 UBP_COL_NAME: "Unique Binding Pattern ID #"
 
-COLS_PER_JOB: 500
+COLS_PER_JOB: 250
 
 INTERACTION_VALUES_DIR: "../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/"
 
