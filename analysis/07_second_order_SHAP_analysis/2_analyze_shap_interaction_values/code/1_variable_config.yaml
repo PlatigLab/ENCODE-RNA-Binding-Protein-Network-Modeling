@@ -64,3 +64,6 @@ SHAP_PERCENTILE_THRESHOLDS: [50, 75, 90, 95, 99]
 
 # First order SHAP Cache Directory 
 FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL_AVERAGE_SHAP_CACHE/"
+
+LATEX_SYMBOLS: 
+    Signed-Local-SHAP-Mean-Bound-Only: $\overline{\varphi}_{f,g}^b$
