@@ -1,6 +1,7 @@
-import yaml, pathlib, glob, json, argparse, os, sys, copy
+import yaml, pathlib, glob, json, argparse, os, sys, copy, pickle
 
 import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as mpatches
+import networkx as nx
 
 from dataclasses import dataclass
 from loguru import logger
@@ -1923,6 +1924,98 @@ class SecondOrderShapNetworkAnalyzer:
 
             plt.tight_layout()
             plt.show()
+
+
+    def retrieve_importance_network(self,): 
+        OUTPUT_FILE = self.CONFIG["IMPORTANCE_NETWORKS"]
+
+        if pathlib.Path(OUTPUT_FILE).exists():
+            logger.success(f"FROM CACHE: loading importance network(s) from '{OUTPUT_FILE}'...")
+            
+            with open(OUTPUT_FILE, "rb") as f:
+                graphs_by_cell_line = pickle.load(f)
+            
+            return graphs_by_cell_line
+        
+        else: 
+            logger.info("Creating importance network and caching NetworkX object...")
+
+            metric = "Bound-Only"
+            val_col = f"Value - {metric}"
+
+            table = self.retrieve_shap_values_for_metric(metric=metric)
+            table = (
+                table.with_columns(
+                    [
+                        (pl.col("RBP 1") + "_" + pl.col("Position 1").cast(pl.Utf8)).alias("Feature 1"),
+                        (pl.col("RBP 2") + "_" + pl.col("Position 2").cast(pl.Utf8)).alias("Feature 2"),
+                    ]
+                )
+            )
+
+            # Keep edges with weight > 0 and weight == 0; drop NaN weights (no edge)
+            edges = (
+                table.select(["Cell Line", "Feature 1", "Feature 2", val_col])
+                .filter(~pl.col(val_col).is_nan())
+            )
+
+            # Ensure there are no duplicate undirected edges per cell line (self-loops have _u == _v)
+            edges = edges.with_columns(
+                pl.when(pl.col("Feature 1") <= pl.col("Feature 2"))
+                .then(pl.col("Feature 1"))
+                .otherwise(pl.col("Feature 2"))
+                .alias("_u"),
+                pl.when(pl.col("Feature 1") <= pl.col("Feature 2"))
+                .then(pl.col("Feature 2"))
+                .otherwise(pl.col("Feature 1"))
+                .alias("_v"),
+            )
+            dupes = edges.group_by(["Cell Line", "_u", "_v"]).len().filter(pl.col("len") > 1)
+            if dupes.height > 0:
+                raise ValueError(f"Duplicate undirected edges detected:\n{dupes}")
+
+            edges_pd = edges.select(["Cell Line", "Feature 1", "Feature 2", val_col]).to_pandas()
+
+            graphs_by_cell_line = {}
+            for cell_line in edges_pd["Cell Line"].unique().tolist():
+                # Subset to this cell line and deep-copy to avoid any view/copy pitfalls
+                df_cl = edges_pd[edges_pd["Cell Line"] == cell_line][["Feature 1", "Feature 2", val_col]].copy(deep=True)
+
+                assert df_cl[val_col].isnull().sum() == 0, f"NaN values found in '{val_col}' for cell line '{cell_line}'."
+                assert df_cl[val_col].dtype == float, f"Non-numeric values found in '{val_col}' for cell line '{cell_line}'."
+
+                # Much faster than iterating row-by-row
+                G = nx.from_pandas_edgelist(
+                    df_cl,
+                    source="Feature 1",
+                    target="Feature 2",
+                    edge_attr=val_col,
+                    create_using=nx.Graph(),
+                )
+
+                # Add per-node attributes derived from the node name (e.g., "RBFOX2_3" --> RBP: "RBFOX2", Position: 3)
+                rbp_attr = {}
+                pos_attr = {}
+                for node in G.nodes:
+                    rbp, pos = self.split_rbp_position(node)
+                    rbp_attr[node] = rbp
+                    pos_attr[node] = pos
+
+                nx.set_node_attributes(G, rbp_attr, "RBP")
+                nx.set_node_attributes(G, pos_attr, "Position")
+
+                graphs_by_cell_line[cell_line] = {}
+                graphs_by_cell_line[cell_line]['graph'] = G
+                
+                logger.info(f"Cell Line: {cell_line} | # Nodes: {G.number_of_nodes():,} | # Edges: {G.number_of_edges():,}")
+                
+                graphs_by_cell_line[cell_line]['weight_matrix'] = nx.to_pandas_adjacency(G, weight=val_col, nonedge=float("nan"))
+        
+            with open(OUTPUT_FILE, "wb") as f:
+                pickle.dump(graphs_by_cell_line, f)
+
+            logger.success(f"SUCCESS: Importance network(s) cached to '{OUTPUT_FILE}'.")
+
 
 
     def tmp(self): 
