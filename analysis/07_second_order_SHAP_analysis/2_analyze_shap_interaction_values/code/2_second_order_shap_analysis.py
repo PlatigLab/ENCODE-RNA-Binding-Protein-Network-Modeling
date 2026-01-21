@@ -1821,6 +1821,110 @@ class SecondOrderShapNetworkAnalyzer:
                     plt.show()
 
 
+    def ppi_type_shap_value_distributions(self, metric=None):
+        assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
+
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+        
+        for ppi_source in self.CONFIG["PPI_SOURCES"]:
+            df = table.filter(
+                (~pl.col(f"Value - {metric}").is_nan()) &
+                ((pl.col(ppi_source) == "False") | (pl.col(ppi_source).str.ends_with("-Position")))
+            )
+
+            # Only keep relevant PPI types (already filtered, just rename)
+            df = df.rename({ppi_source: "PPI Type"})
+
+            df_plot = df.select([
+                "Cell Line",
+                f"Value - {metric}",
+                "PPI Type"
+            ]).to_pandas()
+
+            # Use absolute value for the value column
+            df_plot[f"Abs. Value - {metric}"] = df_plot[f"Value - {metric}"].abs()
+            # Replace "-" with " " and "False" with "Not PPI" in PPI Type
+            df_plot["PPI Type"] = df_plot["PPI Type"].replace("False", "Not PPI").str.replace("-", " ", regex=False)
+
+            x_order = ["HepG2", "K562"]
+            hue_order = ["Same Position", "Different Position", "Not PPI"]
+
+            plt.figure(figsize=(7,4), dpi=300)
+            ax = sns.violinplot(
+                data=df_plot,
+                x="Cell Line",
+                y=f"Abs. Value - {metric}",
+                order = x_order,
+                hue="PPI Type",
+                hue_order=hue_order,
+                cut=0,
+                split=False, 
+                density_norm="area"
+            )
+
+            # Annotate number of points above each distribution
+            max_val = df_plot[f"Abs. Value - {metric}"].max()
+            y_text = max_val * 1.02
+            # Get the positions for each (x, hue) combination
+            for i, cell_line in enumerate(x_order):
+                for j, ppi_type in enumerate(hue_order):
+                    # Find the number of points for this group
+                    n_points = len(df_plot[(df_plot["Cell Line"] == cell_line) & (df_plot["PPI Type"] == ppi_type)])
+                    # Calculate the x position: distribute hues evenly within each x tick
+                    x_pos = i + (j-1) / (len(hue_order) + 1)
+                    # For grouped violinplot, the positions are: 0,1,2 for HepG2, 3,4,5 for K562
+                    ax.text(x_pos, y_text, f"n={n_points}", ha="center", va="bottom", fontsize=8, color="brown")
+
+            ax.set_ylim(top=y_text * 1.1)  # Add extra space above annotation
+
+            # Move legend to outside center right
+            ax.legend(
+                title="PPI Type",
+                bbox_to_anchor=(1.02, 0.5),
+                loc="center left",
+                borderaxespad=0.,
+                frameon=True
+            )
+
+            ax.set_title(f"{ppi_source}: Distributions of different PPI Types across Cell Lines", fontsize=8)
+            ax.set_ylabel(f"|{self.CONFIG['LATEX_SYMBOLS'][metric]}|", fontsize=14)
+            ax.set_xlabel("Cell Line")
+
+            plt.suptitle(
+                "NOTE 1: Only INTER-RBP interactions\n"
+                "NOTE 2: NaN values removed (no binding observed)\n"
+                "NOTE 3: not tested PPIs are removed\n"
+                "NOTE 4: Mann Whitney U tests 'Same Position' > other category\n",
+                fontsize=8, y=.95, x=0.4
+            )
+
+            pairs = [
+                (("HepG2", "Same Position"), ("HepG2", "Different Position")),
+                (("HepG2", "Same Position"), ("HepG2", "Not PPI")),
+                (("K562", "Same Position"), ("K562", "Different Position")),
+                (("K562", "Same Position"), ("K562", "Not PPI")),
+            ]
+            annotator = Annotator(
+                ax,
+                pairs,
+                data=df_plot,
+                x="Cell Line",
+                y=f"Abs. Value - {metric}",
+                hue="PPI Type",
+                order = x_order,
+                hue_order=hue_order, 
+            )
+        
+            annotator.configure(test='Mann-Whitney-gt', text_format='star', loc='inside', text_offset=0.8, color='red')
+            annotator.apply_test().annotate(line_offset_to_group=0.99)
+
+            # Remove upper axis spine for a cleaner look
+            ax.spines['top'].set_visible(False)
+
+            plt.tight_layout()
+            plt.show()
+
+
     def tmp(self): 
         # for cell_line in ["K562"]: 
             
