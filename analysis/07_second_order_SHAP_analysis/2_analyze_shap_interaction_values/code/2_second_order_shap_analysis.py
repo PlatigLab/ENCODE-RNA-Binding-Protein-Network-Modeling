@@ -700,7 +700,6 @@ class SecondOrderShapNetworkAnalyzer:
             
             return table
 
-
         else:
             logger.info(f"SHAP avg file for '{metric}' not found. Aggregating cached metric files...")
             
@@ -1121,7 +1120,7 @@ class SecondOrderShapNetworkAnalyzer:
             "row_colors": ['#c51b7d','#e9a3c9','#fde0ef','#e6f5d0','#a1d76a','#4d9221'],
         }
         opts = self.update_default_dict(_DEFAULTS, dict(kwargs) if kwargs else {})
-        assert opts["highlight"] in self.CONFIG["PPI_TYPES"] or opts["highlight"] is None, f"highlight type '{opts["highlight"]}' not recognized."
+        assert opts["highlight"] in self.CONFIG["PPI_TYPES"] or opts["highlight"] is None, f"highlight type {opts['highlight']} not recognized."
 
         # --- 2. Extract matrices and assert index/columns match ---
         shap_matrix = matrices[list(matrices.keys())[0]]["SHAP"]
@@ -1354,7 +1353,7 @@ class SecondOrderShapNetworkAnalyzer:
             str.maketrans(" |/()", "_____")
         )
         plt.savefig(
-            f"{self.CONFIG["FIGURES"]["side_by_side_heatmap_dir"]}/{cell_line}_{ppi_source_str}_{metric}_highlight_{highlight_str}_side_by_side_heatmap.png",
+            f"{self.CONFIG['FIGURES']['side_by_side_heatmap_dir']}/{cell_line}_{ppi_source_str}_{metric}_highlight_{highlight_str}_side_by_side_heatmap.png",
             bbox_inches='tight',
             dpi=600
         )
@@ -1464,7 +1463,7 @@ class SecondOrderShapNetworkAnalyzer:
                                 str.maketrans(" |/()", "_____")
                             )
                             curve_input.write_csv(
-                                f"{self.CONFIG["FIGURES"]["prc_roc_curves_dir"]}/curve_inputs/{metric}_{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
+                                f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/curve_inputs/{metric}_{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
                                 separator="\t"
                             )
                             logger.info(f"Plot Type: {plot_type}, Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}, Curve: {curve_type}, # points: {curve_input.shape[0]}")
@@ -1672,10 +1671,12 @@ class SecondOrderShapNetworkAnalyzer:
                                 # Legend with counts, mean, median, MAD
                                 legend_patches = []
                                 for lbl, col, (n, mean, median, mad_val) in zip(labels, colors, stats):
+                                    new_label = lbl.replace("\n", " ")
+
                                     legend_patches.append(
                                         mpatches.Patch(
                                             facecolor=col,
-                                            label=f"{lbl.replace('\n', ' ')}\n#: {n:,} | Avg: {mean:.3g}",
+                                            label=f"{new_label} n#: {n:,} | Avg: {mean:.3g}",
                                             edgecolor="black",
                                             linewidth=0.7,
                                             alpha=1.0
