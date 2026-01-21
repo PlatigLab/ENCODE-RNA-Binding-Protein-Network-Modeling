@@ -1984,12 +1984,15 @@ class SecondOrderShapNetworkAnalyzer:
                 assert df_cl[val_col].isnull().sum() == 0, f"NaN values found in '{val_col}' for cell line '{cell_line}'."
                 assert df_cl[val_col].dtype == float, f"Non-numeric values found in '{val_col}' for cell line '{cell_line}'."
 
+                # Rename the SHAP value column to a generic edge attribute name before creating the graph
+                df_cl = df_cl.rename(columns={val_col: "weight"})
+
                 # Much faster than iterating row-by-row
                 G = nx.from_pandas_edgelist(
                     df_cl,
                     source="Feature 1",
                     target="Feature 2",
-                    edge_attr=val_col,
+                    edge_attr='weight',
                     create_using=nx.Graph(),
                 )
 
@@ -2009,7 +2012,7 @@ class SecondOrderShapNetworkAnalyzer:
                 
                 logger.info(f"Cell Line: {cell_line} | # Nodes: {G.number_of_nodes():,} | # Edges: {G.number_of_edges():,}")
                 
-                graphs_by_cell_line[cell_line]['weight_matrix'] = nx.to_pandas_adjacency(G, weight=val_col, nonedge=float("nan"))
+                graphs_by_cell_line[cell_line]['weight_matrix'] = nx.to_pandas_adjacency(G, weight='weight', nonedge=float("nan"))
         
             with open(OUTPUT_FILE, "wb") as f:
                 pickle.dump(graphs_by_cell_line, f)
