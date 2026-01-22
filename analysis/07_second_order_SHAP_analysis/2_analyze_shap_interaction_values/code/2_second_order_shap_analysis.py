@@ -2020,7 +2020,7 @@ class SecondOrderShapNetworkAnalyzer:
             logger.success(f"SUCCESS: Importance network(s) cached to '{OUTPUT_FILE}'.")
 
 
-    def calculate_edge_weights_per_position(self): 
+    def plot_edge_weights_per_position(self): 
         metric = "Bound-Only"
         val_col = f"Value - {metric}"
 
@@ -2205,6 +2205,9 @@ class SecondOrderShapNetworkAnalyzer:
         )
         plt.tight_layout()
         plt.show()
+
+
+    def calculate
 
 
     def tmp(self): 
