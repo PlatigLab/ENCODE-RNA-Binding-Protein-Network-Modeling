@@ -2020,6 +2020,192 @@ class SecondOrderShapNetworkAnalyzer:
             logger.success(f"SUCCESS: Importance network(s) cached to '{OUTPUT_FILE}'.")
 
 
+    def calculate_edge_weights_per_position(self): 
+        metric = "Bound-Only"
+        val_col = f"Value - {metric}"
+
+        # 1) Load the long-form summary metric table
+        table = self.retrieve_shap_values_for_metric(metric=metric)
+
+        # 2) Subset to only interaction rows with non-null/non-NaN values
+        df = table.filter(
+            (pl.col("Column Type") == "interaction")
+            & (~pl.col(val_col).is_nan())
+        )
+        assert df[val_col].null_count() == 0, f"Null values found in '{val_col}' after filtering."
+
+        # 3) Build a long-form table: one row per (cell_line, position, value)
+        rows = []
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            df_cl = df.filter(pl.col("Cell Line") == cell_line)
+
+            for pos in self.CONFIG["POSITIONS"]:
+                assert type(pos) == int and (1<=pos<=6), f"Position '{pos}' is not an integer between 1 and 6 (inclusive)."
+                
+                df_pos = df_cl.filter(
+                    (pl.col("Position 1") == pos) | (pl.col("Position 2") == pos)
+                )
+
+                vals = df_pos.select(pl.col(val_col)).to_series().to_list()
+                for v in vals:
+                    rows.append(
+                        {
+                            "Cell Line": cell_line,
+                            "Position": pos,
+                            val_col: float(v),
+                        }
+                    )
+
+        out_df = pl.DataFrame(rows).with_columns(
+            [
+                pl.col("Cell Line").cast(pl.String),
+                pl.col("Position").cast(pl.UInt8),
+                pl.col(val_col).cast(pl.Float64),
+            ]
+        )
+
+        # --- Plotting ---
+        df_plot = out_df.to_pandas()
+
+        x_order = self.CONFIG["CELL_LINES"]
+        hue_order = self.CONFIG["POSITIONS"]
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+
+        plot_notes = (
+            "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
+            "NOTE 2: Excludes NaN values (no binding observed)\n"
+            "NOTE 3: Each edge can contribute to multiple positions if the 2 nodes have different positions\n"
+            "\n"
+        )
+
+        # 1) Violinplot: Cell Line (x) with hue=Position
+        plt.figure(figsize=(8, 4.7), dpi=300)
+        ax = sns.violinplot(
+            data=df_plot,
+            x="Cell Line",
+            y=val_col,
+            order=x_order,
+            hue="Position",
+            hue_order=hue_order,
+            cut=0,
+            linewidth = 0.3, 
+            palette="Set1",
+        )
+
+        # Annotate number of points above each (Cell Line, Position) violin
+        max_val = float(df_plot[val_col].max())
+        y_text = (max_val * 1.02)
+
+        n_hues = len(hue_order)
+        group_width = 0.8  # seaborn categorical width
+        step = group_width / n_hues
+
+        for i, cl in enumerate(x_order):
+            for j, pos in enumerate(hue_order):
+
+                subsetting = df_plot[(df_plot["Cell Line"] == cl) & (df_plot["Position"] == pos)]
+                n_points = subsetting.shape[0]
+                percent_zero = (subsetting[subsetting[val_col] == 0].shape[0] / n_points) * 100
+
+                # Approximate center of each dodged violin within the category
+                x_pos = i - (group_width / 2) + (step / 2) + j * step
+
+                ax.text(
+                    x_pos,
+                    y_text,
+                    f"{n_points:.1e}\n{percent_zero:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=6,
+                    color="black",
+                    clip_on=False,
+                )
+        
+        ax.text(-.43, y_text-0.01, "n:\n% 0: ", ha="center", va="bottom", fontsize=8, color="blue")
+
+        ax.tick_params(axis='y', labelsize=10)
+        ax.tick_params(axis='x', labelsize=14)
+
+        ax.set_title(f"{plot_notes}{latex_symbol} ({metric}): Edge Weight distributions", fontsize=10, y=1.07)
+        ax.set_xlabel("Cell Line", fontweight='bold', fontsize=16)
+        ax.set_ylabel(latex_symbol, fontweight='bold', fontsize=20)
+
+        # Turn off top and bottom spines
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ax.legend(
+            title="Position",
+            bbox_to_anchor=(.45, 0.6),
+            loc="center left",
+            borderaxespad=0.0,
+            frameon=True,
+        )
+        plt.tight_layout()
+        plt.show()
+
+        # 2) Barplot: mean per (Cell Line, Position)
+        mean_df = (
+            out_df.group_by(["Cell Line", "Position"])
+            .agg(pl.col(val_col).mean().alias(f"Mean {val_col}"))
+            .sort(["Cell Line", "Position"])
+            .to_pandas()
+        )
+
+        plt.figure(figsize=(8.5, 5), dpi=300)
+        ax = sns.barplot(
+            data=mean_df,
+            x="Cell Line",
+            y=f"Mean {val_col}",
+            order=x_order,
+            hue="Position",
+            hue_order=hue_order,
+            errorbar=None,
+            palette="Set1",
+            edgecolor="black",
+            linewidth=1
+        )
+
+        # Add numeric value labels above each bar (same x, y + 0.0005)
+        y_offset = 0.0001
+        for patch in ax.patches:
+            height = patch.get_height()
+            if height == 0:
+                continue  # Skip bars with height 0
+
+            x = patch.get_x() + patch.get_width() / 2.0
+            ax.text(
+                x,
+                height + y_offset,
+                f"{height:.4f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="black",
+                clip_on=False,
+            )
+
+        ax.tick_params(axis='y', labelsize=10)
+        ax.tick_params(axis='x', labelsize=14)
+
+        ax.set_title(f"{plot_notes}{latex_symbol} ({metric}): Mean(Edge Weight)", fontsize=10, y=1.09)
+        ax.set_xlabel("Cell Line", fontweight='bold', fontsize=16)
+        ax.set_ylabel(f"Mean({latex_symbol})", fontweight='bold', fontsize=20)
+
+        # Turn off top and bottom spines
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ax.legend(
+            title="Position",
+            bbox_to_anchor=(.45, 0.7),
+            loc="center left",
+            borderaxespad=0.0,
+            frameon=True,
+        )
+        plt.tight_layout()
+        plt.show()
+
 
     def tmp(self): 
         # for cell_line in ["K562"]: 
@@ -2032,12 +2218,6 @@ class SecondOrderShapNetworkAnalyzer:
         #     )
 
         pass
-
-
-
-
-
-
 
 
 #########################################################
