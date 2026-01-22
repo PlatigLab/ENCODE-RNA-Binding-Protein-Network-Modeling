@@ -37,6 +37,7 @@ PPI_INFO: "../../../05_generate_eCLIP_RBP_PPIs/all_eCLIP_RBP_PPI_combination_PPI
 
 
 CELL_LINES: ["HepG2", "K562"]
+POSITIONS: [1, 2, 3, 4, 5, 6]
 
 # UBP IDs and Interaction Values
 UBP_ID_DIR: "../../1_generate_shap_interaction_values/outputs/ubp_ID_tables/"
@@ -67,5 +68,6 @@ FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL
 
 LATEX_SYMBOLS: 
     Signed-Local-SHAP-Mean-Bound-Only: $\overline{\varphi}_{f,g}^b$
+    Bound-Only: $\Phi_{f,g}^b$
 
 IMPORTANCE_NETWORKS: "../outputs/SHAP_cache/importance_networks/Bound-Only_main_and_interaction_importance.pkl"
