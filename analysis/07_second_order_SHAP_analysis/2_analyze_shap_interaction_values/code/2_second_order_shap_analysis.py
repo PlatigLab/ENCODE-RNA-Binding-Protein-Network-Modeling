@@ -2215,106 +2215,114 @@ class SecondOrderShapNetworkAnalyzer:
         table = self.retrieve_shap_values_for_metric(metric=metric)
 
         # 2) Subset to only interaction rows with non-null/non-NaN values
-        df = table.filter(
+        table = table.filter(
             (pl.col("Column Type") == "interaction")
             & (~pl.col(val_col).is_nan())
         )
-        assert df[val_col].null_count() == 0, f"Null values found in '{val_col}' after filtering."
+        assert table[val_col].null_count() == 0, f"Null values found in '{val_col}' after filtering."
         # Assert that Position 1 is less than or equal to Position 2 across all rows
-        assert (df["Position 1"] <= df["Position 2"]).all(), "Position 1 must be less than or equal to Position 2 for all rows."
-
-        # Calculate the average of val_col grouped by unique combinations of Position 1 and Position 2
-        average_importance = df.group_by(["Position 1", "Position 2"]).agg(
-            pl.col(val_col).mean().alias(f"Mean({val_col})"), 
-            pl.col(val_col).len().alias("Count")
-        ).sort(["Position 1", "Position 2"])
-        assert average_importance.height == 21, f"Expected 21 unique position combinations, found {average_importance.height}."
-    
-        # Convert to matrix form with Position 1 and Position 2 as index/columns
-        avg_matrix = average_importance.pivot(
-            values=f"Mean({val_col})",
-            columns="Position 1",
-            index="Position 2"
-        ).to_pandas().set_index("Position 2")
-        avg_matrix.columns.name = "Position 1"
-        avg_matrix = avg_matrix.astype(float)
-
-        count_matrix = average_importance.pivot(
-            values="Count",
-            index ="Position 2",  
-            columns="Position 1", 
-        ).fill_null(0).to_pandas().set_index("Position 2")
-        count_matrix.columns.name = "Position 1"
-
-        # --- Plotting: 2 subplots side by side ---
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.5), dpi=300)
-        importance_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+        assert (table["Position 1"] <= table["Position 2"]).all(), "Position 1 must be less than or equal to Position 2 for all rows."
         
-        # Mask for lower triangle + diagonal
-        mask = np.triu(np.ones_like(avg_matrix, dtype=bool), k=1)
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            df = table.filter(pl.col("Cell Line") == cell_line)
+
+            # Calculate the average of val_col grouped by unique combinations of Position 1 and Position 2
+            average_importance = df.group_by(["Position 1", "Position 2"]).agg(
+                pl.col(val_col).mean().alias(f"Mean({val_col})"), 
+                pl.col(val_col).len().alias("Count")
+            ).sort(["Position 1", "Position 2"])
+            assert average_importance.height == 21, f"Expected 21 unique position combinations, found {average_importance.height}."
         
-        # --- Plot 1: avg_matrix (lower triangle + diagonal) ---
-        sns.heatmap(
-            avg_matrix,
-            ax=ax1,
-            mask=mask,
-            cmap="Blues",
-            cbar_kws={"label": f"Mean({importance_symbol})", "shrink": 0.9},
-            square=True, 
-            annot=True,
-            annot_kws={"fontsize":6},
-            fmt = ".4f", 
-        )
-        cbar1 = ax1.collections[0].colorbar
-        cbar1.ax.set_ylabel(f"Mean({importance_symbol})", rotation=0, labelpad=20, fontsize=13)
-        cbar1.ax.yaxis.set_label_coords(0.5, 1.07)
-        ax1.set_title(f"Mean(Importance Scores)", fontsize=18, y=1.06)
-    
-        # --- Plot 2: count_matrix (lower triangle + diagonal) ---
-        sns.heatmap(
-            count_matrix,
-            ax=ax2,
-            mask=mask,
-            cmap="Oranges",
-            cbar_kws={"label": "Count", "shrink": 0.9},
-            square=True, 
-            annot=True,
-            annot_kws={"fontsize":6},
-            fmt = ","
-        )
-        cbar2 = ax2.collections[0].colorbar
-        cbar2.ax.set_ylabel("#", rotation=0, labelpad=20, fontsize=13)
-        cbar2.ax.yaxis.set_label_coords(0.5, 1.07)
-        ax2.set_title("# Non-Null Interactions", fontsize=18, y=1.06)
+            # Convert to matrix form with Position 1 and Position 2 as index/columns
+            avg_matrix = average_importance.pivot(
+                values=f"Mean({val_col})",
+                columns="Position 1",
+                index="Position 2"
+            ).to_pandas().set_index("Position 2")
+            avg_matrix.columns.name = "Position 1"
+            avg_matrix = avg_matrix.astype(float)
+
+            count_matrix = average_importance.pivot(
+                values="Count",
+                index ="Position 2",  
+                columns="Position 1", 
+            ).fill_null(0).to_pandas().set_index("Position 2")
+            count_matrix.columns.name = "Position 1"
+
+            # --- Plotting: 2 subplots side by side ---
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.5), dpi=300)
+            importance_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+            
+            # Mask for lower triangle + diagonal
+            mask = np.triu(np.ones_like(avg_matrix, dtype=bool), k=1)
+            
+            # --- Plot 1: avg_matrix (lower triangle + diagonal) ---
+            sns.heatmap(
+                avg_matrix,
+                ax=ax1,
+                mask=mask,
+                cmap="Blues",
+                cbar_kws={"label": f"Mean({importance_symbol})", "shrink": 0.9},
+                square=True, 
+                annot=True,
+                annot_kws={"fontsize":6},
+                fmt = ".4f", 
+            )
+            cbar1 = ax1.collections[0].colorbar
+            cbar1.ax.set_ylabel(f"Mean({importance_symbol})", rotation=0, labelpad=20, fontsize=13)
+            cbar1.ax.yaxis.set_label_coords(0.5, 1.07)
+            ax1.set_title(f"Mean(Importance Scores)", fontsize=14, y=1.01)
         
-        n = avg_matrix.shape[0]
-        # Add transparent black boxes around unmasked cells
-        for row in range(n):
-            for col in range(n):
-                if not mask[row, col]:
-                    rect = plt.Rectangle((col, row), 1, 1, fill=False, edgecolor='black', linewidth=1)
-                    rect2 = copy.deepcopy(rect)
-                    
-                    ax1.add_patch(rect)
-                    ax2.add_patch(rect2)
+            # --- Plot 2: count_matrix (lower triangle + diagonal) ---
+            sns.heatmap(
+                count_matrix,
+                ax=ax2,
+                mask=mask,
+                cmap="Oranges",
+                cbar_kws={"label": "Count", "shrink": 0.9},
+                square=True, 
+                annot=True,
+                annot_kws={"fontsize":6},
+                fmt = ","
+            )
+            cbar2 = ax2.collections[0].colorbar
+            cbar2.ax.set_ylabel("#", rotation=0, labelpad=20, fontsize=13)
+            cbar2.ax.yaxis.set_label_coords(0.5, 1.07)
+            ax2.set_title("# Non-Null Interactions\n(Divisor for Average)", fontsize=14, y=.97,)
+            
+            n = avg_matrix.shape[0]
+            # Add transparent black boxes around unmasked cells
+            for row in range(n):
+                for col in range(n):
+                    if not mask[row, col]:
+                        rect = plt.Rectangle((col, row), 1, 1, fill=False, edgecolor='black', linewidth=1)
+                        rect2 = copy.deepcopy(rect)
+                        
+                        ax1.add_patch(rect)
+                        ax2.add_patch(rect2)
 
-        for current_ax in [ax1, ax2]:
-            current_ax.set_xlabel("")
-            current_ax.set_ylabel("")
-            current_ax.tick_params(which='both', labelsize=14) 
-                       
+            for current_ax in [ax1, ax2]:
+                current_ax.set_xlabel("")
+                current_ax.set_ylabel("")
+                current_ax.tick_params(which='both', labelsize=14) 
 
-        fig.suptitle(
-            f"Average of {importance_symbol} (Importance Scores) Between Positions\n",
-            fontsize=18,
-            y=1.03, 
-            color='darkgreen'
-        )
-        fig.supxlabel("Position", fontsize=16, fontweight='bold', x=0.5, y=-0.03, ha='center')
-        fig.supylabel("Position", fontsize=16, fontweight='bold', x=0.01)
+            plot_notes = (
+                "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
+                "NOTE 2: Excludes NaN values (no binding observed)\n"
+                "\n"
+            )
 
-        plt.tight_layout()
-        plt.show()
+            fig.suptitle(
+                f"{plot_notes}{cell_line}: Average of {importance_symbol} (Importance Scores) Between Positions\n",
+                fontsize=10,
+                y=1, 
+                color='darkgreen'
+            )
+            fig.supxlabel("Position", fontsize=16, fontweight='bold', x=0.5, y=-0.03, ha='center')
+            fig.supylabel("Position", fontsize=16, fontweight='bold', x=0.03)
+
+            plt.tight_layout()
+            plt.show()
 
 
     def tmp(self): 
