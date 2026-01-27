@@ -2343,6 +2343,89 @@ class SecondOrderShapNetworkAnalyzer:
             plt.show()
 
 
+    def top_interactions_per_cell_line(self): 
+        val_col = "Value - Signed-Local-SHAP-Mean-Bound-Only"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"][f"{val_col.split(' - ')[-1]}"]
+
+        # Retrieve SHAP values for the specified metric
+        table = self.retrieve_shap_values_for_metric(metric="Signed-Local-SHAP-Mean-Bound-Only")
+
+        # Filter for interaction columns and sort by absolute value
+        table = table.filter(
+            (pl.col("Column Type") == "interaction") & 
+            (~pl.col(val_col).is_nan()) & 
+            (pl.col(val_col) != 0)
+        ).with_columns(
+            pl.col(val_col).abs().alias("abs_value"),
+            pl.col("Column").str.replace("-interaction-shap", "").alias("Interaction")
+        ).sort("abs_value", descending=True)
+
+        # Take the top 20 interactions per cell line
+        top_interactions = table.group_by("Cell Line").head(20)
+        assert top_interactions.height == 40, f"Expected 40 rows (20 per cell line), got {top_interactions.height} rows."
+
+        if top_interactions.select(pl.col("Column")).n_unique() == top_interactions.height:
+            logger.warning("\n\nAll top interactions are unique across cell lines.\n\n")
+
+        # Plotting
+        unique_cell_lines = self.CONFIG["CELL_LINES"]
+        n_cell_lines = len(unique_cell_lines)
+
+        fig, axes = plt.subplots(1, 2, figsize=(11, 7), dpi=300, sharex=True)
+
+        for ax, cell_line in zip(axes, unique_cell_lines):
+            cell_line_data = top_interactions.filter(pl.col("Cell Line") == cell_line).to_pandas()
+            colors = ['tomato' if value > 0 else 'dodgerblue' for value in cell_line_data[val_col]]
+
+            sns.barplot(data=cell_line_data, 
+                         x=val_col, 
+                         y="Interaction", 
+                         ax=ax, 
+                         palette=colors,
+                         orient="h",
+                         edgecolor='black')  # Add black border around each bar
+
+            ax.axvline(0, color='black', linestyle='-',linewidth=2)  # Add black dotted line at y=0
+
+            ax.spines['top'].set_visible(False)  # Remove top spine
+            ax.spines['right'].set_visible(False)  # Remove right spine
+            ax.spines['left'].set_visible(False)  # Remove left spine
+            ax.tick_params(axis='y', which='both', left=False)  # Remove y ticks
+
+            ax.set_title(f"{cell_line}", pad=20, fontsize=18)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            
+            # ax.tick_params(axis='x', which='both', labelsize=14)  # Increase x-axis tick marks font size
+            ax.grid(axis='x', linestyle='--', alpha=0.7)  # Add horizontal grid lines for better readability
+
+            # Change y-axis tick label colors based on PPI status
+            for i, interaction in enumerate(cell_line_data["Column"].to_list()):
+                rbps = []
+                for feature in self.get_rbp_position_from_column(interaction, binding_fmt=False):
+                    rbp, _ = self.split_rbp_position(feature)
+                    rbps.append(rbp)
+                
+                # Avoid coloring if intra-RBP interaction
+                if len(set(rbps)) == 2:
+                    is_ppi_result = self.is_ppi(interaction.replace("-interaction-shap", ""), ppi_source= "Street et al | IP/SEC-MS (Both)")
+                    
+                    if is_ppi_result:                
+                        ax.get_yticklabels()[i].set_color('magenta')
+
+
+        fig.suptitle(
+            f"{latex_symbol}: Top 20 Interactions per Cell Line",
+            fontsize=20,
+            y=0.98, 
+            x=0.53
+        )
+        fig.supxlabel(latex_symbol, fontsize=24, y=0.04, x=0.52)
+        
+        plt.tight_layout()
+        plt.show()
+
+
     def tmp(self): 
         # for cell_line in ["K562"]: 
             
