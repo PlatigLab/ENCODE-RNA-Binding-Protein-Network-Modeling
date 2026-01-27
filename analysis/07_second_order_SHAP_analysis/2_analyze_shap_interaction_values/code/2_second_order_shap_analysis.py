@@ -1860,7 +1860,6 @@ class SecondOrderShapNetworkAnalyzer:
                 hue_order=hue_order,
                 cut=0,
                 split=False, 
-                density_norm="area"
             )
 
             # Annotate number of points above each distribution
@@ -2035,38 +2034,33 @@ class SecondOrderShapNetworkAnalyzer:
         metric = "Bound-Only"
         val_col = f"Value - {metric}"
 
-        # 1) Load the long-form summary metric table
-        table = self.retrieve_shap_values_for_metric(metric=metric)
+        # 1) Load the importance network
+        graphs_by_cell_line = self.retrieve_importance_network()
 
-        # 2) Subset to only interaction rows with non-null/non-NaN values
-        df = table.filter(
-            (pl.col("Column Type") == "interaction")
-            & (~pl.col(val_col).is_nan())
-        )
-        assert df[val_col].null_count() == 0, f"Null values found in '{val_col}' after filtering."
-
-        # 3) Build a long-form table: one row per (cell_line, position, value)
+        # 2) Build a long-form table: one row per (cell_line, position, edge_weight)
         rows = []
         for cell_line in self.CONFIG["CELL_LINES"]:
-            df_cl = df.filter(pl.col("Cell Line") == cell_line)
+            G = graphs_by_cell_line[cell_line]['graph']
 
             for pos in self.CONFIG["POSITIONS"]:
                 assert type(pos) == int and (1<=pos<=6), f"Position '{pos}' is not an integer between 1 and 6 (inclusive)."
                 
-                df_pos = df_cl.filter(
-                    (pl.col("Position 1") == pos) | (pl.col("Position 2") == pos)
-                )
-
-                vals = df_pos.select(pl.col(val_col)).to_series().to_list()
-                for v in vals:
-                    rows.append(
-                        {
-                            "Cell Line": cell_line,
-                            "Position": pos,
-                            val_col: float(v),
-                        }
-                    )
-
+                # Iterate through edges and collect weights for this position
+                for u, v, edge_data in G.edges(data=True):
+                    # Extract positions from node names
+                    _, pos_u = self.split_rbp_position(u)
+                    _, pos_v = self.split_rbp_position(v)
+                    
+                    # If either node contains this position, include the edge weight
+                    if pos_u == pos or pos_v == pos:
+                        rows.append(
+                            {
+                                "Cell Line": cell_line,
+                                "Position": pos,
+                                val_col: float(edge_data['weight']),
+                            }
+                        )
+                    
         out_df = pl.DataFrame(rows).with_columns(
             [
                 pl.col("Cell Line").cast(pl.String),
@@ -2074,6 +2068,10 @@ class SecondOrderShapNetworkAnalyzer:
                 pl.col(val_col).cast(pl.Float64),
             ]
         )
+        assert (out_df[val_col].null_count() == 0) and \
+            (out_df[val_col] != 0).all() and \
+            (~out_df[val_col].is_nan()).all(), f"'{val_col}' contains null, NaN, or zero values."
+
 
         # --- Plotting ---
         df_plot = out_df.to_pandas()
@@ -2085,7 +2083,8 @@ class SecondOrderShapNetworkAnalyzer:
         plot_notes = (
             "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
             "NOTE 2: Excludes NaN values (no binding observed)\n"
-            "NOTE 3: Each edge can contribute to multiple positions if the 2 nodes have different positions\n"
+            "NOTE 3: 0 edge weights are considered 'No Edge'\n"
+            "NOTE 4: Each edge can contribute to multiple positions if the 2 nodes have different positions\n"
             "\n"
         )
 
@@ -2124,7 +2123,7 @@ class SecondOrderShapNetworkAnalyzer:
                 ax.text(
                     x_pos,
                     y_text,
-                    f"{n_points:.1e}\n{percent_zero:.1f}%",
+                    f"{n_points:,}", #\n{percent_zero:.1f}%",
                     ha="center",
                     va="bottom",
                     fontsize=6,
@@ -2132,7 +2131,7 @@ class SecondOrderShapNetworkAnalyzer:
                     clip_on=False,
                 )
         
-        ax.text(-.43, y_text-0.01, "n:\n% 0: ", ha="center", va="bottom", fontsize=8, color="blue")
+        ax.text(-.43, y_text-0.01, "n: ", ha="center", va="bottom", fontsize=8, color="blue")# \n% 0: ", ha="center", va="bottom", fontsize=8, color="blue")
 
         ax.tick_params(axis='y', labelsize=10)
         ax.tick_params(axis='x', labelsize=14)
@@ -2178,7 +2177,7 @@ class SecondOrderShapNetworkAnalyzer:
         )
 
         # Add numeric value labels above each bar (same x, y + 0.0005)
-        y_offset = 0.0001
+        y_offset = 0.001
         for patch in ax.patches:
             height = patch.get_height()
             if height == 0:
@@ -2209,7 +2208,7 @@ class SecondOrderShapNetworkAnalyzer:
 
         ax.legend(
             title="Position",
-            bbox_to_anchor=(.45, 0.7),
+            bbox_to_anchor=(.48, 0.7),
             loc="center left",
             borderaxespad=0.0,
             frameon=True,
