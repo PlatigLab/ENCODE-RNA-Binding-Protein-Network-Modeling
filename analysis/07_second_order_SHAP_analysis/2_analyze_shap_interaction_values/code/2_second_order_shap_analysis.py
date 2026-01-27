@@ -1953,13 +1953,18 @@ class SecondOrderShapNetworkAnalyzer:
                 )
             )
 
-            # Keep edges with weight > 0 and weight == 0; drop NaN weights (no edge)
+            # Keep only interaction-type edges with weight > 0 (drop NaN and 0 values)
             edges = (
-                table.select(["Cell Line", "Feature 1", "Feature 2", val_col])
-                .filter(~pl.col(val_col).is_nan())
+                table.filter(
+                    (pl.col("Column Type") == "interaction") &
+                    (~pl.col(val_col).is_nan()) & # Exclude NaN values 
+                    (pl.col(val_col) > 0) # Exclude 0 values
+                ).select(
+                    ["Cell Line", "Feature 1", "Feature 2", val_col]
+                )
             )
 
-            # Ensure there are no duplicate undirected edges per cell line (self-loops have _u == _v)
+            # Ensure there are no duplicate undirected edges per cell line
             edges = edges.with_columns(
                 pl.when(pl.col("Feature 1") <= pl.col("Feature 2"))
                 .then(pl.col("Feature 1"))
@@ -1999,13 +2004,19 @@ class SecondOrderShapNetworkAnalyzer:
                 # Add per-node attributes derived from the node name (e.g., "RBFOX2_3" --> RBP: "RBFOX2", Position: 3)
                 rbp_attr = {}
                 pos_attr = {}
+                avg_edge_weight_attr = {}
                 for node in G.nodes:
                     rbp, pos = self.split_rbp_position(node)
                     rbp_attr[node] = rbp
                     pos_attr[node] = pos
 
+                    # Calculate average edge weight for this node
+                    edge_weights = [G[node][neighbor]['weight'] for neighbor in G.neighbors(node)]
+                    avg_edge_weight_attr[node] = float(np.mean(edge_weights)) if edge_weights else float('nan')
+
                 nx.set_node_attributes(G, rbp_attr, "RBP")
                 nx.set_node_attributes(G, pos_attr, "Position")
+                nx.set_node_attributes(G, avg_edge_weight_attr, "Average Edge Weight")
 
                 graphs_by_cell_line[cell_line] = {}
                 graphs_by_cell_line[cell_line]['graph'] = G
