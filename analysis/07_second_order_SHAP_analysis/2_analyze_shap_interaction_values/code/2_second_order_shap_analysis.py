@@ -2221,43 +2221,49 @@ class SecondOrderShapNetworkAnalyzer:
         metric = "Bound-Only"
         val_col = f"Value - {metric}"
 
-        # 1) Load the long-form summary metric table
-        table = self.retrieve_shap_values_for_metric(metric=metric)
+        # 1) Load the importance network
+        graphs_by_cell_line = self.retrieve_importance_network()
 
-        # 2) Subset to only interaction rows with non-null/non-NaN values
-        table = table.filter(
-            (pl.col("Column Type") == "interaction")
-            & (~pl.col(val_col).is_nan())
-        )
-        assert table[val_col].null_count() == 0, f"Null values found in '{val_col}' after filtering."
-        # Assert that Position 1 is less than or equal to Position 2 across all rows
-        assert (table["Position 1"] <= table["Position 2"]).all(), "Position 1 must be less than or equal to Position 2 for all rows."
-        
         for cell_line in self.CONFIG["CELL_LINES"]:
-            df = table.filter(pl.col("Cell Line") == cell_line)
+            G = graphs_by_cell_line[cell_line]['graph']
 
-            # Calculate the average of val_col grouped by unique combinations of Position 1 and Position 2
-            average_importance = df.group_by(["Position 1", "Position 2"]).agg(
-                pl.col(val_col).mean().alias(f"Mean({val_col})"), 
-                pl.col(val_col).len().alias("Count")
-            ).sort(["Position 1", "Position 2"])
-            assert average_importance.height == 21, f"Expected 21 unique position combinations, found {average_importance.height}."
-        
-            # Convert to matrix form with Position 1 and Position 2 as index/columns
-            avg_matrix = average_importance.pivot(
-                values=f"Mean({val_col})",
-                columns="Position 1",
-                index="Position 2"
-            ).to_pandas().set_index("Position 2")
-            avg_matrix.columns.name = "Position 1"
-            avg_matrix = avg_matrix.astype(float)
+            # Build matrices: iterate through each pair of positions
+            avg_matrix = pd.DataFrame(
+                np.nan,
+                index=self.CONFIG["POSITIONS"],
+                columns=self.CONFIG["POSITIONS"],
+                dtype=float
+            )
+            count_matrix = pd.DataFrame(
+                0,
+                index=self.CONFIG["POSITIONS"],
+                columns=self.CONFIG["POSITIONS"],
+                dtype=int
+            )
 
-            count_matrix = average_importance.pivot(
-                values="Count",
-                index ="Position 2",  
-                columns="Position 1", 
-            ).fill_null(0).to_pandas().set_index("Position 2")
-            count_matrix.columns.name = "Position 1"
+            # For each position pair, collect edge weights
+            for pos1 in self.CONFIG["POSITIONS"]:
+                for pos2 in self.CONFIG["POSITIONS"]:
+                    weights = []
+                    
+                    # Check each edge in the graph
+                    for u, v, edge_data in G.edges(data=True):
+                        _, pos_u = self.split_rbp_position(u)
+                        _, pos_v = self.split_rbp_position(v)
+                        
+                        # Include edge if it connects pos1 and pos2
+                        if (pos_u == pos1 and pos_v == pos2) or (pos_u == pos2 and pos_v == pos1):
+                            weights.append(float(edge_data['weight']))
+                    
+                    avg_matrix.loc[pos1, pos2] = float(np.mean(weights))
+                    count_matrix.loc[pos1, pos2] = len(weights)
+
+            # Assert no nulls in avg_matrix and no 0 values in count_matrix
+            assert not pd.isnull(avg_matrix.values).any(), "Null values found in avg_matrix"
+            assert not (count_matrix.values == 0).any(), "Zero values found in count_matrix"
+            # Assert that both matrices are symmetric
+            assert np.allclose(avg_matrix.values, avg_matrix.values.T, equal_nan=True), "avg_matrix is not symmetric"
+            assert np.allclose(count_matrix.values, count_matrix.values.T, equal_nan=True), "count_matrix is not symmetric"
 
             # --- Plotting: 2 subplots side by side ---
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.5), dpi=300)
@@ -2319,6 +2325,7 @@ class SecondOrderShapNetworkAnalyzer:
             plot_notes = (
                 "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
                 "NOTE 2: Excludes NaN values (no binding observed)\n"
+                "NOTE 3: 0 edge weights are considered 'No Edge'\n"
                 "\n"
             )
 
