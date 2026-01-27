@@ -2079,6 +2079,7 @@ class SecondOrderShapNetworkAnalyzer:
         x_order = self.CONFIG["CELL_LINES"]
         hue_order = self.CONFIG["POSITIONS"]
         latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+        colors = ["lightgreen", "plum", "darkorange", "yellow", "lightblue", "sandybrown"]
 
         plot_notes = (
             "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
@@ -2099,7 +2100,7 @@ class SecondOrderShapNetworkAnalyzer:
             hue_order=hue_order,
             cut=0,
             linewidth = 0.3, 
-            palette="Set1",
+            palette=colors
         )
 
         # Annotate number of points above each (Cell Line, Position) violin
@@ -2171,7 +2172,7 @@ class SecondOrderShapNetworkAnalyzer:
             hue="Position",
             hue_order=hue_order,
             errorbar=None,
-            palette="Set1",
+            palette=colors,
             edgecolor="black",
             linewidth=1
         )
