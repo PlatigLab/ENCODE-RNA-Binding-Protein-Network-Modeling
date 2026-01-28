@@ -2457,6 +2457,167 @@ class SecondOrderShapNetworkAnalyzer:
 
             plt.tight_layout()
             plt.show()
+    
+
+    def plot_interaction_cell_line_similarity_scatterplot(self): 
+        val_col = f"Value - Signed-Local-SHAP-Mean-Bound-Only"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"]["Signed-Local-SHAP-Mean-Bound-Only"]
+
+        # Load the table
+        table = self.retrieve_shap_values_for_metric(metric=val_col.split(" - ")[-1]).filter(
+            # (pl.col("Column Type") == "interaction" )
+        )
+
+        # Filter for rows that appear in both cell lines
+        column_counts = table.group_by("Column").agg(pl.col("Cell Line").n_unique().alias("n_cell_lines"))
+        assert column_counts.filter(pl.col("n_cell_lines") > 2).height == 0, \
+            "Some columns appear in more than 2 cell lines"
+        
+        columns_in_both = column_counts.filter(pl.col("n_cell_lines") == 2)["Column"].to_list()
+
+        table = table.filter(pl.col("Column").is_in(columns_in_both))
+        assert table.group_by("Column").agg(pl.col("Cell Line").n_unique()).filter(pl.col("Cell Line") != 2).height == 0, \
+            "Some columns do not have exactly one row per cell line"
+        
+        # Pivot to wide format: columns as rows, cell lines as columns
+        pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
+            values=val_col,
+            index="Column",
+            columns="Cell Line", 
+            sort_columns=True,
+        ).sort("Column")
+
+        pivot_df = pivot_table.to_pandas().reset_index()
+
+        # Get Column Type information from original table for each column
+        col_type_info = table.select(["Column", "Column Type"]).unique().to_pandas()
+        col_type_dict = dict(zip(col_type_info["Column"], col_type_info["Column Type"]))
+        pivot_df["Column Type"] = pivot_df["Column"].map(col_type_dict)
+        pivot_df["Column Type"] = pivot_df["Column Type"].str.capitalize()
+
+        # Calculate average SHAP value across cell lines for ranking
+        pivot_df["Average_Value"] = (pivot_df["HepG2"].fillna(0) + pivot_df["K562"].fillna(0)) / 2
+        
+        # Identify top 20 highest and top 20 lowest
+        top_20_high = pivot_df.nlargest(20, "Average_Value").index.tolist()
+        top_20_low = pivot_df.nsmallest(20, "Average_Value").index.tolist()
+        annotate_indices = set(top_20_high + top_20_low)
+
+        # Calculate statistics
+        n_total_points = len(pivot_df)
+        
+        # Calculate correlations (excluding NaN values)
+        valid_mask = ~(pivot_df["HepG2"].isna() | pivot_df["K562"].isna())
+        valid_data = pivot_df[valid_mask]
+        n_valid_points = len(valid_data)
+
+        pearson_r, _ = pearsonr(valid_data["HepG2"], valid_data["K562"])
+        spearman_r, _ = spearmanr(valid_data["HepG2"], valid_data["K562"])
+    
+        # Calculate zero and NaN statistics
+        both_zero_valid = ((valid_data["HepG2"] == 0) & (valid_data["K562"] == 0)).sum()
+        pct_both_zero = (both_zero_valid / n_valid_points) * 100
+        
+        xor_zero_valid = (
+            (valid_data["HepG2"] == 0) ^ (valid_data["K562"] == 0)
+        ).sum()
+        pct_xor_zero = (xor_zero_valid / n_valid_points) * 100 
+        
+        xor_nan = (pivot_df["HepG2"].isna() ^ pivot_df["K562"].isna()).sum()
+        pct_xor_nan = (xor_nan / n_total_points) * 100 
+        
+        both_nan = (pivot_df["HepG2"].isna() & pivot_df["K562"].isna()).sum()
+        pct_both_nan = (both_nan / n_total_points) * 100 
+
+        # Create scatterplot with centered axes
+        _, ax = plt.subplots(figsize=(8, 8), dpi=100)
+
+        # Plot points colored by Column Type
+        sns.scatterplot(
+            data=pivot_df,
+            x="HepG2",
+            y="K562",
+            hue="Column Type",
+            palette={"Interaction": 'skyblue', "Main": 'darkorange'},
+            alpha=0.6,
+            s=10,
+            edgecolor='black',
+            linewidth=0.05,
+            ax=ax
+        )
+        ax.get_legend().set_title("Column Type")
+
+        # Add text annotations for top 20 highest and lowest
+        for idx in annotate_indices:
+            
+            col_name = pivot_df.loc[idx, "Column"]
+            clean_name = col_name.replace("-interaction-shap", "").replace("-main-shap", "")
+            
+            if col_name.endswith("-main-shap"):
+                color = "darkorange"
+            elif col_name.endswith("-interaction-shap"):
+                color = "dodgerblue"
+            
+            ax.annotate(
+                clean_name,
+                (pivot_df.loc[idx, "HepG2"], pivot_df.loc[idx, "K562"]),
+                fontsize=6,
+                alpha=1,
+                # xytext=(5, 5),
+                # textcoords='offset points',
+                color=color
+            )
+
+        # Move spines to center at (0, 0)
+        ax.spines['left'].set_position('zero')
+        ax.spines['bottom'].set_position('zero')
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+
+        # Add diagonal reference line
+        lims = [
+            np.min([ax.get_xlim(), ax.get_ylim()]),
+            np.max([ax.get_xlim(), ax.get_ylim()]),
+        ]
+        ax.plot(lims, lims, 'k--', alpha=0.3, zorder=0, linewidth=2)
+
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.1,)
+
+        ax.set_xlabel(f"HepG2 {latex_symbol}", fontsize=12, loc='right')
+        ax.set_ylabel(f"K562 {latex_symbol}", fontsize=12, loc='top')
+        
+        # Add legend for PPI coloring
+        ax.legend(loc='lower right', frameon=True, fontsize=10)
+
+        # Add statistics text box
+        stats_text = (
+            f"# Shared Interaction Features: {n_total_points:,}\n"
+            f"# Non-NaN Points Shown: {n_valid_points:,}\n"
+            f"Pearson: {pearson_r:.3f}\n"
+            f"Spearman: {spearman_r:.3f}\n"
+            f"% 0 shown (Both): {pct_both_zero:.0f}%\n"
+            f"% 0 shown (XOR): {pct_xor_zero:.0f}%\n"
+            f"% NaN (XOR): {pct_xor_nan:.0f}%\n"
+            f"% NaN (Both): {pct_both_nan:.0f}%"
+        )
+        ax.text(
+            0.1, 0.8,
+            stats_text,
+            transform=ax.transAxes,
+            fontsize=8,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+        )
+
+        ax.set_title(
+            f"Interaction Similarity Between Cell Lines\n{latex_symbol}",
+            fontsize=8,
+            fontweight='bold'
+        )
+
+        plt.tight_layout()
+        plt.show()
 
 
     def tmp(self): 
