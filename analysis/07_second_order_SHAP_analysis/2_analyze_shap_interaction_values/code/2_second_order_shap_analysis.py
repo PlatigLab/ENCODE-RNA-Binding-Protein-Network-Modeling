@@ -1,7 +1,7 @@
 import yaml, pathlib, glob, json, argparse, os, sys, copy, pickle, copy
 
 import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as mpatches
-import networkx as nx
+import networkx as nx, adjustText
 
 from dataclasses import dataclass
 from loguru import logger
@@ -2459,165 +2459,240 @@ class SecondOrderShapNetworkAnalyzer:
             plt.show()
     
 
-    def plot_interaction_cell_line_similarity_scatterplot(self): 
+    def plot_interaction_cell_line_similarity_scatterplot(self, label_top_points = None): 
+        assert type(label_top_points) == int, f"'label_top_points' must be an integer. Got '{type(label_top_points)}'."
+
         val_col = f"Value - Signed-Local-SHAP-Mean-Bound-Only"
         latex_symbol = self.CONFIG["LATEX_SYMBOLS"]["Signed-Local-SHAP-Mean-Bound-Only"]
+        ppi_col = "Street et al | IP/SEC-MS (Both)"
 
-        # Load the table
-        table = self.retrieve_shap_values_for_metric(metric=val_col.split(" - ")[-1]).filter(
-            # (pl.col("Column Type") == "interaction" )
+        plot_types = {
+            "Main & Interaction": {
+                'hue': "Column Type",
+                'palette': {"Main": 'darkorange', "Interaction": 'skyblue'},
+                'hue_order': ["Main", "Interaction"],
+                'supplementary_note': (
+                    "NOTE: subsets to MAIN & INTERACTION effects for RBPs w/ eCLIP in both cell lines\n"
+                )
+            },
+            "Interaction Only": {
+                'hue': "PPI Type",
+                'palette': {"PPI": 'magenta', "Not PPI": 'green'},
+                'hue_order': ["PPI", "Not PPI"],
+                'supplementary_note': (
+                    "NOTE: subsets to INTERACTION effects for RBPs w/ eCLIP in both cell lines\n"
+                )
+            },
+        }
+
+        plot_notes = (
+            f"NOTE: Top {label_top_points} highest & lowest 'cell line average' points are labeled\n"
+            f"NOTE: Points with NaN values in either cell line (aka. no binding observed) are not plotted\n"
         )
 
-        # Filter for rows that appear in both cell lines
-        column_counts = table.group_by("Column").agg(pl.col("Cell Line").n_unique().alias("n_cell_lines"))
-        assert column_counts.filter(pl.col("n_cell_lines") > 2).height == 0, \
-            "Some columns appear in more than 2 cell lines"
-        
-        columns_in_both = column_counts.filter(pl.col("n_cell_lines") == 2)["Column"].to_list()
+        for plot_type in plot_types.keys():
+            # Load the table
+            table = self.retrieve_shap_values_for_metric(metric=val_col.split(" - ")[-1])
+            if plot_type == "Interaction Only":
+                table = table.filter(pl.col("Column Type") == "interaction")
 
-        table = table.filter(pl.col("Column").is_in(columns_in_both))
-        assert table.group_by("Column").agg(pl.col("Cell Line").n_unique()).filter(pl.col("Cell Line") != 2).height == 0, \
-            "Some columns do not have exactly one row per cell line"
-        
-        # Pivot to wide format: columns as rows, cell lines as columns
-        pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
-            values=val_col,
-            index="Column",
-            columns="Cell Line", 
-            sort_columns=True,
-        ).sort("Column")
-
-        pivot_df = pivot_table.to_pandas().reset_index()
-
-        # Get Column Type information from original table for each column
-        col_type_info = table.select(["Column", "Column Type"]).unique().to_pandas()
-        col_type_dict = dict(zip(col_type_info["Column"], col_type_info["Column Type"]))
-        pivot_df["Column Type"] = pivot_df["Column"].map(col_type_dict)
-        pivot_df["Column Type"] = pivot_df["Column Type"].str.capitalize()
-
-        # Calculate average SHAP value across cell lines for ranking
-        pivot_df["Average_Value"] = (pivot_df["HepG2"].fillna(0) + pivot_df["K562"].fillna(0)) / 2
-        
-        # Identify top 20 highest and top 20 lowest
-        top_20_high = pivot_df.nlargest(20, "Average_Value").index.tolist()
-        top_20_low = pivot_df.nsmallest(20, "Average_Value").index.tolist()
-        annotate_indices = set(top_20_high + top_20_low)
-
-        # Calculate statistics
-        n_total_points = len(pivot_df)
-        
-        # Calculate correlations (excluding NaN values)
-        valid_mask = ~(pivot_df["HepG2"].isna() | pivot_df["K562"].isna())
-        valid_data = pivot_df[valid_mask]
-        n_valid_points = len(valid_data)
-
-        pearson_r, _ = pearsonr(valid_data["HepG2"], valid_data["K562"])
-        spearman_r, _ = spearmanr(valid_data["HepG2"], valid_data["K562"])
-    
-        # Calculate zero and NaN statistics
-        both_zero_valid = ((valid_data["HepG2"] == 0) & (valid_data["K562"] == 0)).sum()
-        pct_both_zero = (both_zero_valid / n_valid_points) * 100
-        
-        xor_zero_valid = (
-            (valid_data["HepG2"] == 0) ^ (valid_data["K562"] == 0)
-        ).sum()
-        pct_xor_zero = (xor_zero_valid / n_valid_points) * 100 
-        
-        xor_nan = (pivot_df["HepG2"].isna() ^ pivot_df["K562"].isna()).sum()
-        pct_xor_nan = (xor_nan / n_total_points) * 100 
-        
-        both_nan = (pivot_df["HepG2"].isna() & pivot_df["K562"].isna()).sum()
-        pct_both_nan = (both_nan / n_total_points) * 100 
-
-        # Create scatterplot with centered axes
-        _, ax = plt.subplots(figsize=(8, 8), dpi=100)
-
-        # Plot points colored by Column Type
-        sns.scatterplot(
-            data=pivot_df,
-            x="HepG2",
-            y="K562",
-            hue="Column Type",
-            palette={"Interaction": 'skyblue', "Main": 'darkorange'},
-            alpha=0.6,
-            s=10,
-            edgecolor='black',
-            linewidth=0.05,
-            ax=ax
-        )
-        ax.get_legend().set_title("Column Type")
-
-        # Add text annotations for top 20 highest and lowest
-        for idx in annotate_indices:
+            # Filter for rows that appear in both cell lines
+            column_counts = table.group_by("Column").agg(pl.col("Cell Line").n_unique().alias("n_cell_lines"))
+            assert column_counts.filter(pl.col("n_cell_lines") > 2).height == 0, \
+                "Some columns appear in more than 2 cell lines"
             
-            col_name = pivot_df.loc[idx, "Column"]
-            clean_name = col_name.replace("-interaction-shap", "").replace("-main-shap", "")
+            columns_in_both = column_counts.filter(pl.col("n_cell_lines") == 2)["Column"].to_list()
+
+            table = table.filter(pl.col("Column").is_in(columns_in_both))
+            assert table.group_by("Column").agg(pl.col("Cell Line").n_unique()).filter(pl.col("Cell Line") != 2).height == 0, \
+                "Some columns do not have exactly one row per cell line"
             
-            if col_name.endswith("-main-shap"):
-                color = "darkorange"
-            elif col_name.endswith("-interaction-shap"):
-                color = "dodgerblue"
+            # Pivot to wide format: columns as rows, cell lines as columns
+            pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
+                values=val_col,
+                index="Column",
+                columns="Cell Line", 
+                sort_columns=True,
+            ).sort("Column")
+
+            pivot_df = pivot_table.to_pandas().reset_index()
+
+            # Get Column Type information from original table for each column
+            col_type_info = table.select(["Column", "Column Type"]).unique().to_pandas()
+            col_type_dict = dict(zip(col_type_info["Column"], col_type_info["Column Type"]))
+            pivot_df["Column Type"] = pivot_df["Column"].map(col_type_dict)
+            pivot_df["Column Type"] = pivot_df["Column Type"].str.capitalize()
+
+            # Add PPI Info for each column 
+            ppi_type_info = table.select(["Column", ppi_col]).unique().to_pandas()
+            ppi_type_dict = dict(zip(ppi_type_info["Column"], ppi_type_info[ppi_col]))
+            pivot_df["PPI Type"] = pivot_df["Column"].map(ppi_type_dict)
+            pivot_df["PPI Type"] = pivot_df["PPI Type"].apply(lambda x: "PPI" if isinstance(x, str) and x.endswith("-Position") else "Not PPI")
+
+            # Calculate average SHAP value across cell lines for ranking
+            pivot_df["Average_Value"] = (pivot_df["HepG2"].fillna(0) + pivot_df["K562"].fillna(0)) / 2
             
-            ax.annotate(
-                clean_name,
-                (pivot_df.loc[idx, "HepG2"], pivot_df.loc[idx, "K562"]),
-                fontsize=6,
-                alpha=1,
-                # xytext=(5, 5),
-                # textcoords='offset points',
-                color=color
+            # Identify top 20 highest and top 20 lowest
+            top_n_high = pivot_df.nlargest(label_top_points, "Average_Value").index.tolist()
+            top_n_low = pivot_df.nsmallest(label_top_points, "Average_Value").index.tolist()
+            annotate_indices = set(top_n_high + top_n_low)
+
+            # Calculate statistics
+            n_total_points = len(pivot_df)
+            
+            # Calculate correlations (excluding NaN values)
+            valid_mask = ~(pivot_df["HepG2"].isna() | pivot_df["K562"].isna())
+            valid_data = pivot_df[valid_mask]
+            n_valid_points = len(valid_data)
+
+            pearson_r, _ = pearsonr(valid_data["HepG2"], valid_data["K562"])
+            spearman_r, _ = spearmanr(valid_data["HepG2"], valid_data["K562"])
+        
+            # Calculate zero and NaN statistics
+            both_zero_valid = ((valid_data["HepG2"] == 0) & (valid_data["K562"] == 0)).sum()
+            pct_both_zero = (both_zero_valid / n_valid_points) * 100
+            
+            xor_zero_valid = (
+                (valid_data["HepG2"] == 0) ^ (valid_data["K562"] == 0)
+            ).sum()
+            pct_xor_zero = (xor_zero_valid / n_valid_points) * 100 
+            
+            xor_nan = (pivot_df["HepG2"].isna() ^ pivot_df["K562"].isna()).sum()
+            pct_xor_nan = (xor_nan / n_total_points) * 100 
+            
+            both_nan = (pivot_df["HepG2"].isna() & pivot_df["K562"].isna()).sum()
+            pct_both_nan = (both_nan / n_total_points) * 100 
+
+            # Create scatterplot with centered axes
+            fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+
+            # Plot points colored by Column Type
+            sns.scatterplot(
+                data=pivot_df,
+                x="HepG2",
+                y="K562",
+                hue=plot_types[plot_type]['hue'],
+                palette=plot_types[plot_type]['palette'],
+                hue_order = plot_types[plot_type]['hue_order'],
+                alpha=0.4,
+                s=10,
+                edgecolor='black',
+                linewidth=0.6,
+                ax=ax
+            )
+            ax.legend(loc='lower right', frameon=True, fontsize=12, markerscale=4)
+
+            # Add text annotations for top 20 highest and lowest
+            texts = []
+            for idx in annotate_indices:
+                
+                col_name = pivot_df.loc[idx, "Column"]
+                clean_name = col_name.replace("-interaction-shap", "").replace("-main-shap", "")
+                
+                if plot_type == "Main & Interaction":
+                    if col_name.endswith("-main-shap"):
+                        color = plot_types[plot_type]['palette']["Main"]
+                    elif col_name.endswith("-interaction-shap"):
+                        color = plot_types[plot_type]['palette']["Interaction"]
+                
+                elif plot_type == "Interaction Only":
+                    is_ppi_result = pivot_df.loc[idx, "PPI Type"] == "PPI"
+                    color = plot_types[plot_type]['palette']["PPI"] if is_ppi_result else plot_types[plot_type]['palette']["Not PPI"]
+
+                text_obj = ax.text(
+                    pivot_df.loc[idx, "HepG2"],
+                    pivot_df.loc[idx, "K562"],
+                    clean_name,
+                    fontsize=5,
+                    alpha=1,
+                    color=color, 
+                    zorder=10
+                )
+                texts.append(text_obj)
+            
+            adjustText.adjust_text(
+                texts,
+                arrowprops=dict(arrowstyle='-', lw=1, color='gray'),
+                # force_points=.2,
+                # force_text=.2,
+                # expand_text=(.2, .2),   # Increase distance between text labels
+                # expand_points=(.2, .2),  # Increase distance from points
             )
 
-        # Move spines to center at (0, 0)
-        ax.spines['left'].set_position('zero')
-        ax.spines['bottom'].set_position('zero')
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
+            # Move spines to center at (0, 0)
+            ax.spines['left'].set_position('zero')
+            ax.spines['bottom'].set_position('zero')
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
 
-        # Add diagonal reference line
-        lims = [
-            np.min([ax.get_xlim(), ax.get_ylim()]),
-            np.max([ax.get_xlim(), ax.get_ylim()]),
-        ]
-        ax.plot(lims, lims, 'k--', alpha=0.3, zorder=0, linewidth=2)
+            # Add diagonal reference line
+            lims = [
+                np.min([ax.get_xlim(), ax.get_ylim()]),
+                np.max([ax.get_xlim(), ax.get_ylim()]),
+            ]
+            ax.plot(lims, lims, 'k--', alpha=0.3, zorder=0, linewidth=2)
 
-        ax.set_aspect('equal')
-        ax.grid(True, alpha=0.1,)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.1,)
 
-        ax.set_xlabel(f"HepG2 {latex_symbol}", fontsize=12, loc='right')
-        ax.set_ylabel(f"K562 {latex_symbol}", fontsize=12, loc='top')
-        
-        # Add legend for PPI coloring
-        ax.legend(loc='lower right', frameon=True, fontsize=10)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            # Label the axes using ax.text objects for custom positioning and style
+            ax.text(
+                0.6, -0.04,
+                f"HepG2: {latex_symbol} (X-axis)",
+                transform=ax.transAxes,
+                fontsize=18,
+                fontweight='bold',
+                ha='center',
+                va='top'
+            )
+            ax.text(
+                -0.03, 0.55,
+                f"K562: {latex_symbol} (Y-axis)",
+                transform=ax.transAxes,
+                fontsize=18,
+                fontweight='bold',
+                ha='right',
+                va='center',
+                rotation=90
+            )
 
-        # Add statistics text box
-        stats_text = (
-            f"# Shared Interaction Features: {n_total_points:,}\n"
-            f"# Non-NaN Points Shown: {n_valid_points:,}\n"
-            f"Pearson: {pearson_r:.3f}\n"
-            f"Spearman: {spearman_r:.3f}\n"
-            f"% 0 shown (Both): {pct_both_zero:.0f}%\n"
-            f"% 0 shown (XOR): {pct_xor_zero:.0f}%\n"
-            f"% NaN (XOR): {pct_xor_nan:.0f}%\n"
-            f"% NaN (Both): {pct_both_nan:.0f}%"
-        )
-        ax.text(
-            0.1, 0.8,
-            stats_text,
-            transform=ax.transAxes,
-            fontsize=8,
-            verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
-        )
+            # Add statistics text box
+            stats_text = (
+                f"Shared \"{plot_type}\" Points: {n_total_points:,}\n"
+                f"Non-NaN Points (Shown): {n_valid_points:,}\n"
+                f"Pearson: {pearson_r:.3f}\n"
+                f"Spearman: {spearman_r:.3f}\n"
+                f"% 0 shown (Both): {pct_both_zero:.0f}%\n"
+                f"% 0 shown (XOR): {pct_xor_zero:.0f}%\n"
+                f"% NaN (XOR): {pct_xor_nan:.0f}%\n"
+                f"% NaN (Both): {pct_both_nan:.0f}%"
+            )
+            ax.text(
+                0.05, 0.9,
+                stats_text,
+                transform=ax.transAxes,
+                fontsize=8,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+            )
 
-        ax.set_title(
-            f"Interaction Similarity Between Cell Lines\n{latex_symbol}",
-            fontsize=8,
-            fontweight='bold'
-        )
+            ax.set_title(
+                f"{latex_symbol}: {plot_type} Comparison Between Cell Lines\n",
+                fontsize=14,
+                fontweight='bold'
+            )
 
-        plt.tight_layout()
-        plt.show()
+            fig.suptitle(
+                f"{plot_notes}{plot_types[plot_type]['supplementary_note']}",
+                fontsize=8,
+                y=0.98,
+                x=0.52
+            )
+
+            plt.tight_layout()
+            plt.show()
 
 
     def tmp(self): 
