@@ -2825,53 +2825,55 @@ class SecondOrderShapNetworkAnalyzer:
 
         # Convert results to a DataFrame
         results_df = pd.DataFrame(results).sort_values(by="SHAP Threshold")
-        display(results_df)
 
-        # Create a scatter plot with marker size, then add a line plot to connect the dots
-        ax = plt.subplots(figsize=(10, 6))[1]
+        # Create a scatter plot with color representing total interactions considered
+        fig, ax = plt.subplots(figsize=(6, 5), dpi=600)
         
-        # Line plot to connect the dots (without size parameter)
-        # Using red-orange for colorblind-friendly high contrast
+        # Line plot to connect the dots (without color parameter)
         sns.lineplot(
             data=results_df,
             x="SHAP Threshold",
             y="% Direction Concordance",
             color="#E74C3C",
-            linewidth=2.5,
+            linewidth=1.5,
             ax=ax,
             legend=False
         )
         
-        # Scatterplot with size parameter for legend
-        # Using cyan for colorblind-friendly high contrast
-        sns.scatterplot(
-            data=results_df,
-            x="SHAP Threshold",
-            y="% Direction Concordance",
-            size="# Total",
-            sizes=(100, 400),
-            alpha=0.8,
-            color="#17BECF",
-            edgecolor="black",
-            linewidth=1.5,
-            ax=ax
+        # Scatterplot with color parameter for legend using cividis palette
+        scatter = ax.scatter(
+            results_df["SHAP Threshold"],
+            results_df["% Direction Concordance"],
+            c=results_df["# Total"],
+            cmap="cividis",
+            s=75,
+            alpha=1.0,
+            edgecolor="gray",
+            linewidth=1
         )
+        
+        # Add colorbar for the # Total values
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label("# Interaction Features Considered", fontsize=8)
         
         # Set log scale for x-axis
         ax.set_xscale('log')
-        
-        ax.set_title("Concordance of SHAP Values Across Cell Lines", fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
         
-        # Move legend to upper left with smaller markers and increased vertical spacing
-        ax.legend(
-            loc="upper left",
-            fontsize=16,
-            labelspacing=1.3,    # Increase vertical space between legend entries
-            title = "# Interaction Features Considered",
-            title_fontsize=14,
+        ax.set_title("% Both-Cell-Line-Learned Interactions\nwith Same Direction as function of Min. SHAP Threshold", fontsize=10)
+        ax.set_xlabel(f"|{latex_symbol}| Threshold", fontsize=12, fontweight='bold')
+        ax.set_ylabel("% Interactions w/ Same Direction", fontsize=10, fontweight='bold')
+
+        fig.suptitle(
+            (
+                "NOTE 1: Only considers interactions where BOTH cell lines\nhave non-zero \"Signed Mean Average\" values\n\n"
+                "NOTE 2: Threshold means that BOTH cell lines\nmust have |\"Signed Mean Average\"| > threshold to be included\n"
+                "\n"
+            ), 
+            fontsize=8,
+            y=0.93, 
+            x=0.48
         )
-        
 
         plt.tight_layout()
         plt.show()
