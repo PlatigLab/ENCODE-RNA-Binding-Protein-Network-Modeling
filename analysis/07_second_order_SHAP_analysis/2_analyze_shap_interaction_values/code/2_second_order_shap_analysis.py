@@ -2666,8 +2666,8 @@ class SecondOrderShapNetworkAnalyzer:
                 f"Spearman: {spearman_r:.3f}\n"
                 f"% 0 shown (Both): {pct_both_zero:.0f}%\n"
                 f"% 0 shown (XOR): {pct_xor_zero:.0f}%\n"
-                f"% NaN (XOR): {pct_xor_nan:.0f}%\n"
-                f"% NaN (Both): {pct_both_nan:.0f}%"
+                f"% NaN (Both): {pct_both_nan:.0f}%\n"
+                f"% NaN (XOR): {pct_xor_nan:.0f}%"
             )
             ax.text(
                 0.05, 0.9,
@@ -2680,7 +2680,7 @@ class SecondOrderShapNetworkAnalyzer:
 
             ax.set_title(
                 f"{latex_symbol}: {plot_type} Comparison Between Cell Lines\n",
-                fontsize=14,
+                fontsize=12,
                 fontweight='bold'
             )
 
