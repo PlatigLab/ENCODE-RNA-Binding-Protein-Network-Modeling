@@ -2827,7 +2827,7 @@ class SecondOrderShapNetworkAnalyzer:
         results_df = pd.DataFrame(results).sort_values(by="SHAP Threshold")
 
         # Create a scatter plot with color representing total interactions considered
-        fig, ax = plt.subplots(figsize=(6, 5), dpi=600)
+        fig, ax = plt.subplots(figsize=(6, 5), dpi=400)
         
         # Line plot to connect the dots (without color parameter)
         sns.lineplot(
@@ -2859,7 +2859,8 @@ class SecondOrderShapNetworkAnalyzer:
         # Set log scale for x-axis
         ax.set_xscale('log')
         ax.grid(True, alpha=0.3)
-        
+
+        ax.set_ylim(0, 105)        
         ax.set_title("% Both-Cell-Line-Learned Interactions\nwith Same Direction as function of Min. SHAP Threshold", fontsize=10)
         ax.set_xlabel(f"|{latex_symbol}| Threshold", fontsize=12, fontweight='bold')
         ax.set_ylabel("% Interactions w/ Same Direction", fontsize=10, fontweight='bold')
