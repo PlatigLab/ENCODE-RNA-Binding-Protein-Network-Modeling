@@ -62,7 +62,8 @@ SHAP_AVG_DIR: "../outputs/SHAP_cache/averages/"
 PARTIAL_AUC_THRESHOLDS: [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
 # SHAP percentile thresholds 
 SHAP_PERCENTILE_THRESHOLDS: [50, 75, 90, 95, 99]
-
+# RAW SHAP thresholds
+RAW_SHAP_THRESHOLDS: [0.0, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4, 5.0e-4, 1.0e-3, 5.0e-3, 1.0e-2, 5.0e-2, .1, .2, .3, .4, .5]
 # First order SHAP Cache Directory 
 FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL_AVERAGE_SHAP_CACHE/"
 

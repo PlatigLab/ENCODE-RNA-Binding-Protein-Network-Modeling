@@ -2776,6 +2776,105 @@ class SecondOrderShapNetworkAnalyzer:
             x=0.52
         )
 
+    
+    def plot_interaction_sign_concordance_over_shap_thresholds(self): 
+        val_col = f"Value - Signed-Local-SHAP-Mean-Bound-Only"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"]["Signed-Local-SHAP-Mean-Bound-Only"]
+
+        # Load the table
+        table = self.retrieve_shap_values_for_metric(metric=val_col.split(" - ")[-1])
+
+        # Filter for interaction columns
+        table = table.filter(
+            (pl.col("Column Type") == "interaction") 
+        )
+
+        # Pivot to wide format: columns as rows, cell lines as columns
+        # Filter to keep only rows where both cell lines have non-zero absolute values
+        pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
+            values=val_col,
+            index="Column",
+            columns="Cell Line",
+            sort_columns=True,
+        ).sort("Column").drop_nans().drop_nulls().filter(
+            (pl.col("HepG2").abs() > 0) & (pl.col("K562").abs() > 0)
+        )
+
+        results = []
+        for threshold in self.CONFIG["RAW_SHAP_THRESHOLDS"]: 
+            # Subset the table based on the threshold
+            filtered_table = pivot_table.filter(
+                (pl.col("HepG2").abs() > threshold) & 
+                (pl.col("K562").abs() > threshold)
+            )
+
+            # Calculate the percentage of rows with the same sign
+            same_sign_count = ((filtered_table["HepG2"] > 0) & (filtered_table["K562"] > 0)).sum() + \
+                               ((filtered_table["HepG2"] < 0) & (filtered_table["K562"] < 0)).sum()
+            total_count = filtered_table.height
+
+            percentage_same_sign = (same_sign_count / total_count) * 100
+
+            # Append results to a new table
+            results.append({
+                "SHAP Threshold": threshold,
+                "% Direction Concordance": percentage_same_sign, 
+                "# Same Sign": same_sign_count,
+                "# Total": total_count
+            })
+
+        # Convert results to a DataFrame
+        results_df = pd.DataFrame(results).sort_values(by="SHAP Threshold")
+        display(results_df)
+
+        # Create a scatter plot with marker size, then add a line plot to connect the dots
+        ax = plt.subplots(figsize=(10, 6))[1]
+        
+        # Line plot to connect the dots (without size parameter)
+        # Using red-orange for colorblind-friendly high contrast
+        sns.lineplot(
+            data=results_df,
+            x="SHAP Threshold",
+            y="% Direction Concordance",
+            color="#E74C3C",
+            linewidth=2.5,
+            ax=ax,
+            legend=False
+        )
+        
+        # Scatterplot with size parameter for legend
+        # Using cyan for colorblind-friendly high contrast
+        sns.scatterplot(
+            data=results_df,
+            x="SHAP Threshold",
+            y="% Direction Concordance",
+            size="# Total",
+            sizes=(100, 400),
+            alpha=0.8,
+            color="#17BECF",
+            edgecolor="black",
+            linewidth=1.5,
+            ax=ax
+        )
+        
+        # Set log scale for x-axis
+        ax.set_xscale('log')
+        
+        ax.set_title("Concordance of SHAP Values Across Cell Lines", fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Move legend to upper left with smaller markers and increased vertical spacing
+        ax.legend(
+            loc="upper left",
+            fontsize=16,
+            labelspacing=1.3,    # Increase vertical space between legend entries
+            title = "# Interaction Features Considered",
+            title_fontsize=14,
+        )
+        
+
+        plt.tight_layout()
+        plt.show()
 
 
     def tmp(self): 
