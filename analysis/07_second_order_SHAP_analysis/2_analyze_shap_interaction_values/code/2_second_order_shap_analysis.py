@@ -2694,6 +2694,89 @@ class SecondOrderShapNetworkAnalyzer:
             plt.tight_layout()
             plt.show()
 
+    
+    def create_top_cell_line_average_interactions_barplot(self): 
+        val_col = f"Value - Signed-Local-SHAP-Mean-Bound-Only"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"]["Signed-Local-SHAP-Mean-Bound-Only"]
+
+        # Load the table
+        table = self.retrieve_shap_values_for_metric(metric=val_col.split(" - ")[-1])
+
+        # Filter for interaction columns
+        table = table.filter(
+            (pl.col("Column Type") == "interaction") 
+        )
+
+        # Pivot to wide format to get averages across cell lines
+        pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
+            values=val_col,
+            index="Column",
+            columns="Cell Line", 
+            sort_columns=True,
+        ).sort("Column").drop_nans().drop_nulls().filter(
+            (pl.col("HepG2") != 0) & (pl.col("K562") != 0)
+        )
+
+        pivot_df = pivot_table.to_pandas().reset_index()
+
+        # Calculate average SHAP value across cell lines for ranking
+        pivot_df["Average_Value"] = (pivot_df["HepG2"] + pivot_df["K562"]) / 2
+
+        # Get the top 20 interactions by average value
+        top_20_high_cols = pivot_df.nlargest(20, "Average_Value")["Column"].tolist()
+        top_20_low_cols = pivot_df.nsmallest(20, "Average_Value")["Column"].tolist()
+        top_40_cols = set(top_20_high_cols + top_20_low_cols)
+
+        # Filter original table for these top columns
+        plot_table = table.filter(
+            pl.col("Column").is_in(top_40_cols)
+        ).with_columns(
+            pl.col("Column").str.replace("-interaction-shap", "").alias("Interaction Name")
+        ).select(
+            ["Interaction Name", "Cell Line", val_col]
+        ).sort(val_col, descending=False)
+
+        plot_df = plot_table.to_pandas()
+
+        # Plotting
+        fig = plt.figure(figsize=(10, 12), dpi=100)
+        ax = sns.barplot(
+            data=plot_df,
+            x=val_col,
+            y="Interaction Name",
+            hue="Cell Line",
+            orient="h",
+            edgecolor='black',
+            palette = {'K562': 'royalblue', 'HepG2': 'gold'},
+            width=0.5
+        )
+
+        ax.axvline(0, color='black', linestyle='-', linewidth=2)
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+
+        ax.tick_params(axis='y', which='both', left=False, labelsize=10)
+
+        ax.set_title(f"Top Highest & Lowest Interactions by Average {latex_symbol} Across Cell Lines", pad=20, fontsize=18)
+
+        ax.set_xlabel(f"{latex_symbol}", fontsize=24)
+        ax.set_ylabel("Interaction", fontsize=24, labelpad=10, fontweight='bold')
+
+        ax.legend(title="Cell Line", loc="best")
+
+        ax.grid(axis='x', linestyle='--', alpha = 0.8)
+        ax.grid(axis='y', linestyle='-', alpha=0.3)
+
+        fig.suptitle(
+            "NOTE: Features needed to have non-zero values in BOTH cell lines to be considered\n\n", 
+            fontsize=14,
+            y=0.95,
+            x=0.52
+        )
+
+
 
     def tmp(self): 
         # for cell_line in ["K562"]: 
