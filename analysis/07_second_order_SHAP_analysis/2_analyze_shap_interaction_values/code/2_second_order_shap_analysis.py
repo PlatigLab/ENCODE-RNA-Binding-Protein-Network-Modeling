@@ -2901,7 +2901,25 @@ class SecondOrderShapNetworkAnalyzer:
         ).sort(
             ["Cell Line", "Column"]
         )
-
+        
+        # Common plot settings
+        sharex = True
+        sharey = True
+        hspace = 0.05
+        wspace = 0.05
+        tick_fontsize = 6
+        title_fontsize = 8
+        tight_layout_rect = [0, 0, 1, 0.98]
+        cell_line_palette = {
+            'HepG2': 'tab:blue',
+            'K562': 'tab:orange',
+        }
+        
+        # Prepare data for each plot type
+        # For barplot: use grouped_df with "Mean Value" column
+        # For violinplot: use table converted to pandas with val_col
+        table_pandas = table.select(["Cell Line", "Position 1", "Position 2", val_col]).to_pandas()
+        
         # Group by cell line, position 1, position 2 and aggregate
         grouped = table.group_by(["Cell Line", "Position 1", "Position 2"]).agg([
             pl.col(val_col).mean().alias("Mean Value"),
@@ -2909,220 +2927,146 @@ class SecondOrderShapNetworkAnalyzer:
         ]).sort(["Cell Line", "Position 1", "Position 2"])
         # Convert grouped data to pandas for easier plotting
         grouped_df = grouped.to_pandas()
+        
+        plot_notes = f"NOTE: Input data was all rows per cell line with\nnon-zero (learned) {latex_symbol} values\n\n"
 
-        fig, axes = plt.subplots(
-            nrows=n_pos, 
-            ncols=n_pos, 
-            figsize=(12, 10), 
-            dpi=100,
-            sharex=True,
-            sharey=True
-        )
-        
-        # Reduce spacing between subplots
-        plt.subplots_adjust(hspace=0.15, wspace=0.15)
-        
-        # Cell line palette
-        cell_line_palette = {'HepG2': 'gold', 'K562': 'royalblue'}
-        
-        for row_idx, pos2 in enumerate(positions):
-            for col_idx, pos1 in enumerate(positions):
-                ax = axes[row_idx, col_idx]
+        plot_configs = [
+            {
+                "plot_type": "barplot",
+                "y_col": "Mean Value",
+                "data": grouped_df,
+                "suptitle": f"Mean({latex_symbol}) by Position Pair & Cell Line",
+                "supylabel": f"Mean({latex_symbol})",
+                "supxlabel": "Cell Line",
+            },
+            {
+                "plot_type": "violinplot",
+                "y_col": val_col,
+                "data": table_pandas,
+                "suptitle": f"{latex_symbol} Distributions by Position Pair & Cell Line",
+                "supylabel": f"{latex_symbol}",
+                "supxlabel": "Cell Line",
+            },
+        ]
+
+        for config in plot_configs:
+            fig, axes = plt.subplots(
+                nrows=n_pos, 
+                ncols=n_pos, 
+                figsize=(8,8), 
+                dpi=400,
+                sharex=sharex,
+                sharey=sharey
+            )
             
-                # Upper triangle (off-diagonal): turn off
-                if col_idx > row_idx:
-                    ax.axis('off')
-                    continue
+            plt.subplots_adjust(hspace=hspace, wspace=wspace)
+            
+            for row_idx, pos2 in enumerate(positions):
+                for col_idx, pos1 in enumerate(positions):
+                    ax = axes[row_idx, col_idx]
                 
-                # Diagonal and lower triangle: show barplot
-                # Filter data for this position pair
-                subset = grouped_df[
-                    (grouped_df["Position 1"] == pos1) & 
-                    (grouped_df["Position 2"] == pos2)
-                ]
-                
-                if subset.empty:
-                    ax.axis('off')
-                    continue
-                
-                # Create barplot with mean value by cell line
-                sns.barplot(
-                    data=subset,
-                    x="Cell Line",
-                    y="Mean Value",
-                    hue="Cell Line",
-                    palette=cell_line_palette,
-                    order=self.CONFIG["CELL_LINES"],
-                    hue_order=self.CONFIG["CELL_LINES"],
-                    edgecolor='black',
-                    linewidth=0.5,
-                    ax=ax,
-                    legend=False
-                )
-                
-                # Add horizontal line at y = 0
-                ax.axhline(y=0, color='green', linestyle='--', linewidth=1, zorder=10)
-                
-                # Remove x-axis labels for all except bottom row
-                if row_idx < n_pos - 1:
-                    ax.set_xticklabels([])
-                    ax.set_xlabel('')
-                else:
-                    ax.tick_params(axis='x', labelsize=5, rotation=45)
-                    ax.set_xlabel('')
-                
-                # Remove y-axis labels for all except first column
-                if col_idx > 0:
-                    ax.set_yticklabels([])
-                    ax.set_ylabel('')
-                else:
-                    ax.tick_params(axis='y', labelsize=5)
-                    ax.set_ylabel('')
-                
-                # Add position label in subplot title
-                ax.set_title(f"P{pos1}-P{pos2}", fontsize=6, pad=2)
-                
-                # Clean up spines
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-        
-        # Create legend
-        legend_handles = [
-            mpatches.Patch(color=cell_line_palette['HepG2'], label='HepG2'),
-            mpatches.Patch(color=cell_line_palette['K562'], label='K562'),
-            plt.Line2D([0], [0], color='green', linestyle='--', linewidth=1, label='y=0')
-        ]
-        fig.legend(
-            handles=legend_handles,
-            loc='upper right',
-            bbox_to_anchor=(0.98, 0.98),
-            fontsize=8,
-            frameon=True
-        )
-        
-        fig.suptitle(
-            f"Mean {latex_symbol} by Position Pair\n"
-            f"(Diagonal and Lower Triangle Only)",
-            fontsize=12,
-            fontweight='bold',
-            y=1.02
-        )
-        
-        fig.supylabel(f"Mean {latex_symbol}", fontsize=10, fontweight='bold')
-        fig.supxlabel("Cell Line", fontsize=10, fontweight='bold')
-        
-        plt.tight_layout(rect=[0.03, 0.03, 1, 0.98])
-        plt.show()
+                    # Upper triangle (off-diagonal): turn off
+                    if col_idx > row_idx:
+                        ax.axis('off')
+                        continue
+                    
+                    # Get subset data from the config's data source
+                    data_df = config["data"]
+                    subset = data_df[
+                        (data_df["Position 1"] == pos1) & 
+                        (data_df["Position 2"] == pos2)
+                    ]
+                    
+                    assert not subset.empty, f"No data found for position pair Pos {pos1} - Pos {pos2}"
+                    
+                    # Create the appropriate plot
+                    if config["plot_type"] == "barplot":
+                        sns.barplot(
+                            data=subset,
+                            x="Cell Line",
+                            y=config["y_col"],
+                            hue="Cell Line",
+                            width = 0.4,
+                            palette=cell_line_palette,
+                            order=self.CONFIG["CELL_LINES"],
+                            hue_order=self.CONFIG["CELL_LINES"],
+                            edgecolor='black',
+                            linewidth=0.5,
+                            ax=ax,
+                            legend=False
+                        )
+                        
+                        # Apply custom hatching and coloring to bars
+                        for bar_idx, bar in enumerate(ax.patches):
+                            bar_height = bar.get_height()
+                            # Determine color based on value (positive = salmon, negative = skyblue)s
+                            if bar_height >= 0:
+                                bar.set_facecolor('salmon')
+                            else:
+                                bar.set_facecolor('skyblue')
 
-        # Now create the violinplot version
-        fig, axes = plt.subplots(
-            nrows=n_pos, 
-            ncols=n_pos, 
-            figsize=(10, 10), 
-            dpi=300,
-            sharex=False,
-            sharey=False
-        )
-        
-        # Reduce spacing between subplots
-        plt.subplots_adjust(hspace=0.05, wspace=0.05)
-        
-        # Cell line palette
-        cell_line_palette = {'HepG2': 'gold', 'K562': 'royalblue'}
-        
-        for row_idx, pos2 in enumerate(positions):
+                    elif config["plot_type"] == "violinplot":
+                        sns.violinplot(
+                            data=subset,
+                            x="Cell Line",
+                            y=config["y_col"],
+                            hue="Cell Line",
+                            palette=cell_line_palette,
+                            order=self.CONFIG["CELL_LINES"],
+                            hue_order=self.CONFIG["CELL_LINES"],
+                            cut=0,
+                            linewidth=0.5,
+                            ax=ax,
+                            legend=False
+                        )
+                    
+                    # Add horizontal line at y = 0
+                    ax.axhline(y=0, color='green', linestyle='--', linewidth=0.5, zorder=10)
+                    
+                    # Add position label in subplot title
+                    ax.set_title(f"{pos1} & {pos2}", fontsize=title_fontsize, y=0.95)
+                    
+                    # Clean up spines
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    
+                    ax.tick_params(axis='both', labelsize=tick_fontsize)
+                    ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+            
+            # Always add row/column labels
+            for row_idx, pos2 in enumerate(positions):
+                axes[row_idx, 0].set_ylabel(f"Pos. {pos2}", fontsize=10, fontweight='bold')
             for col_idx, pos1 in enumerate(positions):
-
-                ax = axes[row_idx, col_idx]
-                
-                # Upper triangle (off-diagonal): turn off
-                if col_idx > row_idx:
-                    ax.axis('off')
-                    continue
-                
-                # Diagonal and lower triangle: show violinplot
-                # Filter data for this position pair
-                subset = table.filter(
-                    (pl.col("Position 1") == pos1) & 
-                    (pl.col("Position 2") == pos2)
-                ).select(["Cell Line", val_col]).to_pandas()
-
-                assert not subset.empty, f"No data found for position pair P{pos1}-P{pos2}"
-
-                # Create violinplot split by cell line
-                sns.violinplot(
-                    data=subset,
-                    x="Cell Line",
-                    y=val_col,
-                    hue="Cell Line",
-                    palette=cell_line_palette,
-                    order=self.CONFIG["CELL_LINES"],
-                    hue_order=self.CONFIG["CELL_LINES"],
-                    cut=0,
-                    linewidth=0.5,
-                    ax=ax,
-                    legend=False
-                )
-                
-                # Add green dotted line at y = 0
-                ax.axhline(y=0, color='green', linestyle='--', linewidth=1, zorder=10)
-                
-                # Remove x-axis labels for all except bottom row
-                if row_idx < n_pos - 1:
-                    ax.set_xticklabels([])
-                    ax.set_xlabel('')
-                else:
-                    ax.tick_params(axis='x', labelsize=6, rotation=45)
-                    ax.set_xlabel('')
-                
-                # Remove y-axis labels for all except first column
-                if col_idx > 0:
-                    ax.set_yticklabels([])
-                    ax.set_ylabel('')
-                else:
-                    ax.tick_params(axis='y', labelsize=6)
-                    ax.set_ylabel('')
-                
-                # Add position label in subplot title for diagonal/lower triangle
-                ax.set_title(f"P{pos1}-P{pos2}", fontsize=7, pad=2)
-                
-                # Clean up spines
-                ax.spines['top'].set_visible(False)
-                ax.spines['right'].set_visible(False)
-        
-        # Add row labels (Position 2) on the left
-        for row_idx, pos2 in enumerate(positions):
-            axes[row_idx, 0].set_ylabel(f"Pos {pos2}", fontsize=8, fontweight='bold')
-        
-        # Add column labels (Position 1) at the bottom
-        for col_idx, pos1 in enumerate(positions):
-            if col_idx <= n_pos - 1:  # Only for visible columns
-                axes[n_pos - 1, col_idx].set_xlabel(f"Pos {pos1}", fontsize=8, fontweight='bold')
-        
-        # Create legend
-        legend_handles = [
-            mpatches.Patch(color=cell_line_palette['HepG2'], label='HepG2'),
-            mpatches.Patch(color=cell_line_palette['K562'], label='K562'),
-            plt.Line2D([0], [0], color='green', linestyle='--', linewidth=1, label='y=0')
-        ]
-        fig.legend(
-            handles=legend_handles,
-            loc='upper right',
-            bbox_to_anchor=(0.98, 0.98),
-            fontsize=8,
-            frameon=True
-        )
-        
-        fig.suptitle(
-            f"{latex_symbol} Distributions by Position Pair\n"
-            f"(Diagonal and Lower Triangle Only)",
-            fontsize=12,
-            fontweight='bold',
-            y=1.02
-        )
-        
-        plt.tight_layout(rect=[0, 0, 1, 0.98])
-        plt.show()
+                if col_idx <= n_pos - 1:
+                    axes[n_pos - 1, col_idx].set_xlabel(f"Pos {pos1}", fontsize=10, fontweight='bold')
+            
+            # # Create legend
+            # legend_handles = [
+            #     mpatches.Patch(color=cell_line_palette['HepG2'], label='HepG2'),
+            #     mpatches.Patch(color=cell_line_palette['K562'], label='K562'),
+            #     plt.Line2D([0], [0], color='green', linestyle='--', linewidth=1, label='y=0')
+            # ]
+            # fig.legend(
+            #     handles=legend_handles,
+            #     loc='upper right',
+            #     bbox_to_anchor=(0.98, 0.98),
+            #     fontsize=8,
+            #     frameon=True
+            # )
+            
+            fig.suptitle(
+                f"{plot_notes}{config['suptitle']}",
+                fontsize=14,
+                fontweight='bold',
+                y=0.97, 
+                color = 'goldenrod'
+            )
+            
+            fig.supylabel(config["supylabel"], fontsize=20, x=0.01, color = 'goldenrod')
+            fig.supxlabel(config["supxlabel"], fontsize=20, y=0.01, x=0.56, color = 'goldenrod')
+            
+            plt.tight_layout(rect=tight_layout_rect)
+            plt.show()
         
 
 
