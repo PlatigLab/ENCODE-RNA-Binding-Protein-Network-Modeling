@@ -2880,7 +2880,7 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
 
 
-    def plot_average_position_directional_importance(self):
+    def plot_position_combination_directionality(self):
         metric = "Signed-Local-SHAP-Mean-Bound-Only"
         val_col = f"Value - {metric}"
         latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
