@@ -3038,7 +3038,7 @@ class SecondOrderShapNetworkAnalyzer:
                 axes[row_idx, 0].set_ylabel(f"Pos. {pos2}", fontsize=10, fontweight='bold')
             for col_idx, pos1 in enumerate(positions):
                 if col_idx <= n_pos - 1:
-                    axes[n_pos - 1, col_idx].set_xlabel(f"Pos {pos1}", fontsize=10, fontweight='bold')
+                    axes[n_pos - 1, col_idx].set_xlabel(f"Pos. {pos1}", fontsize=10, fontweight='bold')
             
             # # Create legend
             # legend_handles = [
