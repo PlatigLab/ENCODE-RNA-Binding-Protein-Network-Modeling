@@ -3067,8 +3067,44 @@ class SecondOrderShapNetworkAnalyzer:
             
             plt.tight_layout(rect=tight_layout_rect)
             plt.show()
-        
 
+
+    def retrieve_cell_line_concordant_interaction_values_for_rbp_prefix(self, rbp_prefix=None, position1=None, position2=None): 
+        assert rbp_prefix is not None, "rbp_prefix must be provided."
+        val_col = f"Value - Signed-Local-SHAP-Mean-Bound-Only"
+
+        interactions = self.retrieve_shap_values_for_metric(metric=f'{val_col.split(" - ")[-1]}').filter(
+            (pl.col("Sorted RBP Pair").str.contains(rbp_prefix)) &
+            (pl.col("Column Type") == "interaction") 
+        )
+
+        if position1 is not None and position2 is not None: 
+            assert position1 <= position2, "position1 must be less than or equal to position2."
+
+            interactions = interactions.filter(
+                (pl.col("Position 1") == position1) &
+                (pl.col("Position 2") == position2)
+            )
+        
+        # Pivot to wide format: columns as index, cell lines as separate columns for values and UBP counts
+        pivot_table = interactions.select(["Column", "Cell Line", val_col, f"# UBPs - {val_col.split(' - ')[-1]}"]).pivot(
+            values=[val_col, f"# UBPs - {val_col.split(' - ')[-1]}"],
+            index="Column",
+            columns="Cell Line",
+            sort_columns=True,
+        ).drop_nulls().drop_nans()
+
+        # Filter to keep only rows where signs match between cell lines
+        pivot_table = pivot_table.filter(
+            ((pl.col(f"{val_col}_HepG2") > 0) & (pl.col(f"{val_col}_K562") > 0)) |
+            ((pl.col(f"{val_col}_HepG2") < 0) & (pl.col(f"{val_col}_K562") < 0))
+        ).with_columns(
+            # Calculate average of absolute values across cell lines
+            ((pl.col(f"{val_col}_HepG2").abs() + pl.col(f"{val_col}_K562").abs()) / 2).alias("avg_abs_value")
+        ).sort("avg_abs_value", descending=True)
+
+        return pivot_table
+        
 
     def tmp(self): 
         # for cell_line in ["K562"]: 
