@@ -3104,7 +3104,172 @@ class SecondOrderShapNetworkAnalyzer:
         ).sort("avg_abs_value", descending=True)
 
         return pivot_table
+
+
+    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None): 
+        assert interaction_feature.endswith("-interaction-shap"), "interaction_feature must end with '-interaction-shap'."
+
+        # Get the two binding features from the interaction feature name
+        binding_features = self.get_rbp_position_from_column(interaction_feature, binding_fmt=True)
+        assert isinstance(binding_features, tuple) and len(binding_features) == 2, "Expected tuple of 2 binding features."
         
+        feature_1_binding, feature_2_binding = binding_features
+
+        # Extract RBP names and positions from binding features
+        feature_1_clean = feature_1_binding.replace("_binding", "")
+        feature_2_clean = feature_2_binding.replace("_binding", "")
+
+        rbp_1, pos_1 = self.split_rbp_position(feature_1_clean)
+        rbp_2, pos_2 = self.split_rbp_position(feature_2_clean)
+
+        # Lazy load first order SHAP cache for both cell lines and verify schema
+        all_plot_rows = []
+
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            first_order_shap_lf = pl.scan_ipc(
+                f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
+            )
+            
+            # Verify that required columns exist in schema
+            schema = first_order_shap_lf.collect_schema()
+            required_cols = {
+                feature_1_binding, 
+                feature_2_binding, 
+                "Target_PSI",
+                "RBP_KD_Target",
+                f"has_RBP_KD_{pos_1}",
+                f"has_RBP_KD_{pos_2}"
+            }
+            schema_cols = set(schema.names())
+            assert required_cols.issubset(schema_cols), f"Missing columns in {cell_line}: {required_cols - schema_cols}"
+            
+            # Collect data once for this cell line
+            cell_line_data = first_order_shap_lf.select(list(required_cols)).collect()
+            
+            # Define binding modes and their corresponding filter conditions
+            binding_modes = [
+                {
+                    "name": "Both Bound",
+                    "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
+                },
+                {
+                    "name": f"{feature_1_clean} | No {feature_2_clean}",
+                    "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
+                },
+                {
+                    "name": f"{feature_2_clean} | No {feature_1_clean}",
+                    "filter": (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
+                },
+                {
+                    "name": f"{feature_1_clean} RBP KD",
+                    "filter": (pl.col("RBP_KD_Target") == rbp_1) & (pl.col(f"has_RBP_KD_{pos_1}") == True)
+                },
+                {
+                    "name": f"{feature_2_clean} RBP KD",
+                    "filter": (pl.col("RBP_KD_Target") == rbp_2) & (pl.col(f"has_RBP_KD_{pos_2}") == True)
+                },
+            ]
+            
+            # Process each binding mode
+            for mode in binding_modes:
+                filtered_data = cell_line_data.filter(mode["filter"])
+                for psi in filtered_data["Target_PSI"].to_list():
+                    all_plot_rows.append({
+                        "Cell Line": cell_line,
+                        "Binding Mode": mode["name"],
+                        "Target_PSI": psi
+                    })
+
+        # Convert to polars DataFrame first, then to pandas for plotting
+        plot_df = pl.DataFrame(all_plot_rows).to_pandas()
+
+        # Define ordering by extracting names from binding_modes
+        cell_line_order = self.CONFIG["CELL_LINES"]
+        binding_mode_order = [mode["name"] for mode in binding_modes]
+
+        # Create violinplot
+        plt.figure(figsize=(8, 5), dpi=300)
+        ax = sns.violinplot(
+            data=plot_df,
+            x="Binding Mode",
+            y="Target_PSI",
+            hue="Cell Line",
+            hue_order=cell_line_order,
+            order=binding_mode_order,
+            cut=0
+        )
+
+        # Add counts and mean values above each violin
+        max_psi = plot_df["Target_PSI"].max()
+        y_text_height = max_psi * 1.03
+
+        n_hues = len(cell_line_order)
+        group_width = 0.8
+        step = group_width / n_hues
+
+        for i, binding_mode in enumerate(binding_mode_order):
+            for j, cell_line in enumerate(cell_line_order):
+                subset = plot_df[
+                    (plot_df["Binding Mode"] == binding_mode) & 
+                    (plot_df["Cell Line"] == cell_line)
+                ]
+                
+                if len(subset) > 0:
+                    n_points = len(subset)
+                    mean_val = subset["Target_PSI"].mean()
+                    
+                    x_pos = i - (group_width / 2) + (step / 2) + j * step
+                    
+                    ax.text(
+                        x_pos,
+                        y_text_height,
+                        f"{n_points:,}\n{mean_val:.2f}",
+                        ha="center",
+                        va="bottom",
+                        fontsize=7
+                    )
+
+        ax.set_ylim(top=max_psi * 1.15)
+        ax.tick_params(axis='x', labelsize=8)
+
+        ax.set_xlabel("Binding Mode", fontsize=10, fontweight='bold')
+        ax.set_ylabel("Target PSI", fontsize=10, fontweight='bold')
+        ax.set_title(
+            f"{interaction_feature.replace('-interaction-shap', '')}\nPSI Distributions by Binding Mode",
+            y=1.02,
+            fontsize=12
+        )
+
+        ax.legend(
+            title="Cell Line",
+            bbox_to_anchor=(1.02, 0.5),
+            loc="center left",
+            borderaxespad=0.0,
+            frameon=True,
+        )
+
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        plt.show()
+        
+
+    def create_validation_plots_for_selected_interactions(self): 
+        selected_interactions = [
+            "YBX3_3-YBX3_4-interaction-shap", 
+            "IGF2BP1_3-IGF2BP1_4-interaction-shap",
+            "DDX3X_3-AQR_4-interaction-shap", 
+            "YBX3_3-PRPF8_4-interaction-shap", 
+            "DDX3X_3-SND1_4-interaction-shap", 
+            "BUD13_3-BUD13_4-interaction-shap",
+            "AQR_3-DDX3X_4-interaction-shap",
+            "PTBP1_3-U2AF2_4-interaction-shap", 
+            "DGCR8_3-AQR_4-interaction-shap",
+            "SND1_3-PRPF8_4-interaction-shap",
+        ]
+
+        for interaction in selected_interactions:
+            self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
+
 
     def tmp(self): 
         # for cell_line in ["K562"]: 
