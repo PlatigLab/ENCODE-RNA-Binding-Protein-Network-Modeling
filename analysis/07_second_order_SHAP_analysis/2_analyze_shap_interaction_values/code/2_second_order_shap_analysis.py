@@ -3253,7 +3253,7 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
         
 
-    def create_validation_plots_for_selected_interactions(self): 
+    def plot_psi_distributions_for_selected_features(self): 
         selected_interactions = [
             "YBX3_3-YBX3_4-interaction-shap", 
             "IGF2BP1_3-IGF2BP1_4-interaction-shap",
