@@ -1,4 +1,4 @@
-import yaml, pathlib, glob, json, argparse, os, sys, copy, pickle, copy
+import yaml, pathlib, glob, json, argparse, os, sys, copy, pickle, copy, gzip
 
 import pandas as pd, polars as pl, seaborn as sns, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as mpatches
 import networkx as nx, adjustText
