@@ -3364,7 +3364,7 @@ class SecondOrderShapNetworkAnalyzer:
         
         # Prepare bar plot data for both cell lines
         bar_data = []
-        feature_names = [rbp1_feature, rbp2_feature, f"{rbp1_feature} x {rbp2_feature}"]
+        feature_names = [rbp1_feature, rbp2_feature, f"{rbp1_feature} & {rbp2_feature}"]
         column_names = [main_shap_col1, main_shap_col2, interaction]
         
         for cell_line in cell_lines:
@@ -3404,10 +3404,28 @@ class SecondOrderShapNetworkAnalyzer:
         )
         
         ax_bar.axhline(y=0, color='black', linestyle='-', linewidth=1)
-        ax_bar.set_xlabel("Feature", fontsize=12)
-        ax_bar.set_ylabel(latex_symbol, fontsize=12)
+        ax_bar.set_xlabel("Main/Interaction Feature", fontsize=12)
+        ax_bar.set_ylabel(latex_symbol, fontsize=18)
         ax_bar.set_title(f"What motivated this analysis -- strong, opposing main vs interaction {latex_symbol}", fontsize=14)
         ax_bar.grid(True, alpha=0.3, axis='y')
+
+        # Add value labels on top of each bar
+        for patch in ax_bar.patches:
+            height = patch.get_height()
+
+            # Skip patches with zero or near-zero height (e.g., the axhline y=0)
+            if abs(height) < 1e-10:
+                continue
+            
+            ax_bar.text(
+                patch.get_x() + patch.get_width() / 2.,
+                height,
+                f'{height:.2f}',
+                ha='center',
+                va='bottom' if height >= 0 else 'top',
+                fontsize=10,
+                fontweight='bold'
+            )
         
         # Position legend outside right of plot
         ax_bar.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14, title="Cell Line", frameon=True, title_fontsize=16)
@@ -3425,11 +3443,11 @@ class SecondOrderShapNetworkAnalyzer:
                 main_shap_col2,
                 interaction
             ]
-            feature_labels = [rbp1_feature, rbp2_feature, f"{rbp1_feature} x {rbp2_feature}"]
+            feature_labels = [rbp1_feature, rbp2_feature, f"{rbp1_feature} & {rbp2_feature}"]
             x_positions = np.arange(len(shap_features))
             
             # Set labels and title first
-            ax.set_xlabel("Feature", fontsize=10, labelpad=10)
+            ax.set_xlabel("Main/Interaction Feature", fontsize=10, labelpad=10)
             ax.set_ylabel("Model Prediction", fontsize=10, labelpad=10)
             ax.set_zlabel("Co-binding unique binding pattern's Local SHAP", fontsize=8, labelpad=10, fontweight='bold')
             
@@ -3469,8 +3487,8 @@ class SecondOrderShapNetworkAnalyzer:
                     x_positions, 
                     [y_value] * len(shap_features), 
                     z_values,
-                    alpha=0.4,
-                    linewidth=0.5,
+                    alpha=0.3,
+                    linewidth=0.45,
                     color='skyblue',
                     marker='o', 
                     markerfacecolor='black',
@@ -3485,7 +3503,7 @@ class SecondOrderShapNetworkAnalyzer:
                     [shadow_z] * len(shap_features),
                     alpha=0.2,
                     linewidth=0.5,
-                    color='gray',
+                    color='darkgray',
                     linestyle='--'
                 )
             
@@ -3501,10 +3519,10 @@ class SecondOrderShapNetworkAnalyzer:
             ax_scatter.scatter(
                 cell_line_data["Predictions"],
                 cell_line_data[interaction],
-                alpha=0.3,
-                s=10,
+                alpha=0.25,
+                s=5,
                 edgecolor='black',
-                linewidth=0.5,
+                linewidth=0.3,
                 color='teal'
             )
         
