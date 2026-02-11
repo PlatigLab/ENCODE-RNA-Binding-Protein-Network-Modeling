@@ -3271,17 +3271,297 @@ class SecondOrderShapNetworkAnalyzer:
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
 
 
-    def tmp(self): 
-        # for cell_line in ["K562"]: 
+    def plot_local_main_vs_interaction_val_for_interaction_cobinding(self, interaction=None): 
+        assert interaction.endswith("-interaction-shap"), f"Expected interaction to end with '-interaction-shap', but got {interaction}"
+
+        # Get the two main SHAP columns for the RBPs in this interaction
+        binding_features = self.get_rbp_position_from_column(interaction, binding_fmt=False)
+        rbp1_feature, rbp2_feature = binding_features
+
+        # Construct main SHAP column names (e.g., "YBX3_3-main-shap", "YBX3_4-main-shap")
+        main_shap_col1 = f"{rbp1_feature}-main-shap"
+        main_shap_col2 = f"{rbp2_feature}-main-shap"
+        
+        dataframes = []
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            ubp_ids = sorted(self.retrieve_UBP_ids_for_metric(cell_line = cell_line, metric="Signed-Local-SHAP-Mean-Bound-Only", column=interaction))
             
-        #     table = self.retrieve_shap_values_for_metric(metric="Signed-Local-SHAP-Mean-Bound-Only")
+            ubp_id_table = pl.scan_csv(
+                glob.glob(
+                    f"{self.CONFIG['UBP_ID_DIR']}/{cell_line}*.tsv.gz"
+                )[0],
+                separator="\t",
+            ).filter(
+                pl.col(self.CONFIG["UBP_COL_NAME"]).is_in(ubp_ids)
+            ).collect()
 
-        #     pivot_tables = self.convert_long_metric_table_to_symmetric_matrix(
-        #         df=table.filter(pl.col("Cell Line") == cell_line),
-        #         metric="Signed-Local-SHAP-Mean-Bound-Only"
-        #     )
+            model_hash= self.CONFIG["XGBOOST_BEST_MODEL_HASHES"][cell_line]
+            model_path = f'{self.CONFIG["MODEL_DIR"]}/{model_hash}.pkl.gz'
 
-        pass
+            # Load the model
+            with gzip.open(model_path, 'rb') as f:
+                model = pickle.load(f)
+
+            pred_input = ubp_id_table.select(
+                model.column_order_when_fitting
+            )
+
+            predictions = model.predict(pred_input.to_pandas())
+            ubp_id_table = ubp_id_table.with_columns(
+                pl.Series("Predictions", predictions)
+            )
+
+            interaction_values_files = sorted(
+                glob.glob(
+                    f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
+                )
+            )
+            interaction_lf = pl.scan_ipc(interaction_values_files).filter(
+                pl.col(self.CONFIG["UBP_COL_NAME"]).is_in(ubp_ids)
+            )
+
+            # Select the interaction SHAP column and the two main SHAP columns
+            interaction_data = interaction_lf.select(
+                [
+                    self.CONFIG["UBP_COL_NAME"],
+                    interaction,
+                    main_shap_col1,
+                    main_shap_col2
+                ]
+            ).collect()
+
+            # Join ubp_id_table with interaction_data on UBP ID
+            combined_data = ubp_id_table.select(
+                [self.CONFIG["UBP_COL_NAME"], "Predictions"]
+            ).join(
+                interaction_data,
+                on=self.CONFIG["UBP_COL_NAME"],
+                how="left",
+                validate="1:1"
+            )
+
+            combined_data = combined_data.with_columns(
+                pl.lit(cell_line).alias("Cell Line")
+            )
+            dataframes.append(combined_data)
+
+        final_df = pl.concat(dataframes)
+
+        # Create figure with GridSpec for custom height ratios: top bar plot (small), 3D plots (medium), scatter plots (medium)
+        fig = plt.figure(figsize=(12, 16), dpi=300)
+        gs = GridSpec(3, 2, figure=fig, height_ratios=[0.3, 0.5, 0.2], hspace=0.02, wspace=0.2)
+        cell_lines = self.CONFIG["CELL_LINES"]
+        cell_line_data_dict = {}
+
+        # --- Top row: Bar plot of feature SHAP values ---
+        ax_bar = fig.add_subplot(gs[0, :])
+        
+        # Load SHAP values for the metric
+        metric = "Signed-Local-SHAP-Mean-Bound-Only"
+        val_col = f"Value - {metric}"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+        shap_table = self.retrieve_shap_values_for_metric(metric=metric)
+        
+        # Prepare bar plot data for both cell lines
+        bar_data = []
+        feature_names = [rbp1_feature, rbp2_feature, f"{rbp1_feature} x {rbp2_feature}"]
+        column_names = [main_shap_col1, main_shap_col2, interaction]
+        
+        for cell_line in cell_lines:
+            for feature_name, column_name in zip(feature_names, column_names):
+                subset = shap_table.filter(
+                    (pl.col("Cell Line") == cell_line) &
+                    (pl.col("Column") == column_name)
+                )
+                assert subset.height == 1, f"Expected exactly one row for {cell_line} and {column_name}, but got {subset.height}"
+
+                value = subset[val_col].item()
+                bar_data.append({
+                    "Feature": feature_name,
+                    "Value": value,
+                    "Cell Line": cell_line
+                })
+        
+        bar_df = pd.DataFrame(bar_data)
+        # Define palette for cell lines
+        cell_line_palette = {'HepG2': 'steelblue', 'K562': 'coral'}
+        
+        # Use seaborn barplot with better control
+        sns.barplot(
+            data=bar_df,
+            x="Feature",
+            y="Value",
+            hue="Cell Line",
+            order=feature_names,
+            hue_order=cell_lines,
+            ax=ax_bar,
+            palette=cell_line_palette,
+            edgecolor='black',
+            linewidth=1.2,
+            width=0.4,
+            gap=0.2,
+            legend=True
+        )
+        
+        ax_bar.axhline(y=0, color='black', linestyle='-', linewidth=1)
+        ax_bar.set_xlabel("Feature", fontsize=12)
+        ax_bar.set_ylabel(latex_symbol, fontsize=12)
+        ax_bar.set_title(f"What motivated this analysis -- strong, opposing main vs interaction {latex_symbol}", fontsize=14)
+        ax_bar.grid(True, alpha=0.3, axis='y')
+        
+        # Position legend outside right of plot
+        ax_bar.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14, title="Cell Line", frameon=True, title_fontsize=16)
+
+        for subplot_idx, cell_line in enumerate(cell_lines, 1):
+            ax = fig.add_subplot(gs[1, subplot_idx - 1], projection='3d')
+            
+            # Filter data for this cell line
+            cell_line_data = final_df.filter(pl.col("Cell Line") == cell_line).to_pandas()
+            cell_line_data_dict[cell_line] = cell_line_data
+            
+            # Define the three SHAP features
+            shap_features = [
+                main_shap_col1,
+                main_shap_col2,
+                interaction
+            ]
+            feature_labels = [rbp1_feature, rbp2_feature, f"{rbp1_feature} x {rbp2_feature}"]
+            x_positions = np.arange(len(shap_features))
+            
+            # Set labels and title first
+            ax.set_xlabel("Feature", fontsize=10, labelpad=10)
+            ax.set_ylabel("Model Prediction", fontsize=10, labelpad=10)
+            ax.set_zlabel("Co-binding unique binding pattern's Local SHAP", fontsize=8, labelpad=10, fontweight='bold')
+            
+            ax.set_title(f"{cell_line}\nONLY co-binding unique binding patterns", fontsize=14, y=0.95)
+            
+            # Set x-axis ticks
+            ax.set_xticks(x_positions)
+            ax.set_xticklabels(feature_labels, fontsize=8, color='red', zorder=10)
+            
+            # Adjust viewing angle for better visibility BEFORE plotting data
+            ax.view_init(elev=15, azim=45)
+            
+            # Get z-axis limits before plotting to properly scale shadows
+            z_min = min([row[main_shap_col1] for _, row in cell_line_data.iterrows()] + 
+                       [row[main_shap_col2] for _, row in cell_line_data.iterrows()] + 
+                       [row[interaction] for _, row in cell_line_data.iterrows()])
+            z_max = max([row[main_shap_col1] for _, row in cell_line_data.iterrows()] + 
+                       [row[main_shap_col2] for _, row in cell_line_data.iterrows()] + 
+                       [row[interaction] for _, row in cell_line_data.iterrows()])
+            shadow_z = z_min - (z_max - z_min) * 0.1  # Place shadow slightly below minimum
+            
+            # # Add reference plane at z=0 (local SHAP = 0)
+            # xx, yy = np.meshgrid(
+            #     np.linspace(-0.5, len(shap_features) - 0.5, 10),
+            #     np.linspace(cell_line_data["Predictions"].min(), cell_line_data["Predictions"].max(), 10)
+            # )
+            # zz = np.zeros_like(xx)
+            # ax.plot_surface(xx, yy, zz, alpha=0.1, color='red', label='z=0 reference plane')
+            
+            # For each UBP, create a line connecting the three SHAP values
+            for _, row in cell_line_data.iterrows():
+                z_values = [row[main_shap_col1], row[main_shap_col2], row[interaction]]
+                y_value = row["Predictions"]
+                
+                # Plot the line for this UBP (x=feature type, y=predictions, z=SHAP value)
+                ax.plot(
+                    x_positions, 
+                    [y_value] * len(shap_features), 
+                    z_values,
+                    alpha=0.4,
+                    linewidth=0.5,
+                    color='skyblue',
+                    marker='o', 
+                    markerfacecolor='black',
+                    markeredgewidth=0.5,
+                    markersize=3
+                )
+                
+                # Add shadow projection on the ground plane (all z-values at shadow_z level)
+                ax.plot(
+                    x_positions,
+                    [y_value] * len(shap_features),
+                    [shadow_z] * len(shap_features),
+                    alpha=0.2,
+                    linewidth=0.5,
+                    color='gray',
+                    linestyle='--'
+                )
+            
+            # Add grid
+            ax.grid(True, alpha=0.2)
+
+        # Add scatter plots in bottom row: Model Prediction (x-axis) vs Interaction SHAP Value (y-axis)
+        for subplot_idx, cell_line in enumerate(cell_lines, 1):
+            ax_scatter = fig.add_subplot(gs[2, subplot_idx - 1])
+            cell_line_data = cell_line_data_dict[cell_line]
+            
+            # Create scatter plot
+            ax_scatter.scatter(
+                cell_line_data["Predictions"],
+                cell_line_data[interaction],
+                alpha=0.3,
+                s=10,
+                edgecolor='black',
+                linewidth=0.5,
+                color='teal'
+            )
+        
+            # Calculate correlations and number of points
+            n_points = len(cell_line_data)
+            pearson_r, _ = pearsonr(cell_line_data["Predictions"], cell_line_data[interaction])
+            spearman_r, _ = spearmanr(cell_line_data["Predictions"], cell_line_data[interaction])
+            
+            ax_scatter.set_xlabel("Model Prediction", fontsize=12)
+            ax_scatter.set_ylabel("LOCAL Interaction SHAP Value", fontsize=12)
+
+            ax_scatter.set_title(f"{cell_line}\nONLY co-binding unique binding patterns", fontsize=14, y=1.02)
+            
+            ax_scatter.grid(True, alpha=0.2)
+            
+            # Add statistics text box in bottom left corner
+            stats_text = (
+                f"# Co-binding Unique Binding Patterns: {n_points:,}\n"
+                f"Pearson: {pearson_r:.2f}\n"
+                f"Spearman: {spearman_r:.2f}"
+            )
+            ax_scatter.text(
+                0.05, 0.05,
+                stats_text,
+                transform=ax_scatter.transAxes,
+                fontsize=8,
+                verticalalignment='bottom',
+            )
+
+        plt.suptitle(
+            f"Main vs Interaction LOCAL SHAP Values by Model Prediction:\n{interaction.replace('-interaction-shap', '')}",
+            fontsize=14,
+            y=0.95
+        )
+
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_selected_examples_local_main_vs_interaction_val_for_interaction_cobinding(self):
+        selected_interactions = [
+            "YBX3_3-YBX3_4-interaction-shap", 
+            "IGF2BP1_3-IGF2BP1_4-interaction-shap",
+            "DDX3X_3-AQR_4-interaction-shap", 
+            "YBX3_3-PRPF8_4-interaction-shap", 
+            "DDX3X_3-SND1_4-interaction-shap", 
+            "BUD13_3-BUD13_4-interaction-shap",
+            "AQR_3-DDX3X_4-interaction-shap",
+            "PTBP1_3-U2AF2_4-interaction-shap", 
+            "DGCR8_3-AQR_4-interaction-shap",
+            "SND1_3-PRPF8_4-interaction-shap",
+        ]
+
+        for interaction in selected_interactions:
+            self.plot_local_main_vs_interaction_val_for_interaction_cobinding(interaction=interaction)
+
+
 
 
 #########################################################
