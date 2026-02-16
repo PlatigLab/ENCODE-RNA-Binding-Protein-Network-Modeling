@@ -3252,24 +3252,6 @@ class SecondOrderShapNetworkAnalyzer:
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.show()
-        
-
-    def plot_psi_distributions_for_selected_features(self): 
-        selected_interactions = [
-            "YBX3_3-YBX3_4-interaction-shap", 
-            "IGF2BP1_3-IGF2BP1_4-interaction-shap",
-            "DDX3X_3-AQR_4-interaction-shap", 
-            "YBX3_3-PRPF8_4-interaction-shap", 
-            "DDX3X_3-SND1_4-interaction-shap", 
-            "BUD13_3-BUD13_4-interaction-shap",
-            "AQR_3-DDX3X_4-interaction-shap",
-            "PTBP1_3-U2AF2_4-interaction-shap", 
-            "DGCR8_3-AQR_4-interaction-shap",
-            "SND1_3-PRPF8_4-interaction-shap",
-        ]
-
-        for interaction in selected_interactions:
-            self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
 
 
     def plot_local_main_vs_interaction_val_for_interaction_cobinding(self, interaction=None): 
@@ -3563,7 +3545,7 @@ class SecondOrderShapNetworkAnalyzer:
         plt.show()
 
 
-    def plot_selected_examples_local_main_vs_interaction_val_for_interaction_cobinding(self):
+    def validate_selected_interactions_actual_psi_and_local_SHAP_distributions(self): 
         selected_interactions = [
             "YBX3_3-YBX3_4-interaction-shap", 
             "IGF2BP1_3-IGF2BP1_4-interaction-shap",
@@ -3578,9 +3560,8 @@ class SecondOrderShapNetworkAnalyzer:
         ]
 
         for interaction in selected_interactions:
-            self.plot_local_main_vs_interaction_val_for_interaction_cobinding(interaction=interaction)
-
-
+            self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
+            self.plot_local_main_vs_interaction_val_for_interaction_cobinding(interaction=interaction)    
 
 
 #########################################################
