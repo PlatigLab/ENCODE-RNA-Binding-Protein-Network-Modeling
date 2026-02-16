@@ -3196,7 +3196,8 @@ class SecondOrderShapNetworkAnalyzer:
             hue="Cell Line",
             hue_order=cell_line_order,
             order=binding_mode_order,
-            cut=0
+            cut=0,
+            density_norm='width'
         )
 
         # Add counts and mean values above each violin
