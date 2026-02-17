@@ -8,7 +8,7 @@ from loguru import logger
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 from tqdm import tqdm
 from itertools import combinations
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr, spearmanr, mannwhitneyu, ttest_ind
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from sklearn.metrics import roc_curve, precision_recall_curve, auc, roc_auc_score
 from statannotations.Annotator import Annotator
@@ -3562,6 +3562,242 @@ class SecondOrderShapNetworkAnalyzer:
         for interaction in selected_interactions:
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
             self.plot_local_main_vs_interaction_val_for_interaction_cobinding(interaction=interaction)    
+
+    
+    def create_table_from_systematic_screen_of_interactions_for_psi_changes(self): 
+
+        OUTPUT_FILE = self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"]
+
+        if pathlib.Path(OUTPUT_FILE).exists():
+            logger.success("FROM CACHE: loading screened interaction PSI changes table")
+            return pl.read_csv(OUTPUT_FILE, separator="\t")
+
+        else: 
+            logger.info("No cached table found, creating table for screened interaction PSI changes... ")
+
+            metric = "Signed-Local-SHAP-Mean-Bound-Only"
+            val_col = f"Value - {metric}"
+
+            # Load signed SHAP metric
+            raw_table = self.retrieve_shap_values_for_metric(metric=metric)
+
+            # Subset to interaction rows with non-null, non-nan, > 0 values
+            table = raw_table.filter(
+                (pl.col("Column Type") == "interaction") &
+                (~pl.col(val_col).is_null()) &
+                (~pl.col(val_col).is_nan()) &
+                (pl.col(val_col).abs() > 0)
+            )
+
+            """
+            Create pivot table of interactions
+            """
+            # Pivot to wide format: columns as rows, cell lines as columns
+            pivot_table = table.select(["Column", "Cell Line", val_col]).pivot(
+                values=val_col,
+                index="Column",
+                columns="Cell Line",
+                sort_columns=True,
+            ).drop_nulls()
+
+            # Filter to keep only rows where signs match between cell lines
+            pivot_table = pivot_table.filter(
+                ((pl.col("HepG2") > 0) & (pl.col("K562") > 0)) |
+                ((pl.col("HepG2") < 0) & (pl.col("K562") < 0))
+            ).sort("Column")
+
+
+            # Add " Interaction" suffix to cell line columns
+            pivot_table = pivot_table.rename({
+                "Column": "Feature-Feature Interaction",
+                "HepG2": "HepG2 - Interaction SHAP",
+                "K562": "K562 - Interaction SHAP", 
+            })
+
+            """
+            Add main effect SHAP values for the two features in each interaction
+            """
+            # For each interaction column, retrieve the corresponding main effect SHAP values
+            results = []
+            for interaction_col in pivot_table["Feature-Feature Interaction"].to_list():
+                # Get the two main SHAP columns from the interaction column
+                binding_features = self.get_rbp_position_from_column(interaction_col, binding_fmt=False)
+                main_shap_col1 = f"{binding_features[0]}-main-shap"
+                main_shap_col2 = f"{binding_features[1]}-main-shap"
+                
+                # Get the main effect values for both cell lines
+                main_values = raw_table.filter(
+                    pl.col("Column").is_in([main_shap_col1, main_shap_col2])
+                ).select(["Column", "Cell Line", val_col])
+
+                assert main_values.height == 4, f"Expected 4 rows for main effects of {interaction_col}, but got {main_values.height}"
+                
+                main_pivot = main_values.pivot(
+                    values=val_col,
+                    index="Column",
+                    columns="Cell Line",
+                    sort_columns=True,
+                )
+                            
+                # Get the interaction row
+                interaction_row = pivot_table.filter(pl.col("Feature-Feature Interaction") == interaction_col)
+                assert interaction_row.height ==1, f"Expected exactly 1 row for interaction {interaction_col} in pivot table, but got {interaction_row.height}"
+                
+                row_dict = interaction_row.to_dicts()[0]
+                
+                # Add main effect values
+                skip_row = False
+                for feature_idx, main_shap_col in enumerate([main_shap_col1, main_shap_col2], start=1):
+                    main_data = main_pivot.filter(pl.col("Column") == main_shap_col).to_dicts()[0]
+                    hepg2_val = main_data["HepG2"]
+                    k562_val = main_data["K562"]
+                    
+                    # Skip row if the two cell line values have different signs
+                    if (hepg2_val > 0 and k562_val < 0) or (hepg2_val < 0 and k562_val > 0):
+                        skip_row = True
+                        break
+                    
+                    row_dict[f"HepG2 - F{feature_idx} ({feature_idx}{"st" if feature_idx==1 else "nd"} Individual Feature in Interaction) SHAP"] = hepg2_val
+                    row_dict[f"K562 - F{feature_idx} ({feature_idx}{"st" if feature_idx==1 else "nd"} Individual Feature in Interaction) SHAP"] = k562_val
+            
+                if not skip_row:
+                    results.append(row_dict)
+
+            # Convert results to a polars DataFrame
+            results_df = pl.DataFrame(results).sort("Feature-Feature Interaction")
+
+            """
+            Get First Order SHAP Cache tables with actual PSI distributions
+            """
+            first_order_shap_data = {}
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                first_order_shap_lf = pl.scan_ipc(
+                    f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
+                )
+                
+                # Verify that required columns exist in schema
+                cols = first_order_shap_lf.collect_schema().names()
+                required_cols = ["Target_PSI"] + [col for col in cols if col.endswith("_binding")]
+                first_order_shap_data[cell_line] = first_order_shap_lf.select(required_cols).collect()
+
+            """
+            For each interaction, get summary statistics and run statistical tests across both cell lines
+            """
+            # For each interaction in results_df, calculate PSI distribution statistics
+            interaction_stats = []
+            distribution_names = ["Both Bound", "F1 Bound Only", "F2 Bound Only",] # "Either Bound"]
+            metric_names = ["# Points", "Average", "Median"]
+            
+            for row in tqdm(results_df.iter_rows(named=True), desc="Processing interactions"):
+                interaction_col = row["Feature-Feature Interaction"]
+                
+                # Get the two binding features from the interaction column
+                binding_features = self.get_rbp_position_from_column(interaction_col, binding_fmt=True)
+                feature_1_binding, feature_2_binding = binding_features
+
+                row_dict = {
+                    "Feature-Feature Interaction": interaction_col
+                }
+                
+                # Process each cell line
+                temp_data = {}
+                distributions_by_cell_line = {}
+                for cell_line in self.CONFIG["CELL_LINES"]:
+                    cell_line_data = first_order_shap_data[cell_line]
+                    # Create the three distributions based on binding patterns
+                    both_bound = cell_line_data.filter(
+                        (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
+                    )["Target_PSI"].to_list()
+                    
+                    f1_only = cell_line_data.filter(
+                        (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
+                    )["Target_PSI"].to_list()
+                    
+                    f2_only = cell_line_data.filter(
+                        (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
+                    )["Target_PSI"].to_list()
+                    
+                    # # Combine XOR distributions (f1 only + f2 only)
+                    # xor_combined = f1_only + f2_only
+                    
+                    # Calculate statistics for each distribution
+                    distributions = {
+                        "Both Bound": both_bound,
+                        "F1 Bound Only": f1_only,
+                        "F2 Bound Only": f2_only,
+                        # "Either Bound": xor_combined
+                    }
+                    
+                    temp_data[cell_line] = {}
+                    distributions_by_cell_line[cell_line] = distributions
+                    for dist_name, dist_values in distributions.items():
+                        n_points = len(dist_values)
+                        avg_val = float(np.mean(dist_values))
+                        median_val = float(np.median(dist_values)) 
+                        
+                        temp_data[cell_line][dist_name] = {
+                            "# Points": n_points,
+                            "Average": avg_val,
+                            "Median": median_val
+                        }
+                
+                # Build row_dict with sorted column order: distribution → metric → cell_line
+                for dist_name in distribution_names:
+                    for metric in metric_names:
+                        for cell_line in self.CONFIG["CELL_LINES"]:
+                            row_dict[f"{cell_line} - {dist_name}: {metric}"] = temp_data[cell_line][dist_name][metric]
+                
+                # Determine testing direction based on interaction SHAP sign
+                hepg2_interaction_shap = row["HepG2 - Interaction SHAP"]
+                k562_interaction_shap = row["K562 - Interaction SHAP"]
+
+                assert (hepg2_interaction_shap > 0 and k562_interaction_shap > 0) or (hepg2_interaction_shap < 0 and k562_interaction_shap < 0), "Expected interaction SHAP values to have the same sign between cell lines due to earlier filtering, but got different signs."
+                
+                # Add testing direction column (assume both have same sign since we filtered earlier)
+                testing_direction = "greater" if hepg2_interaction_shap > 0 else "less"
+                row_dict["Statistical Testing Directionality"] = testing_direction
+                
+                # Add statistical test columns: Cell Line, Groups Compared, Statistical Test
+                group_pairs = [
+                    ("Both Bound", "F1 Bound Only"),
+                    ("Both Bound", "F2 Bound Only")
+                ]
+                statistical_tests = ["Mann-Whitney U", "Welch's t-test"]
+                
+                for group1, group2 in group_pairs:
+                    for test_name in statistical_tests:
+                        for cell_line in self.CONFIG["CELL_LINES"]:
+                            col_name = f"{cell_line} - {group1} vs {group2}: {test_name}"
+                            
+                            dist1 = distributions_by_cell_line[cell_line][group1]
+                            dist2 = distributions_by_cell_line[cell_line][group2]
+                            
+                            if test_name == "Mann-Whitney U":
+                                p_value = mannwhitneyu(dist1, dist2, alternative=testing_direction)[1]
+                            elif test_name == "Welch's t-test":
+                                p_value = ttest_ind(dist1, dist2, equal_var=False, alternative=testing_direction)[1]
+                            
+                            row_dict[col_name] = p_value
+                
+                interaction_stats.append(row_dict)
+
+            # Convert to polars DataFrame and join with results_df
+            stats_df = pl.DataFrame(interaction_stats)
+            
+            results_df = results_df.join(
+                stats_df,
+                on="Feature-Feature Interaction",
+                how="left"
+            )
+            # Validate the results DataFrame
+            assert results_df.null_count().sum_horizontal().item() == 0, "Null values found in results DataFrame"
+            assert results_df.select(pl.col(pl.Float64).is_nan().sum()).sum_horizontal().item() == 0, "NaN values found in results DataFrame"
+            
+            results_df.write_csv(OUTPUT_FILE, separator="\t")
+            logger.success(f"Screened interaction PSI changes table created and saved to {OUTPUT_FILE}")
+            
+            return results_df
+
 
 
 #########################################################
