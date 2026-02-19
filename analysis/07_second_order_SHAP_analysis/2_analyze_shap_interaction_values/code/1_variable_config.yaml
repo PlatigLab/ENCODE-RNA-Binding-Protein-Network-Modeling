@@ -1,0 +1,85 @@
+# Valid feature metrics that can be calculated
+VALID_FEATURE_METRICS: [
+    "Signed-Local-SHAP-Mean-Bound-Only",
+    "Bound-Only",
+    "Global-SHAP",
+    "NOT-Bound-Only",
+    "Signed-Local-SHAP-Mean-NOT-Bound-Only"
+]
+
+# Feature & RBP Info
+RBP_FEATURE_INFO_FILE: "../outputs/feature_info/rbp_feature_info.json"
+
+# FIGURES
+FIGURES: 
+    side_by_side_heatmap_dir: "../outputs/figures/side_by_side_heatmaps/"
+    prc_roc_curves_dir: '../outputs/figures/roc_prc_curves/'
+    actual_psi_by_binding_dir: "../outputs/figures/actual_PSI_by_binding/"
+
+# PPI Info 
+PPI_SOURCES: ["Rec-Y2H", "Street et al | IP-MS", "Street et al | IP/SEC-MS (Both)"]
+PPI_TYPES: ["Same-Position", "Different-Position", "All-Positions"]
+
+PPI_INFO: "../../../05_generate_eCLIP_RBP_PPIs/all_eCLIP_RBP_PPI_combination_PPI_annotations.tsv"
+
+
+    # cached_ppi_file: "../outputs/ppi_info/recy2h_and_street_et_al_rbp_ppi.tsv"
+    
+    # recy2h_ppi_dir: 
+    #     all_rbps_screened: "../../../../inputs/RBP-RBP_PPI/all_rbps_screened.xlsx"
+    #     results: "../../../../inputs/RBP-RBP_PPI/lang_et_al_rec-y2h_screening_results.xlsx"
+    #     uniprot_mapping: "../../../../inputs/RBP-RBP_PPI/uniprot_mapping.tsv"
+
+    # street_et_al: 
+    #     all_rbps_screened: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s1_ip_ms_baits.xlsx"
+    #     table_s2_full_results: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/INPUT_street_et_al_gene_yeo_molecular_cell_table_s2_full_ppi.csv"
+    #     table_s3_output: "../../../05_retrieve_gene_yeo_RBP_PPIs_street_et_al_molecular_cell/OUTPUT_street_et_al_gene_yeo_molecular_cell_table_s3_encode_rbps.json"
+
+
+CELL_LINES: ["HepG2", "K562"]
+POSITIONS: [1, 2, 3, 4, 5, 6]
+
+# UBP IDs and Interaction Values
+UBP_ID_DIR: "../../1_generate_shap_interaction_values/outputs/ubp_ID_tables/"
+UBP_COL_NAME: "Unique Binding Pattern ID #"
+
+COLS_PER_JOB: 250
+
+INTERACTION_VALUES_DIR: "../../1_generate_shap_interaction_values/outputs/flattened_interaction_value_tables/"
+
+TMP_CACHE_DIR: "../TMP_CACHE/"
+
+# SLURM Batch Prefixes
+SBATCH_PREFIXES: [
+    "sbatch --account=platiglab --partition=standard -n8 --mem=64GB --time=23:00:00", 
+    "sbatch --account=platiglab --partition=parallel -N2 -n8 --mem=32GB --time=23:00:00",
+]
+
+# SHAP averages 
+SHAP_AVG_DIR: "../outputs/SHAP_cache/averages/"
+
+# Partial AUC thresholds
+PARTIAL_AUC_THRESHOLDS: [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+# SHAP percentile thresholds 
+SHAP_PERCENTILE_THRESHOLDS: [50, 75, 90, 95, 99]
+# RAW SHAP thresholds
+RAW_SHAP_THRESHOLDS: [0.0, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4, 5.0e-4, 1.0e-3, 5.0e-3, 1.0e-2, 5.0e-2, .1, .2, .3, .4, .5]
+# First order SHAP Cache Directory 
+FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL_AVERAGE_SHAP_CACHE/"
+
+# Latex symbols for feature metrics
+LATEX_SYMBOLS: 
+    Signed-Local-SHAP-Mean-Bound-Only: $\overline{\varphi}_{f,g}^b$
+    Bound-Only: $\Phi_{f,g}^b$
+
+# Importance networks
+IMPORTANCE_NETWORKS: "../outputs/SHAP_cache/importance_networks/Bound-Only_main_and_interaction_importance.pkl"
+
+# Model files and best model hashes
+MODEL_DIR: "../../../04_run_final_models_and_SHAP/outputs/pickled_models/XGBRegressor/"
+XGBOOST_BEST_MODEL_HASHES:
+  HepG2: "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd"
+  K562: "8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db"
+
+# Table to see if interaction SHAP values can be used to screen for interactions with real changes in PSI
+INTERACTION_PSI_CHANGES_SCREENING: "../outputs/interaction_psi_changes_screening/interaction_psi_changes_screening_results.tsv"

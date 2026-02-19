@@ -33,3 +33,9 @@ local_SHAP_std.pkl.gz
 miscellaneous_analysis/08_model_variation_rapid_testing/*
 # all bound local shap values 
 position_3_4_activating_others_repressing/
+
+# expected values from SHAP interaction value generation jobs
+analysis/07_second_order_SHAP_analysis/1_generate_shap_interaction_values/outputs/expected_values
+
+# ignore intermediate cache files for SHAP interaction values
+analysis/07_second_order_SHAP_analysis/2_analyze_shap_interaction_values/TMP_CACHE

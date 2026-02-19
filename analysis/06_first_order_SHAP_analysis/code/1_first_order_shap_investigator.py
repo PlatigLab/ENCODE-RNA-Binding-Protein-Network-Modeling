@@ -151,6 +151,9 @@ class FirstOrderShapInvestigator:
         }, 
         "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
         "dpsi_vs_local_SHAP_scatterplot_data": {
+            "all_partitions": {
+                "table": "../outputs/dpsi_vs_local_SHAP/all_partitions/dpsi_vs_local_SHAP_scatterplot_data_all_partitions.tsv.gz",
+            }, 
             "test_partition": {
                 "table": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_data_test_partition.tsv.gz",
                 "correlations": "../outputs/dpsi_vs_local_SHAP/test_partition/dpsi_vs_local_SHAP_scatterplot_correlations_test_partition.tsv", 
@@ -8285,6 +8288,35 @@ class FirstOrderShapInvestigator:
             combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
 
             logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition (FDR <= {FDR_threshold}) to {OUTPUT_FILE}")
+
+
+    def create_dpsi_vs_local_SHAP_for_all_partitions(self): 
+        OUTPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['all_partitions']['table']
+
+        if os.path.exists(OUTPUT_FILE):
+            logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for all partitions from {OUTPUT_FILE} ...")
+            combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
+        
+        else: 
+            logger.info("No cache found. Compiling dPSI vs Local SHAP scatterplot data for all partitions ...")
+
+            all_data = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+            plot_dfs = []
+            
+            for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell Lines"):
+                
+                data = all_data[cell_line].collect()
+                assert data.height > 0, f"No test data found for cell line {cell_line}"
+                
+                plot_df = self.create_dpsi_vs_local_SHAP_scatterplot_data(data=data)
+
+                plot_df["Cell Line"] = cell_line
+                plot_dfs.append(plot_df)
+
+            combined_df = pd.concat(plot_dfs, ignore_index=True).sort_values(by=["Cell Line", "Feature", "rMATS Event ID"])
+            combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
+
+            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for all partitions partition to {OUTPUT_FILE}")
 
 
     def correlation_between_test_dpsi_and_local_SHAP(self,):

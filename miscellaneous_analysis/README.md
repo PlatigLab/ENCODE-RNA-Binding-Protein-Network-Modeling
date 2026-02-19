@@ -53,3 +53,8 @@ Add minimal code to reproduce a grave, dangerous, fatal bug in `SHAP` when using
 📂 `10_no_sample_importance_downsampling_SHAP_pilot/`: 
 
 Pilot study to see whether models trained on downsampled data (less 1.0 `PSI` values) are better at modeling differential splicing, in which case we would take these models since the `R^2` values are better. In the end, these models were worse than the lower `R^2` models that we already have. 
+
+
+📂 `11_eCLIP_GTF_mismatch_investigation/`: 
+
+2 aims: [1] nderstand statistics around how many and what RBPs in each cell line were done with `GENCODE V24` vs `V29` and [2] understand the differences in exons and splice junctions between `GENCODE V24` and `V29` to understand how much of a problem this mismatch is for our analyses.
