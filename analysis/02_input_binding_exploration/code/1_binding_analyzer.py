@@ -18,7 +18,7 @@ _=pl.Config.set_fmt_str_lengths(10000)
 @dataclass
 class YogiBindingPatternAnalyzer:
 
-    DATA_PATH = "/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025"
+    DATA_PATH = "/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
     CACHE_DIR = "../__featherv2-cache__/"
     WANDB_DIR = "../outputs/wandb_results/"
 
@@ -69,12 +69,18 @@ class YogiBindingPatternAnalyzer:
             for cell_line in self.cell_lines:
                 logger.info(f"Creating {self.binding_mode} binding data for {cell_line}...")
 
-                binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t') \
-                    .filter(pl.col("Total Read Counts") >= 40) \
-                    .filter(pl.col("chr").str.starts_with("chr") & pl.col("chr").str.slice(3).cast(pl.Int64, strict=False).is_not_null()) \
-                    .collect()
-                binding_cols = [col for col in binding_data.columns if col.endswith("_binding")]
+                binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t')
+                binding_cols = [col for col in binding_data.collect_schema().names() if col.endswith("_binding")]
 
+                binding_data = binding_data \
+                    .filter(pl.col("Total Read Counts") >= 40) \
+                    .with_columns(
+                        [
+                            pl.col(col).cast(pl.UInt8) for col in binding_cols
+                        ]
+                    ).collect()
+
+                assert binding_data["chr"].is_in([f"chr{i}" for i in range(1, 23)]).all(), "The 'chr' column contains unexpected values"
                 assert binding_data["index"].n_unique() == binding_data.shape[0], "The 'index' column contains duplicate values"
                 assert self.binding_mode == "binary"
 
