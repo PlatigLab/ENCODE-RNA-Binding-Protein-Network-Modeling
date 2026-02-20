@@ -6,12 +6,12 @@
 #SBATCH --output=../SLURM_output/final_dataset_creation_output_%A_%a.txt
 #SBATCH --error=../SLURM_output/final_dataset_creation_error_%A_%a.txt
 #SBATCH --mem=55GB
-#SBATCH --array=0-35
+#SBATCH --array=0-11
 
 
-thresholds=(25 50 75 100 150 200 250 500 1000)
+thresholds=(50 100 150 200 250 500)
 cell_lines=(HepG2 K562)
-data_modes=("all-events" "non-overlapping")
+data_modes=("all-events")
 # data_value_variations=("binary-binding-only" "num-peaks-only" "expression-getmm_no-log_dose-dependent-expression" "expression-getmm_no-log_dose-independent-expression" "expression-getmm_yes-log_dose-dependent-expression" "expression-getmm_yes-log_dose-independent-expression" "expression-tmm_no-log_dose-dependent-expression" "expression-tmm_no-log_dose-independent-expression" "expression-tmm_yes-log_dose-dependent-expression" "expression-tmm_yes-log_dose-independent-expression")
 
 
