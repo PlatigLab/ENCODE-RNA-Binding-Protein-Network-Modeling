@@ -2,7 +2,7 @@ import polars as pl
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 
-DATA_PATH = "../../../../../../../data/RBP_ML/3_yogi_dataset_feb_2025/"
+DATA_PATH = "../../../../../../../data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/"
 OUTPUT_PATH = "../corrected_has_RBP_KD_output/"
 CELL_LINES = ["K562", "HepG2",]
 
@@ -64,4 +64,5 @@ def main(cell_line):
 if __name__ == "__main__":
 
     for cell_line in CELL_LINES:
+        print(f"Processing cell line: {cell_line}")
         main(cell_line)

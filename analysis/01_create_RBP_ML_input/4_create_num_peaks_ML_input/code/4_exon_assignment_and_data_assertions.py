@@ -27,7 +27,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
     def read_gtf(self): 
 
-        gtf = pd.read_csv("/project/PlatigLab/data/annotations/gencode.v29.primary_assembly.annotation_UCSC_names.gtf.gz", sep="\t", compression="gzip", skiprows = 5, header=None)
+        gtf = pd.read_csv("../../../../inputs/annotations/gencode.v29.primary_assembly.annotation.gtf.gz", sep="\t", compression="gzip", skiprows = 5, header=None)
         gtf = gtf[(gtf[2]=="exon")]
 
         gtf[3] = gtf[3].astype(int) - 1
@@ -144,7 +144,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
         logger.info("Outputting data to CSV file and GZIP compressing")
 
-        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/"
+        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/"
 
         # Check that there are the same number of rows and 3 more columns compared to the original shape
         assert self.df.shape[0] == self.original_shape[0], "Number of rows has changed"
@@ -160,7 +160,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
 if __name__ == "__main__":
 
-    DATA_VERSION = "Version_3.0_2025-02-09\n"
+    DATA_VERSION = "Version_4.0_2026-02-20\n"
 
     parser = argparse.ArgumentParser(description="Create exon assignment and run data assertions for Yogi RBP ML data")
     parser.add_argument("--parallelize", action="store_true", help="Flag to parallelize the process")
@@ -173,23 +173,23 @@ if __name__ == "__main__":
     if args.parallelize:
         assert not args.cell_line and not args.distance and not args.data_mode, "cell_line, distance, and data_mode arguments must not be provided"
 
-        with open("/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/version.txt", "w") as version_file:
+        with open("/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/version.txt", "w") as version_file:
             version_file.write(DATA_VERSION)
 
         cell_lines = ["K562", "HepG2",]
-        distances = [25, 50, 75, 100, 150, 200, 250, 500, 1000]
-        data_modes = ["all-events", "non-overlapping"]
+        distances = [50, 100, 150, 200, 250, 500]
+        data_modes = ["all-events",]
 
 
         for cell_line in cell_lines: 
             for distance in distances:
                 for data_mode in data_modes:
 
-                    output_file = f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{distance}_{data_mode}_num-peaks-no-kd.tsv.gz"
+                    output_file = f"/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/{cell_line}_{distance}_{data_mode}_num-peaks-no-kd.tsv.gz"
                     
                     if not os.path.exists(output_file):
                         os.system(
-                            f"sbatch --partition=standard --account=platiglab -N1 -n20 --mem=200GB --output=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.out --error=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.err --wrap='python3.11 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance} --data_mode {data_mode}'"
+                            f"sbatch --partition=standard --account=platiglab_paid -N1 -n20 --mem=200GB --output=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.out --error=../SLURM_output/exon_assignment_and_data_assertions_{cell_line}_{distance}_{data_mode}.err --wrap='python3.11 ./4_exon_assignment_and_data_assertions.py --cell_line {cell_line} --distance {distance} --data_mode {data_mode}'"
                         )
         
     else: 
