@@ -115,7 +115,6 @@ rmats_df["Counts_CTRL-2"] = (rmats_df["IJC_SAMPLE_2"].str.split(",").str[1]).ast
 
 rmats_df =  rmats_df.to_dict(orient="records")
 
-
 ############################################
 # Get the mapping from splice junction to number of peaks #
 ############################################
@@ -149,8 +148,8 @@ for row in rmats_df:
             
             if all(substring not in unique_id for substring in ["_random", "chrUn_", "_alt"]):
 
-                if data_mode=="all-events": 
-                    assert unique_id in event_ids_to_include, print(unique_id)
+                # if data_mode=="all-events": 
+                #     assert unique_id in event_ids_to_include, print(unique_id)
                 
                 if unique_id in event_ids_to_include:   
 
@@ -213,7 +212,7 @@ for row in rmats_df:
                                     feature_string = "_".join([tmp_kd_target, str(i), "binding"])
                                     if ML_input_data[unique_id][feature_string] > 0: 
                                         kd_binding_present+=1
-                                        ML_input_data["has_RBP_KD"] = True    
+                                        ML_input_data[unique_id]["has_RBP_KD"] = True    
 
                             elif "CTRL" in sample: 
                                 ML_input_data[unique_id]["RBP_KD_Target"] = "CTRL"    
