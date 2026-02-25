@@ -3,7 +3,7 @@ import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent
 import pandas as pd, polars as pl, numpy as np
 import matplotlib.pyplot as plt, matplotlib as mpl, seaborn as sns, matplotlib.gridspec as gridspec
 import scipy.cluster.hierarchy as sch
-import adjustText, shap, tqdm 
+import adjustText, shap, tqdm, weasyprint
 
 from dataclasses import dataclass
 from IPython.display import display, Video
@@ -20,8 +20,11 @@ from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
 from statsmodels.stats.multitest import multipletests
+from great_tables import GT, loc, style
 from IPython.display import display_pdf
 
+
+# CUSTOM FILE
 from waterfall_plot import waterfall
 
 
@@ -227,6 +230,7 @@ class FirstOrderShapInvestigator:
             "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
             "KDE": "../outputs/publication_figures/pred_vs_actual/kde_plots_all_data_psi/predicted_vs_actual_PSI_kde_all_data", 
         }, 
+        "avg_performance_table": "../outputs/publication_figures/pred_vs_actual/avg_performance_table", 
         "global_SHAP_distribution": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_distribution_unique_binding.png",
@@ -5833,6 +5837,121 @@ class FirstOrderShapInvestigator:
         fig.supxlabel("Category", fontsize=13)
         plt.tight_layout()
         plt.show()
+
+
+    def create_model_average_performance_table(self): 
+        
+        # Load hash metadata to get model hashes per cell line
+        hash_metadata = self.hash_metadata[self.hash_metadata['name'] == "XGBRegressor"].copy()
+        
+        # Calculate R² and Pearson correlation for each model per cell line
+        results = []
+        for cell_line in self.cell_lines:
+            cell_line_models = hash_metadata[hash_metadata['cell_line'] == cell_line]
+            
+            # Get input features for modeling
+            cell_line_lf = self.get_SHAP_data_as_lazyframe(cell_line)[0]
+            non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+            cell_line_df = cell_line_lf.filter(
+                pl.col("Partition") == "Test"
+            ).select(non_shap_cols).sort('index').collect()
+            
+            # Extract binding columns for model input
+            binding_cols = [col for col in cell_line_df.columns if "_binding" in col]
+            model_input = cell_line_df.select(binding_cols).to_pandas()
+            y_true = cell_line_df["Target_PSI"].to_numpy()
+            
+            # Get predictions from each model
+            for _, row in cell_line_models.iterrows():
+                model_hash = row['hash']
+                
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
+                
+                # Ensure column order matches model's expected input
+                model_input_reordered = model_input[list(model.column_order_when_fitting)]
+                y_pred = model.predict(model_input_reordered)
+                
+                # Calculate metrics
+                r2 = r2_score(y_true, y_pred)
+                pearson_corr, _ = pearsonr(y_true, y_pred)
+                
+                results.append({
+                        'Cell Line': cell_line,
+                        'Model Hash': model_hash,
+                        'R2': r2,
+                        'Pearson Correlation': pearson_corr
+                    })
+
+            del model_input, cell_line_df
+            gc.collect()
+        
+        performance_df = pd.DataFrame(
+                results
+            ).sort_values(
+                by=['Cell Line', 'R2'], 
+                ascending=[True, False]
+            ).drop(columns=['Model Hash'])
+
+        performance_df = performance_df.groupby('Cell Line').agg({
+                'R2': ['mean', 'std'],
+                'Pearson Correlation': ['mean', 'std']
+            }).reset_index()
+        performance_df.columns = ['Cell Line', 'R2 Mean', 'R2 Std', 'Pearson Correlation Mean', 'Pearson Correlation Std']
+
+        # Create formatted strings for each metric
+        metrics = [
+            ('R2', 'R2 Mean', 'R2 Std', 'R2 Formatted'),
+            ('Pearson', 'Pearson Correlation Mean', 'Pearson Correlation Std', 'Pearson Formatted')
+        ]
+        for metric_name, mean_col, std_col, output_col in metrics:
+            performance_df[output_col] = performance_df.apply(
+                lambda row: f"{row[mean_col]:.3f} ± {row[std_col]:.4f}", axis=1
+            )
+        
+        HTML_FILE = f"{self.FIGURES['avg_performance_table']}.html"
+        PDF_FILE = f"{self.FIGURES['avg_performance_table']}.pdf"
+
+        table = (
+            GT(performance_df[['Cell Line', 'Pearson Formatted', 'R2 Formatted']])
+            .tab_header(
+                title="Performance Across Top 5 Models",
+                subtitle="Mean ± Standard Deviation"
+            )
+            .cols_label(**{
+                'R2 Formatted': 'R²',
+                'Pearson Formatted': 'ρ'
+            })
+            .cols_align(align='center')
+            .tab_options(
+                table_font_size='large',
+            )
+            .tab_style(
+                style=style.text(weight="bold"),
+                locations=loc.column_labels()
+            )
+            .tab_style(
+                style = style.borders(
+                    sides="all", color="black", weight="0.1px", style="solid"
+                ), 
+                locations = loc.body()
+            )
+            .opt_table_font(
+                font="Arial",
+            )
+            .write_raw_html(
+                HTML_FILE,
+                inline_css=True, 
+                make_page=True, 
+            )
+            
+        )
+
+        weasyprint.HTML(
+                filename=HTML_FILE
+            ).write_pdf(
+                PDF_FILE,
+            )
 
 
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
