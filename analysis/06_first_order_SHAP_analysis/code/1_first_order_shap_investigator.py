@@ -6245,14 +6245,14 @@ class FirstOrderShapInvestigator:
         ACTUAL_PSI = self.latex_symbols["PSI"]["Actual"]
         PREDICTED_PSI = self.latex_symbols["PSI"]["Predicted"]
 
-        OUTPUT_FILE = f'{self.FIGURES["predicted_vs_actual_PSI_plot"]["KDE"]}_bw{str(bw_adjust)}_levels{str(levels)}.svg'
-
+        OUTPUT_FILE = f'{self.FIGURES["predicted_vs_actual_PSI_plot"]["KDE"]}_bw{str(bw_adjust)}_levels{str(levels)}.pdf'
+        
         if Path(OUTPUT_FILE).exists():
             logger.warning(f"Output file {OUTPUT_FILE} already exists. Not creating new plot")
-            return
+            with open(OUTPUT_FILE, "rb") as f:
+                display_pdf(f.read(), raw=True)
         
         else: 
-
             logger.info("Plotting actual vs predicted PSI as 2D KDE...")
             
             # Load the best XGBoost models and get actual/predicted values
@@ -6285,9 +6285,10 @@ class FirstOrderShapInvestigator:
                 gc.collect()
 
             logger.info("Finished creating data")
-
+            
+            plt.style.use('../../paper.mplstyle')
             # Create 2D KDE plots with YlGn colormap
-            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=150, sharex=True, sharey=True)
+            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300, sharex=True, sharey=True)
 
             for ax, cell_line in zip(axes, self.cell_lines):
                 df = dfs[cell_line]
@@ -6299,7 +6300,8 @@ class FirstOrderShapInvestigator:
                     y="y_pred",
                     ax=ax,
                     cmap="plasma",
-                    fill=True,
+                    fill=False, 
+                    linewidths=0.75,
                     cut=0, 
                     thresh=0,
                     bw_adjust=bw_adjust,
@@ -6317,8 +6319,8 @@ class FirstOrderShapInvestigator:
                 ax.set_xlabel("",)
                 ax.set_ylabel("",)
 
-            fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54)
-            fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42)
+            fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54, fontweight='bold')
+            fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42, fontweight='bold')
 
             fig.suptitle(
                 f"NOTE 1: Using 'All-Data' for this plot\n"
@@ -6329,7 +6331,7 @@ class FirstOrderShapInvestigator:
             )
 
             plt.tight_layout()
-            plt.savefig(OUTPUT_FILE, bbox_inches='tight')
+            plt.savefig(OUTPUT_FILE, bbox_inches='tight', dpi=1000)
             plt.show()
 
             del dfs
@@ -10373,8 +10375,8 @@ if __name__ == "__main__":
 
         if args.create_actual_vs_pred_kde_plots == "all": 
 
-            BW_ADJUST_VALS = [0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3]
-            LEVELS_VALS = [3, 5, 10, 15, 20, 30]
+            BW_ADJUST_VALS = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0]
+            LEVELS_VALS = [10, 20, 30, 40, 50]
 
             for bw_adjust in BW_ADJUST_VALS:
                 for levels in LEVELS_VALS:
