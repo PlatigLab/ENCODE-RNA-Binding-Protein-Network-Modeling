@@ -224,6 +224,7 @@ class FirstOrderShapInvestigator:
             "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
             "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
             "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
+            "KDE": "../outputs/publication_figures/pred_vs_actual/kde_plots_all_data_psi/predicted_vs_actual_PSI_kde_all_data", 
         }, 
         "global_SHAP_distribution": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
@@ -5992,6 +5993,105 @@ class FirstOrderShapInvestigator:
         del dfs 
         gc.collect()
 
+    
+    def plot_actual_vs_predicted_as_kde(self, bw_adjust=None, levels=None): 
+        assert bw_adjust is not None and levels is not None, "bw_adjust and levels must be provided for this function"
+
+        ACTUAL_PSI = self.latex_symbols["PSI"]["Actual"]
+        PREDICTED_PSI = self.latex_symbols["PSI"]["Predicted"]
+
+        OUTPUT_FILE = f'{self.FIGURES["predicted_vs_actual_PSI_plot"]["KDE"]}_bw{str(bw_adjust)}_levels{str(levels)}.svg'
+
+        if Path(OUTPUT_FILE).exists():
+            logger.warning(f"Output file {OUTPUT_FILE} already exists. Not creating new plot")
+            return
+        
+        else: 
+
+            logger.info("Plotting actual vs predicted PSI as 2D KDE...")
+            
+            # Load the best XGBoost models and get actual/predicted values
+            dfs = {}
+            for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
+
+                # Get test data
+                cell_line_lf = self.get_SHAP_data_as_lazyframe(cell_line)[0]
+                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+                cell_line_df = cell_line_lf.filter(
+                    pl.col("Partition") == "Test"
+                ).select(non_shap_cols).sort('index').collect()
+
+                # Get predictions
+                model_prediction_input = cell_line_df.select(
+                    [col for col in cell_line_df.columns if "_binding" in col]
+                ).to_pandas()
+                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch"
+                
+                predictions = model.predict(model_prediction_input)
+                
+                dfs[cell_line] = pd.DataFrame({
+                    "y_true": cell_line_df["Target_PSI"].to_numpy(),
+                    "y_pred": predictions
+                })
+                
+                del model_prediction_input, cell_line_df
+                gc.collect()
+
+            logger.info("Finished creating data")
+
+            # Create 2D KDE plots with YlGn colormap
+            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=150, sharex=True, sharey=True)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                df = dfs[cell_line]
+                
+                # Create 2D KDE plots
+                sns.kdeplot(
+                    data=df,
+                    x="y_true",
+                    y="y_pred",
+                    ax=ax,
+                    cmap="plasma",
+                    fill=True,
+                    cut=0, 
+                    thresh=0,
+                    bw_adjust=bw_adjust,
+                    levels=levels
+                )
+                
+                # Add diagonal line
+                ax.plot([0, 1], [0, 1], color="#7FFF00", linestyle="--", linewidth=1.5)
+                
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.set_aspect("equal")
+
+                ax.set_title(cell_line, fontsize=14)
+                ax.set_xlabel("",)
+                ax.set_ylabel("",)
+
+            fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54)
+            fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42)
+
+            fig.suptitle(
+                f"NOTE 1: Using 'All-Data' for this plot\n"
+                f"NOTE 2: bw_adjust={bw_adjust}, levels={levels} for KDE\n"
+                f"NOTE 3: Using best XGBoost model per cell line based on outer holdout $R^2$\n\n"
+                f"{ACTUAL_PSI} vs {PREDICTED_PSI}", 
+                y=1.02
+            )
+
+            plt.tight_layout()
+            plt.savefig(OUTPUT_FILE, bbox_inches='tight')
+            plt.show()
+
+            del dfs
+            gc.collect()
+
+            logger.success(f"COMPLETED: Saved actual vs predicted PSI KDE plot to {OUTPUT_FILE}")
+
 
     def plot_global_SHAP_distributions_across_binding_modes(self): 
         # Load global SHAP values for 5_dfs_average, Bound-Only, and NOT-Bound-Only (all with Unique-Binding)
@@ -10001,18 +10101,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--run_all", 
-        action="store_true",
+        "--create_actual_vs_pred_kde_plots",
+        type=str,
         required=False,
-    )     
+        help="Create 2D KDE plot of actual vs predicted values across a wide range of bandwidth adjustments and contour levels. Input 'all' to run all combinations of bw_adjust and levels. USAGE: --create_actual_vs_pred_kde_plots '<bw_adjust> <levels>' (e.g. --create_actual_vs_pred_kde_plots '0.5 10')"
+    )   
 
     args = parser.parse_args()
 
-    if args.run_all:
-        for job in PARALLELIZE_CHOICES:
-            subprocess.run(["python3.11", __file__, "--parallelize", job], check=True)
-    
-    elif args.parallelize:
+    if args.parallelize:
 
         sbatch_prefix = "sbatch -N2 --partition=parallel -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
@@ -10108,3 +10205,34 @@ if __name__ == "__main__":
 
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
+
+    elif args.create_actual_vs_pred_kde_plots:
+
+        if args.create_actual_vs_pred_kde_plots == "all": 
+
+            BW_ADJUST_VALS = [0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3]
+            LEVELS_VALS = [3, 5, 10, 15, 20, 30]
+
+            for bw_adjust in BW_ADJUST_VALS:
+                for levels in LEVELS_VALS:
+                    sbatch_command = (
+                        "sbatch -N2 --partition=parallel -n4 --mem=16GB --account=platiglab_paid --time=23:00:00 "
+                        f"--job-name=actual_vs_pred_kde_bw{bw_adjust}_levels{levels} "
+                        f"--output=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.out "
+                        f"--error=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.err "
+                        f"--wrap='python3.11 {__file__} --create_actual_vs_pred_kde_plots \"{bw_adjust} {levels}\"'"
+                    )
+                    logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
+                    subprocess.run(sbatch_command, shell=True, check=True)
+            
+        else: 
+
+            split = args.create_actual_vs_pred_kde_plots.split(" ")
+            assert len(split) == 2, "create_actual_vs_pred_kde_plots argument must be in the format '<bw_adjust> <levels>'"
+
+            bw_adjust_str, levels_str = split
+            bw_adjust = float(bw_adjust_str)
+            levels = int(levels_str)
+
+            analyzer = FirstOrderShapInvestigator()
+            analyzer.plot_actual_vs_predicted_as_kde(bw_adjust=bw_adjust, levels=levels)
