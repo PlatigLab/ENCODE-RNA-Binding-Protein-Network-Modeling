@@ -5920,7 +5920,7 @@ class FirstOrderShapInvestigator:
             )
             .cols_label(**{
                 'R2 Formatted': 'R²',
-                'Pearson Formatted': 'ρ'
+                'Pearson Formatted': 'Pearson r'
             })
             .cols_align(align='center')
             .tab_options(
