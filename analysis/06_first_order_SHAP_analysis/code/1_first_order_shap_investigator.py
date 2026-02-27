@@ -98,6 +98,7 @@ class FirstOrderShapInvestigator:
                     None:
                         {
                             "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                            "All-Data": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_all_data.pkl",
                         }
                 }, 
             "Signed-Local-SHAP-Mean-NOT-Bound-Only":
@@ -565,7 +566,7 @@ class FirstOrderShapInvestigator:
 
         # Check if the SLURM_JOB_CPUS_PER_NODE environment variable is set
         if 'SLURM_JOB_CPUS_PER_NODE' in os.environ:
-            num_cpus = int(os.environ['SLURM_NTASKS'])
+            num_cpus = int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
             return num_cpus
         else:
             logger.warning("SLURM_JOB_CPUS_PER_NODE not set, defaulting to 1 CPU")
