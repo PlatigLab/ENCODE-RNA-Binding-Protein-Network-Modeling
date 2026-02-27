@@ -6163,7 +6163,7 @@ class FirstOrderShapInvestigator:
             
             plt.style.use('../../paper.mplstyle')
             # Create 2D KDE plots with YlGn colormap
-            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=150, sharex=True, sharey=True)
+            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300, sharex=True, sharey=True)
 
             for ax, cell_line in zip(axes, self.cell_lines):
                 df = dfs[cell_line]
@@ -6174,8 +6174,8 @@ class FirstOrderShapInvestigator:
                     x="y_true",
                     y="y_pred",
                     ax=ax,
-                    cmap="plasma",
-                    fill=True,
+                    cmap="Oranges",
+                    fill=True, 
                     cut=0, 
                     thresh=0,
                     bw_adjust=bw_adjust,
