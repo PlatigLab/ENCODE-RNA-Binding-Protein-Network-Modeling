@@ -272,6 +272,7 @@ class FirstOrderShapInvestigator:
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
         },
+        "global_SHAP_paper_vignette_heatmaps": "../outputs/publication_figures/global_shap/paper_vignette_heatmap",
         "position_3_4_global_shap_beta_coeff_violinplot": {
             "grouped_positions": {
                 "5_dfs_average": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_GROUPED_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
@@ -1684,6 +1685,105 @@ class FirstOrderShapInvestigator:
 
             plt.tight_layout()
             plt.show()
+
+    
+    def plot_signed_global_SHAP_row_min_and_max_vignette(self, top_n=None, binding_unique=None):
+        assert binding_unique == "Unique-Binding", "binding_unique should be 'Unique-Binding'"
+        assert top_n > 0, "top_n should be a positive integer"
+
+        global_SHAP = self.calculate_specialized_global_SHAP(
+                mode="Signed-Local-SHAP-Mean-Bound-Only",
+                underlying_data=binding_unique
+            )
+
+        # Collect min and max RBPs per cell line
+        candidate_rbps = {
+            "max": dict(), 
+            "min": dict(),
+        }
+        for cell_line, heatmap in global_SHAP.items():
+            max_per_rbp = heatmap.max()
+            min_per_rbp = heatmap.min()
+            
+            # Get top_n RBPs by max value
+            top_n_max_rbps = list(max_per_rbp.nlargest(top_n).index)
+            # Get top_n RBPs by min value (most negative)
+            top_n_min_rbps = list(min_per_rbp.nsmallest(top_n).index)
+
+            candidate_rbps["max"][cell_line] = top_n_max_rbps
+            candidate_rbps["min"][cell_line] = top_n_min_rbps
+
+        final_rbps = []
+        for type in ["min", "max"]:
+            k562_rbps = candidate_rbps[type]["K562"]
+            hepg2_rbps = candidate_rbps[type]["HepG2"]
+
+            for a, b in zip(hepg2_rbps, k562_rbps):
+                final_rbps.extend([a, b])
+        
+        final_rbps= pd.Series(final_rbps).drop_duplicates(keep="first")   
+
+        heatmap_data = {
+            cell_line: heatmap.T.reindex(index=final_rbps) for cell_line, heatmap in global_SHAP.items()
+        }
+
+        # Plot
+        plt.style.use("../../paper.mplstyle")
+        fig, axes = plt.subplots(1, 2, figsize=(6.5, 0.6*top_n), dpi=300, sharex=True, sharey=True)
+        cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.6])
+
+        vmin=min(heatmap_data[cell_line].min().min() for cell_line in heatmap_data)
+        vmax=max(heatmap_data[cell_line].max().max() for cell_line in heatmap_data)
+
+        for idx, (cell_line, heatmap) in enumerate(heatmap_data.items()):
+            ax = axes[idx]
+            sns.heatmap(
+                heatmap,
+                ax=ax,
+                cmap="seismic",
+                center=0,
+                vmin=vmin,
+                vmax=vmax,
+                cbar=(idx == 0),
+                cbar_ax=(cbar_ax if idx == 0 else None),
+                linewidths=0.4,
+                linecolor="black",
+            )
+
+            logger.info(f"# nulls in heatmap for {cell_line}: {heatmap.isnull().sum().sum()} out of {heatmap.size} total cells")
+            
+            # Set background color for null cells to gray
+            ax.set_facecolor("lemonchiffon")
+            
+            ax.set_title(f"{cell_line}", fontsize=12, pad=5)
+            ax.set_ylabel("")
+            ax.set_xlabel("")
+            ax.tick_params(axis='x', labelsize=12)
+            ax.tick_params(axis='y', labelsize=7)
+
+
+        cbar_ax.set_title(self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=14, pad=10)
+        cbar_ax.tick_params(labelsize=10)
+
+        fig.supylabel("RBP", fontsize=14, x=0.04, y=.52, fontweight="bold")
+        fig.supxlabel("Position", fontsize=14, x=0.53, y=0.04, fontweight="bold")
+        plt.suptitle(
+            f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
+            f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
+            f"NOTE 2: Values organized from min to max\n"
+            f"NOTE 3: Null values shown in different color\n"
+            f"NOTE 4: Using {binding_unique} data\n\n"
+            f"Top {top_n} Max/Min RBPs Per Cell Line",
+
+            fontsize=5, y=0.97
+        )
+
+        plt.tight_layout(rect=[0, 0, 0.91, 1])
+
+        OUTPUT_FILE = f"{self.FIGURES['global_SHAP_paper_vignette_heatmaps']}_top_{top_n}_rbps_{binding_unique}.pdf"
+        plt.savefig(OUTPUT_FILE, dpi=1000, bbox_inches='tight')
+
+        plt.show()
 
 
     def calculate_SHAP_CV(self, binding_unique=None):
