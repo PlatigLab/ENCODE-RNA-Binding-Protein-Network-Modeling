@@ -14,7 +14,7 @@
 - Assesses RBP KD events at the position where the RBP is bound (in-silico KD rows)
 - Gauges RBP activity (activator / repressor) at a specific position
 
-## 4_shap_dpsi_score
+## 4_RBP_Activity_Heatmap_Figures
 - Makes heatmap of RBP Activity Score:
 
 ### RBP Activity Metric
