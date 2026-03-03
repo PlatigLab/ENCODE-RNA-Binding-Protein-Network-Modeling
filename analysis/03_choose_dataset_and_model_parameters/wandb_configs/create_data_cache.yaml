@@ -1,0 +1,42 @@
+# Sweep configuration
+sweep:
+  name: create_data_cache
+  project: rbp-se-devnull
+  
+  method: grid
+  metric:
+    name: val_r2_score
+    goal: maximize
+
+# Base configuration
+config_overlay:
+  platiglib_project: rbpse
+  
+  dataset:
+    name: RBPSEDataset
+
+    data_source: 
+      EncodeRBPBindingDataSource:
+        three_exon_combos: all
+        min_read_count: 40
+        window: 100
+
+    features: 
+      binding_matrix: 
+        binding_format: 'binary'
+        in_silico_kd: true
+
+  model:
+      name: XGBRegressor
+      n_estimators: 5
+    
+  training:
+    wandb:
+      project: rbp-se-devnull
+
+
+# Parameters to sweep
+parameters:
+
+  dataset.data_source.EncodeRBPBindingDataSource.cell_line:
+    values: [K562, HepG2]
