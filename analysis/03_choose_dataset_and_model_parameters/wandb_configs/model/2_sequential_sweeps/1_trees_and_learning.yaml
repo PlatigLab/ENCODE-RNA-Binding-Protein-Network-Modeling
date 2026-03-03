@@ -62,11 +62,12 @@ config_overlay:
 parameters:
 
   # INCLUDED IN ALL SWEEPS
-  dataset.data_source.EncodeRBPBindingDataSource.cell_line:
-    values: [K562, HepG2]
   training.seed: 
     values: [100, 200, 300, 400, 500, 600, 700]
 
+  dataset.data_source.EncodeRBPBindingDataSource.cell_line:
+    values: [K562, HepG2]
+    
   # EARLY STOPPING, LEARNING RATE, MAX DEPTH
   model.early_stopping_rounds: 
     values: [50, 100, 500, 1000]
