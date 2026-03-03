@@ -144,7 +144,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
         logger.info("Outputting data to CSV file and GZIP compressing")
 
-        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/"
+        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
 
         # Check that there are the same number of rows and 3 more columns compared to the original shape
         assert self.df.shape[0] == self.original_shape[0], "Number of rows has changed"
@@ -161,6 +161,7 @@ class YogiRbpMlDataValidatorAndExonAdder:
 if __name__ == "__main__":
 
     DATA_VERSION = "Version_4.0_2026-02-20\n"
+    DATA_PATH = "/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
 
     parser = argparse.ArgumentParser(description="Create exon assignment and run data assertions for Yogi RBP ML data")
     parser.add_argument("--parallelize", action="store_true", help="Flag to parallelize the process")
@@ -173,7 +174,7 @@ if __name__ == "__main__":
     if args.parallelize:
         assert not args.cell_line and not args.distance and not args.data_mode, "cell_line, distance, and data_mode arguments must not be provided"
 
-        with open("/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/version.txt", "w") as version_file:
+        with open(f"{DATA_PATH}/version.txt", "w") as version_file:
             version_file.write(DATA_VERSION)
 
         cell_lines = ["K562", "HepG2",]
@@ -185,7 +186,7 @@ if __name__ == "__main__":
             for distance in distances:
                 for data_mode in data_modes:
 
-                    output_file = f"/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/{cell_line}_{distance}_{data_mode}_num-peaks-no-kd.tsv.gz"
+                    output_file = f"{DATA_PATH}/{cell_line}_{distance}_{data_mode}_num-peaks-no-kd.tsv.gz"
                     
                     if not os.path.exists(output_file):
                         os.system(
