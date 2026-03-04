@@ -1,5 +1,6 @@
 import pandas as pd, seaborn as sns, matplotlib.pyplot as plt, polars as pl, numpy as np
-import wandb, json, argparse, os, sys, glob
+import wandb, json, argparse, os, sys, glob, string
+from tqdm import tqdm
 
 from dataclasses import dataclass
 from loguru import logger
@@ -12,17 +13,19 @@ from matplotlib.lines import Line2D
 class DatasetAndModelParameterAnalyzer:
 
     sweep_projects = {
-        'dataset': 'yogi-dataset-sweep-feb-2025', 
-        'model': 'yogi-xgbregressor-hyperparameter-sweep-april-2025',
-        'linear_models': 'yogi-RBP-ML-linear-models-april-2025', 
-        'variations_of_model': "yogi-wild-west-model-variation-rapid-testing-v1" 
+        # 'dataset': 'yogi-dataset-sweep-feb-2025', 
+        'model': 'yogi-rbp-ml-gencode-v24-v29-matching-exons',
+        # 'linear_models': 'yogi-RBP-ML-linear-models-april-2025', 
+        # 'variations_of_model': "yogi-wild-west-model-variation-rapid-testing-v1" 
     }
 
-    dataset_sweep_covariates= {
-        'dataset.min_read_count': "Min. Read Count", 
-        'dataset.features.binding_matrix.binding_format': "Binding Data Format", 
-        'dataset.features.binding_matrix.window': "Window"
-    }
+    # dataset_sweep_covariates= {
+    #     'dataset.min_read_count': "Min. Read Count", 
+    #     'dataset.features.binding_matrix.binding_format': "Binding Data Format", 
+    #     'dataset.features.binding_matrix.window': "Window"
+    # }
+
+    platiglib_cell_line_col = "dataset.data_source.EncodeRBPBindingDataSource.cell_line"
 
     view_n_configs = 10
     choose_n_configs = 5
@@ -49,9 +52,9 @@ class DatasetAndModelParameterAnalyzer:
             for key, df in self.sweep_results.items():
                 logger.info(f"{key} summary table contains {df.shape[0]} rows")
 
-                if key == 'variations': 
-                    if "data_file" in df.columns:
-                        df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
+                # if key == 'variations': 
+                #     if "data_file" in df.columns:
+                #         df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
 
             logger.success("FROM CACHE: Retrieved WandB summary tables")
 
@@ -66,7 +69,7 @@ class DatasetAndModelParameterAnalyzer:
                     runs = wandb.Api().runs(self.sweep_projects[type])
 
                     run_data = []
-                    for run in runs:
+                    for run in tqdm(runs, desc=f'Collecting data for {type} sweep'):
 
                         run_info = {
                             "run_id": run.id,
@@ -109,140 +112,139 @@ class DatasetAndModelParameterAnalyzer:
             table = self.sweep_results[key].copy(deep=True)
 
             assert table['run_id'].is_unique, "run_id column contains duplicated values"
-
-            if key != 'variations':
-                assert (table['state'] == 'finished').all(), "Not all runs are finished"
-            else: 
-                logger.warning("REMINDER: 'variations' sweep has failed runs, so we are not checking for 'finished' state")
+            assert (table['state'] == 'finished').all(), "Not all runs are finished"
+            # if key != 'variations':
+            #     assert (table['state'] == 'finished').all(), "Not all runs are finished"
+            # else: 
+            #     logger.warning("REMINDER: 'variations' sweep has failed runs, so we are not checking for 'finished' state")
 
             for col in table.columns:
                 if table[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
                     table.drop(columns=[col], inplace=True)
                         
-            if key =='dataset': 
-                assert table['sweep_name'].nunique() == 1, "sweep_name column contains multiple unique values"
-                assert table['sweep_id'].nunique() == 1, "sweep_id column contains multiple unique values"
+            # if key =='dataset': 
+            #     assert table['sweep_name'].nunique() == 1, "sweep_name column contains multiple unique values"
+            #     assert table['sweep_id'].nunique() == 1, "sweep_id column contains multiple unique values"
 
-                dataset_cols = [col for col in table.columns if col.startswith("dataset.")]
-                assert table[dataset_cols].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
+            #     dataset_cols = [col for col in table.columns if col.startswith("dataset.")]
+            #     assert table[dataset_cols].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
 
-            elif key == 'model':
-                assert table['holdout_r2_score'].apply(lambda x: isinstance(x, float) and not pd.isna(x)).all(), "Not all values in holdout_r2_score are valid decimal float values"
-                assert (table['training.seed'] != 0).all() and (table['training.seed'] != 0.0).all(), "Some runs have training.seed equal to 0"
-                
-                group_cols = [col for col in table.columns if col.startswith("dataset.") or col.startswith("model.") or col.startswith("training.")]
-
-                for sweep_id in table['sweep_id'].unique():
-                    subset_table = table[table['sweep_id'] == sweep_id]
-                    assert subset_table[group_cols].duplicated().sum() == 0, f"There are duplicate rows in the group columns for sweep_id {sweep_id}"
+            assert table['holdout_r2_score'].apply(lambda x: isinstance(x, float) and not pd.isna(x)).all(), "Not all values in holdout_r2_score are valid decimal float values"
+            assert (table['training.seed'] != 0).all() and (table['training.seed'] != 0.0).all(), "Some runs have training.seed equal to 0"
+            
+            group_cols = [col for col in table.columns if col.startswith("dataset.") or col.startswith("model.") or col.startswith("training.")]
+            
+            for sweep_id in table['sweep_id'].unique():
+                subset_table = table[table['sweep_id'] == sweep_id]
+                assert subset_table[group_cols].duplicated().sum() == 0, f"There are duplicate rows in the group columns for sweep_id {sweep_id}"
 
         logger.success("All assertions passed")
 
 
-    def calculate_num_examples_and_average_binding(self, cell_line, window, min_read_count): 
-        min_read_count = int(min_read_count)
+    # def calculate_num_examples_and_average_binding(self, cell_line, window, min_read_count): 
+    #     min_read_count = int(min_read_count)
         
-        df = pl.scan_csv(
-            f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{window}_all-events_num-peaks-no-kd.tsv.gz", 
-            has_header=True, 
-            separator='\t'
-        ).filter(
-            pl.col("Total Read Counts") > min_read_count
-        ).collect()
-        assert df['index'].n_unique() == df.shape[0], "The 'index' column contains duplicate values"
+    #     df = pl.scan_csv(
+    #         f"/project/PlatigLab/data/RBP_ML/3_yogi_dataset_feb_2025/{cell_line}_{window}_all-events_num-peaks-no-kd.tsv.gz", 
+    #         has_header=True, 
+    #         separator='\t'
+    #     ).filter(
+    #         pl.col("Total Read Counts") > min_read_count
+    #     ).collect()
+    #     assert df['index'].n_unique() == df.shape[0], "The 'index' column contains duplicate values"
 
-        validate_count = df.filter(pl.col("chr").is_in(self.validate_set)).shape[0]
-        test_count = df.filter(pl.col("chr").is_in(self.test_set)).shape[0]
+    #     validate_count = df.filter(pl.col("chr").is_in(self.validate_set)).shape[0]
+    #     test_count = df.filter(pl.col("chr").is_in(self.test_set)).shape[0]
 
-        binding_cols = [col for col in df.columns if col.endswith("_binding")]
-        df = df.with_columns([
-            pl.when(pl.col(col) > 1).then(1).otherwise(pl.col(col)).alias(col) 
-            for col in binding_cols
-        ])
+    #     binding_cols = [col for col in df.columns if col.endswith("_binding")]
+    #     df = df.with_columns([
+    #         pl.when(pl.col(col) > 1).then(1).otherwise(pl.col(col)).alias(col) 
+    #         for col in binding_cols
+    #     ])
         
-        assert all(df[col].max() <= 1 for col in binding_cols), "Some values in binding columns are greater than 1"
-        original_binding_data_shape = df.shape
+    #     assert all(df[col].max() <= 1 for col in binding_cols), "Some values in binding columns are greater than 1"
+    #     original_binding_data_shape = df.shape
 
-        unique_rbp_kd_targets = sorted(df["RBP_KD_Target"].unique().to_list())
-        modified_dfs = []
-        for rbp_kd_target in unique_rbp_kd_targets:
-            subset_df = df.filter(pl.col("RBP_KD_Target") == rbp_kd_target)
+    #     unique_rbp_kd_targets = sorted(df["RBP_KD_Target"].unique().to_list())
+    #     modified_dfs = []
+    #     for rbp_kd_target in unique_rbp_kd_targets:
+    #         subset_df = df.filter(pl.col("RBP_KD_Target") == rbp_kd_target)
 
-            if rbp_kd_target != "CTRL":
-                binding_cols_to_zero = [col for col in binding_cols if col.startswith(f"{rbp_kd_target}_")]
-                assert len(binding_cols_to_zero) ==6, print(binding_cols_to_zero)
+    #         if rbp_kd_target != "CTRL":
+    #             binding_cols_to_zero = [col for col in binding_cols if col.startswith(f"{rbp_kd_target}_")]
+    #             assert len(binding_cols_to_zero) ==6, print(binding_cols_to_zero)
                 
-                subset_df = subset_df.with_columns([
-                    pl.lit(0).alias(col) for col in binding_cols_to_zero
-                ])
+    #             subset_df = subset_df.with_columns([
+    #                 pl.lit(0).alias(col) for col in binding_cols_to_zero
+    #             ])
 
-            modified_dfs.append(subset_df)
+    #         modified_dfs.append(subset_df)
 
-        df = pl.concat(modified_dfs, how='vertical_relaxed')
-        assert df.shape == original_binding_data_shape, "Dataframe shape changed after modification"
+    #     df = pl.concat(modified_dfs, how='vertical_relaxed')
+    #     assert df.shape == original_binding_data_shape, "Dataframe shape changed after modification"
 
-        horizontal_sum = df.select(binding_cols).sum_horizontal()
-        average_binding = (horizontal_sum.sum()) / (df.shape[0] * 6)
+    #     horizontal_sum = df.select(binding_cols).sum_horizontal()
+    #     average_binding = (horizontal_sum.sum()) / (df.shape[0] * 6)
 
-        output_dict = {
-            "cell_line": cell_line,
-            "window": window,
-            "min_read_count": min_read_count,
-            "avg_binding_per_graph_per_window": average_binding,
-            "total_examples": df.shape[0],
-            "validate_count": validate_count,
-            "test_count": test_count
-        }
+    #     output_dict = {
+    #         "cell_line": cell_line,
+    #         "window": window,
+    #         "min_read_count": min_read_count,
+    #         "avg_binding_per_graph_per_window": average_binding,
+    #         "total_examples": df.shape[0],
+    #         "validate_count": validate_count,
+    #         "test_count": test_count
+    #     }
 
-        output_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_stats.json"
-        with open(output_file, 'w') as f:
-            json.dump(output_dict, f, indent=4)
+    #     output_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_stats.json"
+    #     with open(output_file, 'w') as f:
+    #         json.dump(output_dict, f, indent=4)
         
-        # Plot the histogram of the distribution of these sums
-        plt.figure(figsize=(7, 4), dpi=200)
+    #     # Plot the histogram of the distribution of these sums
+    #     plt.figure(figsize=(7, 4), dpi=200)
 
-        bins = list(range(1, 12))  # Bins from 1 to 10, and one bin for >10
-        horizontal_sum = horizontal_sum.clip(upper_bound=11)  # Clip values greater than 10 to 11
-        sns.histplot(horizontal_sum, bins=bins, color='skyblue', edgecolor='black')
+    #     bins = list(range(1, 12))  # Bins from 1 to 10, and one bin for >10
+    #     horizontal_sum = horizontal_sum.clip(upper_bound=11)  # Clip values greater than 10 to 11
+    #     sns.histplot(horizontal_sum, bins=bins, color='skyblue', edgecolor='black')
 
-        plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nValues greater than 10 clipped to 11', y=1.01)
-        plt.xlabel('# Bindings per Graph')
-        plt.ylabel('Frequency')
+    #     plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nValues greater than 10 clipped to 11', y=1.01)
+    #     plt.xlabel('# Bindings per Graph')
+    #     plt.ylabel('Frequency')
 
-        # Save the plot
-        plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_bindings_per_graph.png"
-        plt.savefig(plot_file, dpi=200)
-        plt.close()
+    #     # Save the plot
+    #     plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_bindings_per_graph.png"
+    #     plt.savefig(plot_file, dpi=200)
+    #     plt.close()
 
-        # Plot the histogram of the "Target_PSI" values
-        plt.figure(figsize=(7, 4), dpi=200)
-        sns.histplot(df['Target_PSI'], bins=50, color='skyblue', edgecolor='black')
+    #     # Plot the histogram of the "Target_PSI" values
+    #     plt.figure(figsize=(7, 4), dpi=200)
+    #     sns.histplot(df['Target_PSI'], bins=50, color='skyblue', edgecolor='black')
 
-        plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nDistribution of Target_PSI', y=1.01)
-        plt.xlabel('Target_PSI')
-        plt.ylabel('Frequency')
+    #     plt.title(f'{cell_line}, Window: {window}, Min Read Count: {min_read_count}\nDistribution of Target_PSI', y=1.01)
+    #     plt.xlabel('Target_PSI')
+    #     plt.ylabel('Frequency')
 
-        # Save the plot
-        psi_plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_target_psi_distribution.png"
-        plt.savefig(psi_plot_file, dpi=200)
-        plt.close()
+    #     # Save the plot
+    #     psi_plot_file = f"../output/data_matrix_stats/{cell_line}_{window}_{min_read_count}_target_psi_distribution.png"
+    #     plt.savefig(psi_plot_file, dpi=200)
+    #     plt.close()
 
-        logger.success(f"Calculated and saved stats for {cell_line}, {window}, {min_read_count}")
+    #     logger.success(f"Calculated and saved stats for {cell_line}, {window}, {min_read_count}")
 
 
     def average_across_seed_per_cell_line(self, data= None, group_by=None):
         assert group_by is not None and data is not None, "group_by and data should be provided"
 
-        grouped = data.groupby(group_by + ['dataset.cell_line'])
-        assert all(len(group) == 9 for _, group in grouped), "Not all groups have exactly 9 entries"
+        grouped = data.groupby(group_by + [self.platiglib_cell_line_col])
+        assert all(len(group) == 7 for _, group in grouped), "Not all groups have exactly 7 entries"
         
         average_per_config = grouped['holdout_r2_score'].mean().reset_index().rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
         
         combined_configs = []
-        for cell_line in average_per_config['dataset.cell_line'].unique().tolist():
+        for cell_line in average_per_config[self.platiglib_cell_line_col].unique().tolist():
 
             top_configs_cell_line = average_per_config[
-                    average_per_config['dataset.cell_line'] == cell_line
+                    average_per_config[self.platiglib_cell_line_col] == cell_line
                 ].sort_values(
                     by='avg_holdout_r2_score',
                     ascending=False
@@ -294,16 +296,18 @@ class DatasetAndModelParameterAnalyzer:
                     model_sweep_parameters.extend([f"model.{param}" for param in swept_parameters])
 
             elif linear: 
-                model_sweep_parameters = [
+                model_sweep_parameters.extend(
+                    [
                         'model.l1_ratio', 
                         'model.alpha'
                     ]
+                )
                 
             subset = model_sweep.sort_values(
                     'holdout_r2_score', 
                     ascending=False
                 ).drop_duplicates(
-                    subset=model_sweep_parameters + ['dataset.cell_line', 'training.seed'],
+                    subset=model_sweep_parameters + [self.platiglib_cell_line_col, 'training.seed'],
                     keep="first"
                 )
 
@@ -328,10 +332,10 @@ class DatasetAndModelParameterAnalyzer:
                 # return self.top_model_configs
 
 
-    def load_aggreated_data_stats(self):
+    # def load_aggreated_data_stats(self):
         
-        data_stats_df = pd.read_csv("../output/data_matrix_stats/data_stats.tsv", sep="\t")
-        self.matrix_stats_df = data_stats_df
+    #     data_stats_df = pd.read_csv("../output/data_matrix_stats/data_stats.tsv", sep="\t")
+    #     self.matrix_stats_df = data_stats_df
 
                     
     def plot_r2_distributions(self): 
@@ -354,11 +358,11 @@ class DatasetAndModelParameterAnalyzer:
                     linewidth=0.1
 
                 if type != 'linear': 
-                    sns.swarmplot(x='dataset.cell_line', y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
-                    sns.boxplot(x='dataset.cell_line', y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
+                    sns.swarmplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
+                    sns.boxplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
                 elif type == 'linear': 
                     sns.violinplot(
-                        x='dataset.cell_line', y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
+                        x=self.platiglib_cell_line_col, y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
                     )
 
                 plt.title(f'{type.capitalize()} Sweep: $R^2$ Score Distribution', y=1.03)
@@ -370,68 +374,68 @@ class DatasetAndModelParameterAnalyzer:
                 plt.close()
                 
 
-    def plot_dataset_r2_per_covariate(self): 
+    # def plot_dataset_r2_per_covariate(self): 
 
-        if not hasattr(self, 'matrix_stats_df'):
-            self.load_aggreated_data_stats()
+    #     if not hasattr(self, 'matrix_stats_df'):
+    #         self.load_aggreated_data_stats()
         
-        for covariate in self.dataset_sweep_covariates:
-            if covariate in ['dataset.min_read_count', 'dataset.features.binding_matrix.window']:
-                fig, axes = plt.subplots(2, 1, figsize=(8, 7), dpi=300, sharex=True, gridspec_kw={'hspace': 0.3})
-                ax_top, ax_bottom = axes
-            else:
-                fig, ax_top = plt.subplots(figsize=(8, 3), dpi=300)
-                ax_bottom = None
+    #     for covariate in self.dataset_sweep_covariates:
+    #         if covariate in ['dataset.min_read_count', 'dataset.features.binding_matrix.window']:
+    #             fig, axes = plt.subplots(2, 1, figsize=(8, 7), dpi=300, sharex=True, gridspec_kw={'hspace': 0.3})
+    #             ax_top, ax_bottom = axes
+    #         else:
+    #             fig, ax_top = plt.subplots(figsize=(8, 3), dpi=300)
+    #             ax_bottom = None
 
-            sns.swarmplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, palette='Set2', linewidth=1, edgecolor='black', ax=ax_top)
-            sns.boxplot(x='dataset.cell_line', y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False, ax=ax_top)
+    #         sns.swarmplot(x=self.platiglib_cell_line_col, y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, palette='Set2', linewidth=1, edgecolor='black', ax=ax_top)
+    #         sns.boxplot(x=self.platiglib_cell_line_col, y='val_r2_score', hue=covariate, data=self.sweep_results['dataset'], dodge=True, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False, ax=ax_top)
 
-            handles, labels = ax_top.get_legend_handles_labels()
-            n = len(handles) // 2
-            legend_title = self.dataset_sweep_covariates[covariate]
-            ax_top.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title=legend_title)
+    #         handles, labels = ax_top.get_legend_handles_labels()
+    #         n = len(handles) // 2
+    #         legend_title = self.dataset_sweep_covariates[covariate]
+    #         ax_top.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title=legend_title)
 
-            if covariate!='dataset.features.binding_matrix.binding_format':
-                ax_top.set_title(f'Validation $R^2$ Score by {legend_title}\nNOTE: includes both binary and expression representation of binding data', y=1)
-            else: 
-                ax_top.set_title(f'Validation $R^2$ Score by {legend_title}')
-                ax_top.set_xlabel('Cell Line')
+    #         if covariate!='dataset.features.binding_matrix.binding_format':
+    #             ax_top.set_title(f'Validation $R^2$ Score by {legend_title}\nNOTE: includes both binary and expression representation of binding data', y=1)
+    #         else: 
+    #             ax_top.set_title(f'Validation $R^2$ Score by {legend_title}')
+    #             ax_top.set_xlabel('Cell Line')
 
-            ax_top.set_ylabel('Validation $R^2$ Score')            
+    #         ax_top.set_ylabel('Validation $R^2$ Score')            
 
-            if ax_bottom is not None:
+    #         if ax_bottom is not None:
 
-                if covariate == 'dataset.min_read_count':
-                    y_axis_param = 'validate_count'
-                    hue='min_read_count'
-                elif covariate == 'dataset.features.binding_matrix.window':
-                    y_axis_param = 'avg_binding_per_graph_per_window'
-                    hue='window'
+    #             if covariate == 'dataset.min_read_count':
+    #                 y_axis_param = 'validate_count'
+    #                 hue='min_read_count'
+    #             elif covariate == 'dataset.features.binding_matrix.window':
+    #                 y_axis_param = 'avg_binding_per_graph_per_window'
+    #                 hue='window'
 
-                sns.swarmplot(
-                    x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
-                    edgecolor='black', linewidth=1, dodge=True
-                )
-                sns.boxplot(
-                    x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
-                    showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2},
-                    medianprops={'color':'black'}, showfliers=False, dodge=True
-                )
+    #             sns.swarmplot(
+    #                 x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
+    #                 edgecolor='black', linewidth=1, dodge=True
+    #             )
+    #             sns.boxplot(
+    #                 x='cell_line', y=y_axis_param, hue=hue, data=self.matrix_stats_df, palette='Set2', ax=ax_bottom,
+    #                 showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2},
+    #                 medianprops={'color':'black'}, showfliers=False, dodge=True
+    #             )
                 
-                handles, labels = ax_bottom.get_legend_handles_labels()
-                n = len(handles) // 2
-                ax_bottom.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Min. Read Count' if hue == 'min_read_count' else 'Window')
+    #             handles, labels = ax_bottom.get_legend_handles_labels()
+    #             n = len(handles) // 2
+    #             ax_bottom.legend(handles[:n], labels[:n], loc='center left', bbox_to_anchor=(1, 0.5), title='Min. Read Count' if hue == 'min_read_count' else 'Window')
 
-                ax_bottom.set_ylabel('# Validation Graphs' if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph \nper Splice Junction')
-                ax_bottom.set_xlabel('Cell Line')
+    #             ax_bottom.set_ylabel('# Validation Graphs' if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph \nper Splice Junction')
+    #             ax_bottom.set_xlabel('Cell Line')
 
-                bottom_title_suffix="\nNOTE: includes ONLY binary representation of binding data"
-                bottom_title_prefix = "# Validation Graphs vs. Min. Read Count" if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph per Splice Junction vs. Window'
-                ax_bottom.set_title(f'{bottom_title_prefix}{bottom_title_suffix}', y=1)
+    #             bottom_title_suffix="\nNOTE: includes ONLY binary representation of binding data"
+    #             bottom_title_prefix = "# Validation Graphs vs. Min. Read Count" if covariate == 'dataset.min_read_count' else 'Avg Binding per Graph per Splice Junction vs. Window'
+    #             ax_bottom.set_title(f'{bottom_title_prefix}{bottom_title_suffix}', y=1)
 
-            plt.savefig(f"../output/plots/dataset/dataset_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
-            plt.show()
-            plt.close()
+    #         plt.savefig(f"../output/plots/dataset/dataset_{covariate}_r2_score_distribution.png", dpi=300, bbox_inches='tight')
+    #         plt.show()
+    #         plt.close()
 
 
     def plot_1D_range_model_hyperparameter_sweeps(self): 
@@ -448,11 +452,11 @@ class DatasetAndModelParameterAnalyzer:
 
             plt.figure(figsize=(12, 4), dpi=300)
             sns.swarmplot(
-                x=f"model.{hyperparameter}", y="holdout_r2_score", hue="dataset.cell_line", 
+                x=f"model.{hyperparameter}", y="holdout_r2_score", hue=self.platiglib_cell_line_col, 
                 data=subset, palette=['red', 'blue'], linewidth=1, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
             )
             sns.boxplot(
-                x=f"model.{hyperparameter}", y="holdout_r2_score", hue="dataset.cell_line", 
+                x=f"model.{hyperparameter}", y="holdout_r2_score", hue=self.platiglib_cell_line_col, 
                 data=subset, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, 
                 whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, 
                 showfliers=False, hue_order=["K562", "HepG2"], dodge=True
@@ -482,11 +486,11 @@ class DatasetAndModelParameterAnalyzer:
                 plt.figure(figsize=(9, 4), dpi=200)
 
                 sns.swarmplot(
-                    x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', size=0.8,
+                    x='training.seed', y='holdout_r2_score', hue=self.platiglib_cell_line_col, size=0.8,
                     data=model_sweep, palette=['red', 'blue'], linewidth=0.05, edgecolor='black', hue_order=["K562", "HepG2"], dodge=True
                 )
                 sns.boxplot(
-                    x='training.seed', y='holdout_r2_score', hue='dataset.cell_line', 
+                    x='training.seed', y='holdout_r2_score', hue=self.platiglib_cell_line_col, 
                     data=model_sweep, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'gray'}, 
                     whiskerprops={'color':'gray', 'linewidth':2}, medianprops={'color':'gray'}, 
                     showfliers=False, hue_order=["K562", "HepG2"], dodge=True
@@ -522,9 +526,9 @@ class DatasetAndModelParameterAnalyzer:
             subset = model_sweep[model_sweep['sweep_name'] == sweep_name]
 
             for param in param_names:
-                for hue in ["dataset.cell_line", "training.seed"]: 
+                for hue in [self.platiglib_cell_line_col, "training.seed"]: 
 
-                    if hue == "dataset.cell_line":
+                    if hue == self.platiglib_cell_line_col:
                         palette = ['red', 'blue']
                         hue_order = ["K562", "HepG2"]
                     elif hue == "training.seed":
@@ -585,11 +589,11 @@ class DatasetAndModelParameterAnalyzer:
             
             for param_x, param_hue in param_combinations:
                 fig, axes = plt.subplots(2, 1, figsize=(8, 5), dpi=200, sharex=True, sharey=True)
-                cell_lines = subset['dataset.cell_line'].unique()
+                cell_lines = subset[self.platiglib_cell_line_col].unique()
 
                 for i, cell_line in enumerate(cell_lines):
                     ax = axes[i]
-                    cell_line_subset = subset[subset['dataset.cell_line'] == cell_line]
+                    cell_line_subset = subset[subset[self.platiglib_cell_line_col] == cell_line]
 
                     hue_order = sorted(cell_line_subset[param_hue].unique())
                     sns.swarmplot(
@@ -619,13 +623,13 @@ class DatasetAndModelParameterAnalyzer:
                 plt.close()
 
             if len(param_names) == 3:
-                for cell_line in subset['dataset.cell_line'].unique():
+                for cell_line in subset[self.platiglib_cell_line_col].unique():
                                                     
                     param_x = param_names[0].split(".")[-1]
                     param_y = param_names[1].split(".")[-1]
                     param_z = param_names[2].split(".")[-1]
 
-                    cell_line_subset = subset[(subset['dataset.cell_line'] == cell_line) & (subset['holdout_r2_score'] > 0.2)]
+                    cell_line_subset = subset[(subset[self.platiglib_cell_line_col] == cell_line) & (subset['holdout_r2_score'] > 0.2)]
 
                     fig, axes = plt.subplots(3, 3, figsize=(20, 13), dpi=200, subplot_kw={'projection': '3d'})
                     cmap = plt.cm.rainbow
@@ -666,8 +670,8 @@ class DatasetAndModelParameterAnalyzer:
             self.show_top_model_configs_after_averaging_by_seed(all_configs=True)
 
         outer_loop_candidates = pd.concat([
-            self.top_model_configs[self.top_model_configs['dataset.cell_line'] == cell_line].head(self.choose_n_configs)
-            for cell_line in self.top_model_configs['dataset.cell_line'].unique()
+            self.top_model_configs[self.top_model_configs[self.platiglib_cell_line_col] == cell_line].head(self.choose_n_configs)
+            for cell_line in self.top_model_configs[self.platiglib_cell_line_col].unique()
         ], ignore_index=True)
 
         run_ids = []
@@ -727,22 +731,22 @@ class DatasetAndModelParameterAnalyzer:
         merged_table = pd.merge(
             self.outer_loop_r2_scores_table,
             self.top_model_configs,
-            on=model_sweep_parameters + ['dataset.cell_line'],
+            on=model_sweep_parameters + [self.platiglib_cell_line_col],
             how='inner',
             suffixes=('_outer', '_inner')
         ).sort_values(
-            by=['dataset.cell_line', 'outer_loop_holdout_r2_score', 'avg_holdout_r2_score'],
+            by=[self.platiglib_cell_line_col, 'outer_loop_holdout_r2_score', 'avg_holdout_r2_score'],
         )
 
         assert merged_table.shape[0] == len(self.outer_loop_r2_scores_table), "Mismatch in the number of rows after merging with top_model_configs"    
-        self.inner_vs_outer_r2_scores_table = merged_table[model_sweep_parameters + ["run_id", "dataset.cell_line", "avg_holdout_r2_score", "outer_loop_holdout_r2_score"]]
+        self.inner_vs_outer_r2_scores_table = merged_table[model_sweep_parameters + ["run_id", self.platiglib_cell_line_col, "avg_holdout_r2_score", "outer_loop_holdout_r2_score"]]
         
         # Create a scatterplot of avg_holdout_r2_score vs. outer_loop_holdout_r2_score
         plt.figure(figsize=(4,3), dpi=200)
         sns.scatterplot(
             x="avg_holdout_r2_score", 
             y="outer_loop_holdout_r2_score", 
-            hue="dataset.cell_line", 
+            hue=self.platiglib_cell_line_col, 
             data=self.inner_vs_outer_r2_scores_table, 
             palette="Set2", 
             edgecolor="black", 
@@ -778,17 +782,17 @@ class DatasetAndModelParameterAnalyzer:
         linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'OLS']
 
         # Sort by dataset.cell_line to guarantee x-axis order
-        linear_sweep = linear_sweep.sort_values(by='dataset.cell_line')
-        unique_cell_lines = linear_sweep['dataset.cell_line'].unique()
+        linear_sweep = linear_sweep.sort_values(by=self.platiglib_cell_line_col)
+        unique_cell_lines = linear_sweep[self.platiglib_cell_line_col].unique()
 
         # Extract the exact holdout_r2_score for each cell line
-        bar_data = linear_sweep[['dataset.cell_line', 'holdout_r2_score']].drop_duplicates()
+        bar_data = linear_sweep[[self.platiglib_cell_line_col, 'holdout_r2_score']].drop_duplicates()
         assert bar_data.shape[0] == len(unique_cell_lines), "Mismatch in the number of unique cell lines and exact $R^2$ Scores"
 
         # Create a bar plot for holdout_r2_score by dataset.cell_line
         plt.figure(figsize=(4, 3), dpi=200)
         ax = sns.barplot(
-            x='dataset.cell_line', 
+            x=self.platiglib_cell_line_col, 
             y='holdout_r2_score', 
             data=bar_data, 
             palette='Set2', 
@@ -821,7 +825,7 @@ class DatasetAndModelParameterAnalyzer:
         linear_sweep = self.sweep_results['linear'].copy(deep=True)
         linear_sweep = linear_sweep[linear_sweep['sweep_name'] == 'ElasticNet']
 
-        unique_cell_lines = sorted(linear_sweep['dataset.cell_line'].unique())
+        unique_cell_lines = sorted(linear_sweep[self.platiglib_cell_line_col].unique())
         hue_order = sorted(linear_sweep['model.l1_ratio'].unique())
 
            # Create a scatterplot of holdout_r2_score vs. holdout_sigmoid_r2
@@ -829,7 +833,7 @@ class DatasetAndModelParameterAnalyzer:
         sns.scatterplot(
             x="holdout_r2_score", 
             y="holdout_sigmoid_r2", 
-            hue="dataset.cell_line", 
+            hue=self.platiglib_cell_line_col, 
             data=linear_sweep, 
             hue_order= unique_cell_lines,
             palette="Set2", 
@@ -865,7 +869,7 @@ class DatasetAndModelParameterAnalyzer:
 
             for i, cell_line in enumerate(unique_cell_lines):
                 ax = axes[i]
-                subset = linear_sweep[linear_sweep['dataset.cell_line'] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
+                subset = linear_sweep[linear_sweep[self.platiglib_cell_line_col] == cell_line].sort_values(by=['model.alpha', 'model.l1_ratio'])
 
                 sns.swarmplot(
                     x='model.alpha', y=y_variable, hue='model.l1_ratio',
@@ -908,8 +912,8 @@ class DatasetAndModelParameterAnalyzer:
         )
 
         run_ids = []
-        for cell_line in configs['dataset.cell_line'].unique():
-            top_row = configs[configs['dataset.cell_line'] == cell_line].iloc[0]
+        for cell_line in configs[self.platiglib_cell_line_col].unique():
+            top_row = configs[configs[self.platiglib_cell_line_col] == cell_line].iloc[0]
             alpha = top_row['model.alpha']
             l1_ratio = top_row['model.l1_ratio']
 
@@ -918,7 +922,7 @@ class DatasetAndModelParameterAnalyzer:
             matching_row = linear_sweep[
                 (linear_sweep['model.alpha'] == alpha) &
                 (linear_sweep['model.l1_ratio'] == l1_ratio) &
-                (linear_sweep['dataset.cell_line'] == cell_line)
+                (linear_sweep[self.platiglib_cell_line_col] == cell_line)
             ]
 
             assert matching_row.shape[0] == 1, f"Expected exactly 1 matching row, found {matching_row.shape[0]} for cell line {cell_line}"
@@ -953,7 +957,7 @@ class DatasetAndModelParameterAnalyzer:
         merged_data = pd.merge(
             configs,
             linear_sweep,
-            on=['dataset.cell_line', 'model.l1_ratio', 'model.alpha'],
+            on=[self.platiglib_cell_line_col, 'model.l1_ratio', 'model.alpha'],
             how='inner'
         )
         assert merged_data.shape[0] == 2, "Expected exactly 2 rows after merging with linear_sweep"
@@ -963,7 +967,7 @@ class DatasetAndModelParameterAnalyzer:
         sns.scatterplot(
             x="avg_holdout_r2_score",
             y="outer_loop_holdout_r2_score",
-            hue="dataset.cell_line",
+            hue=self.platiglib_cell_line_col,
             data=merged_data,
             palette="Set2",
             edgecolor="black",
@@ -1181,10 +1185,12 @@ if __name__ == "__main__":
 
     if args.parallelize:
 
-        wandb_dataset_sweep = pd.read_csv("../output/wandb_summary_tables/dataset_sweep_summary.tsv", sep="\t")
-        unique_combinations = wandb_dataset_sweep[['dataset.cell_line', 'dataset.features.binding_matrix.window', 'dataset.min_read_count']].drop_duplicates()
+        cell_line_col = "dataset.data_source.EncodeRBPBindingDataSource.cell_line"
 
-        cell_lines = sorted(unique_combinations['dataset.cell_line'].unique())
+        wandb_dataset_sweep = pd.read_csv("../output/wandb_summary_tables/dataset_sweep_summary.tsv", sep="\t")
+        unique_combinations = wandb_dataset_sweep[[cell_line_col, 'dataset.features.binding_matrix.window', 'dataset.min_read_count']].drop_duplicates()
+
+        cell_lines = sorted(unique_combinations[cell_line_col].unique())
         windows = sorted(unique_combinations['dataset.features.binding_matrix.window'].unique())
         min_read_counts = sorted(unique_combinations['dataset.min_read_count'].unique())
 
