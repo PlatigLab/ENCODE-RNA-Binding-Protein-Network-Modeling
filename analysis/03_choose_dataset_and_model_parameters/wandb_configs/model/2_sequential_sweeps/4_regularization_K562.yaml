@@ -1,5 +1,8 @@
 # Sweep configuration
 sweep:
+  name: 4:reg_alpha-reg_lambda:K562
+  project: yogi-rbp-ml-gencode-v24-v29-matching-exons
+
   method: grid
   metric:
     name: holdout_r2_score
@@ -11,11 +14,13 @@ config_overlay:
   platiglib_project: rbpse
 
   dataset:
-    cell_line: K562
     name: RBPSEDataset
-    three_exon_combos: all
-    window: 100
-    min_read_count: 40
+    data_source: 
+      EncodeRBPBindingDataSource:
+        cell_line: K562
+        three_exon_combos: all
+        min_read_count: 40
+        window: 100
 
     features: 
       binding_matrix: 
@@ -36,9 +41,6 @@ config_overlay:
       num_folds: 5
       group_column: 'ensembl_gene_id'
       validate_frac_of_train: 0.10
-
-    wandb:
-      project: yogi-xgbregressor-hyperparameter-sweep-april-2025
   
   model:
     name: XGBRegressor
@@ -47,24 +49,24 @@ config_overlay:
     n_jobs: -1
     eval_metric: ['rmse', 'logloss']
     n_estimators: 100000
+    early_stopping_rounds: 100
 
     # FROM PREVIOUS SWEEPS
-    early_stopping_rounds: 100
-    learning_rate: 0.05
+    learning_rate: 0.01
     max_depth: 5
 
-    min_child_weight: 1
-    gamma: 0.5
+    min_child_weight: 50
+    gamma: 1.0
 
-    colsample_bytree: 0.5
-    subsample: 1
+    subsample: 0.75
+    colsample_bytree: 0.25
 
 
 # Parameters to sweep
 parameters:
 
   training.seed: 
-    values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+    values: [100, 200, 300, 400, 500, 600, 700]
 
   # REGULARIZATION
   model.reg_alpha:
