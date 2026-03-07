@@ -1,0 +1,7 @@
+{
+    "name": "ElasticNet",
+    "seed": 17,
+    "cell_line": "K562",
+    "l1_ratio": 1.0,
+    "alpha": 0.0001
+}
