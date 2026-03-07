@@ -218,8 +218,10 @@ class YogiPlatigLibModelReplicator:
         test_predictions = self.model.predict(self.test_input)
         # Calculate the R2 score
         r2 = r2_score(self.test_target, test_predictions)
+        
         # Log the performance
         logger.info(f"Model R2 score on test data: {r2}")
+        self.test_r2_score = r2
 
     
     def get_all_predictions(self): 
@@ -256,23 +258,20 @@ class YogiPlatigLibModelReplicator:
 
         logger.info(f"R2 score for all data predictions: {r2_score(all_target_data, predictions)}")
 
-        # Add a new column "Partition" to specify Train, Test, or Validate
-        partition_column = []
-        for idx in df["index"]:
-            partition = None
-            for key, unique_ids in self.unique_ids_dict.items():
-                if idx in unique_ids:
-                    partition = key.split("_")[0].capitalize()
-                    break
+        # Create a mapping of index to partition
+        partition_data = []
+        for key, unique_ids in self.unique_ids_dict.items():
+            partition_name = key.split("_")[0].capitalize()
+            for idx in unique_ids:
+                partition_data.append({"index": idx, "Partition": partition_name})
+        
+        partition_df = pl.DataFrame(partition_data)
+        
+        df = df.join(partition_df, on="index", how="left")
 
-            assert partition is not None, f"Index {idx} not found in any partition."
-            partition_column.append(partition)
-
-        df = df.with_columns(pl.Series("Partition", partition_column))
-        # Assert that there are no missing values in the Partition column
-        assert df["Partition"].is_not_null().all(), "Partition column contains missing values."
-
+        assert df["Partition"].is_in({"Train", "Test", "Validate"}).all(ignore_nulls=False), "Partition column contains unexpected values."
         assert len(df) == original_df_size, f"Length mismatch after adding predictions: {len(df)} vs {original_df_size}"
+        
         self.output_df = df
         logger.success(f"All predictions made.")
 
@@ -289,6 +288,9 @@ class YogiPlatigLibModelReplicator:
 
         predictions_filename = f"{PREDICTIONS_DIR}/{self.model_type}/{self.unique_hash}.feather"   
         self.output_df.write_ipc(predictions_filename, compression="lz4")
+
+        with open(f"{PREDICTIONS_DIR}/{self.model_type}/{self.unique_hash}_test_r2_score.txt", 'w') as f:
+            f.write(f"{self.test_r2_score}\n")
 
         logger.success(f"Model and predictions saved to {MODEL_DIR}/{self.model_type}/ and {PREDICTIONS_DIR}/{self.model_type}/ respectively.")
 
