@@ -74,11 +74,7 @@ class YogiBindingPatternAnalyzer:
 
                 binding_data = binding_data \
                     .filter(pl.col("Total Read Counts") >= 40) \
-                    .with_columns(
-                        [
-                            pl.col(col).cast(pl.UInt8) for col in binding_cols
-                        ]
-                    ).collect()
+                    .collect() 
 
                 assert binding_data["chr"].is_in([f"chr{i}" for i in range(1, 23)]).all(), "The 'chr' column contains unexpected values"
                 assert binding_data["index"].n_unique() == binding_data.shape[0], "The 'index' column contains duplicate values"
@@ -107,7 +103,9 @@ class YogiBindingPatternAnalyzer:
 
                     modified_dfs.append(subset_df)
 
-                binding_data = pl.concat(modified_dfs, how='vertical_relaxed')
+                binding_data = pl.concat(modified_dfs, how='vertical_relaxed').with_columns(
+                    [pl.col(col).cast(pl.UInt8) for col in binding_cols]
+                )
 
                 assert binding_data.shape == original_binding_data_shape, "Dataframe shape changed after modification"
                 binding_data = binding_data.sort("index")
