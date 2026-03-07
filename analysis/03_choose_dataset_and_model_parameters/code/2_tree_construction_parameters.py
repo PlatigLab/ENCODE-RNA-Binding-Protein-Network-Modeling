@@ -7,7 +7,7 @@ YAML_ABS_PATH = os.path.abspath(YAML_FILE)
 os.chdir(SCRIPT_DIR)
 
 os.system(
-    f'python {SCRIPT_DIR}/send_wandb_sweep.py '
+    f'python3.11 {SCRIPT_DIR}/send_wandb_sweep.py '
     '--memory 128 '
     '--cpu 16 '
     f'--sweep-config {YAML_ABS_PATH} '
