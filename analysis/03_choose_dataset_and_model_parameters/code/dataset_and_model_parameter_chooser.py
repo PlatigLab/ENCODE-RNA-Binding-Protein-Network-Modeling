@@ -38,69 +38,90 @@ class DatasetAndModelParameterAnalyzer:
     def retrieve_wandb_summary_tables(self):
         
         self.sweep_results = {}
-    
         output_folder = Path("../output/wandb_summary_tables/")
-        if len(list(output_folder.glob('*'))) == len(self.sweep_projects):
+    
+        logger.info("Retrieving summary tables from WandB")
 
-            self.sweep_results = {file.stem.split("_")[0]: pd.read_csv(file, sep="\t") for file in output_folder.glob('*')}
-
-            logger.warning("REMINDER: removing early_stopping_rounds outside of 100")
-            model_df = self.sweep_results['model']
-            model_df = model_df[model_df['model.early_stopping_rounds'] == 100]
-            self.sweep_results['model'] = model_df
-
-            for key, df in self.sweep_results.items():
-                logger.info(f"{key} summary table contains {df.shape[0]} rows")
-
-                # if key == 'variations': 
-                #     if "data_file" in df.columns:
-                #         df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
-
-            logger.success("FROM CACHE: Retrieved WandB summary tables")
-
-        else: 
+        for type in self.sweep_projects:
+            output_file = output_folder / f"{type}_sweep_summary.tsv"
             
-            logger.info("Retrieving summary tables from WandB")
+            # Load previous data if it exists
+            if output_file.exists():
+                previous_data = pd.read_csv(output_file, sep="\t")
+                existing_run_ids = set(previous_data['run_id'].unique())
 
-            for type in self.sweep_projects: 
-                output_file = output_folder / f"{type}_sweep_summary.tsv"
-                if not output_file.exists():
-                    logger.info(f"Retrieving {type} sweep summary table from WandB")
-                    runs = wandb.Api().runs(self.sweep_projects[type])
+                if len(wandb.Api().runs(self.sweep_projects[type], per_page=1)) == len(previous_data):
+                    self.sweep_results[type] = previous_data
+                    logger.info(f"All runs for {type} sweep are already cached, skipping retrieval from WandB")
+                    continue
+                
+                else: 
+                    logger.info("Found existing summary table, will only retrieve new runs from WandB... ")
+                
+            else:
+                logger.info(f"No existing summary table found for {type} sweep, retrieving all runs from WandB... ")
+                previous_data = pd.DataFrame()
+                existing_run_ids = set()
+                        
+            logger.info(f"Retrieving {type} sweep summary table from WandB")
+            runs = wandb.Api().runs(self.sweep_projects[type], per_page=1000)
 
-                    run_data = []
-                    for run in tqdm(runs, desc=f'Collecting data for {type} sweep'):
+            run_data = []
+            for run in tqdm(runs, desc=f'Collecting data for {type} sweep'):
+                
+                # Skip if this run_id already exists
+                if run.id in existing_run_ids:
+                    continue
 
-                        run_info = {
-                            "run_id": run.id,
-                            "run_name": run.name,
-                            "state": run.state,
-                            "sweep_name": run.sweep.name if run.sweep else None,
-                            "sweep_id": run.sweep.id if run.sweep else None
-                        }
+                run_info = {
+                    "run_id": run.id,
+                    "run_name": run.name,
+                    "state": run.state,
+                    "sweep_name": run.sweep.name if run.sweep else None,
+                    "sweep_id": run.sweep.id if run.sweep else None
+                }
 
-                        # Extract config values
-                        config = json.loads(run.json_config)
-                        for key, item in config.items():
-                            if key != "_wandb":  # Skip wandb metadata
-                                run_info[key] = item["value"]
+                # Extract config values
+                config = json.loads(run.json_config)
+                for key, item in config.items():
+                    if key != "_wandb":  # Skip wandb metadata
+                        run_info[key] = item["value"]
 
-                        # Add metrics
-                        metrics = {k: v for k, v in run.summary._json_dict.items() if isinstance(v, float)}
-                        run_info.update(metrics)
+                # Add metrics
+                metrics = {k: v for k, v in run.summary._json_dict.items() if isinstance(v, float)}
+                run_info.update(metrics)
 
-                        run_data.append(run_info)
+                run_data.append(run_info)
 
-                    if type == 'model':
-                        for row in run_data:
-                            if row["sweep_name"].count(":") == 2:
-                                row["sweep_name"] = row["sweep_name"].rsplit(":", 1)[0]
-                                
-                    run_df = pd.DataFrame(run_data)
-                    run_df.to_csv(output_folder / f"{type}_sweep_summary.tsv", index=False, sep="\t")
-                    self.sweep_results[type] = run_df
+            if type == 'model':
+                for row in run_data:
+                    if row["sweep_name"] and row["sweep_name"].count(":") == 2:
+                        row["sweep_name"] = row["sweep_name"].rsplit(":", 1)[0]
             
-            logger.success("Retrieved & cached WandB summary tables")
+            # Combine previous data with new data
+            if run_data:
+                new_df = pd.DataFrame(run_data)
+                run_df = pd.concat([previous_data, new_df], ignore_index=True)
+            else:
+                run_df = previous_data
+            
+            run_df.sort_values(by=['sweep_name', 'run_id']).to_csv(output_file, index=False, sep="\t")
+            self.sweep_results[type] = run_df
+
+        logger.warning("REMINDER: removing early_stopping_rounds outside of 100")
+        
+        model_df = self.sweep_results['model']
+        model_df = model_df[model_df['model.early_stopping_rounds'] == 100]
+        self.sweep_results['model'] = model_df
+
+        for key, df in self.sweep_results.items():
+            logger.info(f"{key} summary table contains {df.shape[0]} rows")
+
+            # if key == 'variations': 
+            #     if "data_file" in df.columns:
+            #         df["cell_line"] = df["data_file"].apply(lambda x: str(x).split("_")[0])
+
+        logger.success("WandB summary tables loaded")
 
 
     def run_summary_table_assertions(self):
@@ -130,7 +151,7 @@ class DatasetAndModelParameterAnalyzer:
             #     assert table[dataset_cols].duplicated().sum() == 0, "There are duplicate rows in the dataset columns"
 
             assert table['holdout_r2_score'].apply(lambda x: isinstance(x, float) and not pd.isna(x)).all(), "Not all values in holdout_r2_score are valid decimal float values"
-            assert (table['training.seed'] != 0).all() and (table['training.seed'] != 0.0).all(), "Some runs have training.seed equal to 0"
+            assert table['training.seed'].isin(set(list(range(100, 800, 100)))).all(), "Not all training.seed values are in {100, 200, 300, 400, 500, 600, 700}"
             
             group_cols = [col for col in table.columns if col.startswith("dataset.") or col.startswith("model.") or col.startswith("training.")]
             
