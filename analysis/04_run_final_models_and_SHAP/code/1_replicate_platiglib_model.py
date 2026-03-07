@@ -1,4 +1,4 @@
-import json, argparse, sys, gc, copy, pickle, os, gzip, glob
+import json, argparse, sys, gc, pickle, os, gzip, glob
 
 import polars as pl
 
@@ -10,6 +10,7 @@ from sklearn.linear_model import ElasticNet
 from sklearn.metrics import r2_score
 
 CONFIGS_DIR = "../../03_choose_dataset_and_model_parameters/output/model_reproduction"
+DATA_SPLITS_DIR = "../outputs/data_splits"
 MODEL_DIR = "../outputs/pickled_models"
 PREDICTIONS_DIR = "../outputs/predictions"
 
@@ -22,8 +23,71 @@ class YogiPlatigLibModelReplicator:
 
 
     def __post_init__(self):
-        self.initialize_config()
+
+        if self.config_file == "Split Data":
+            self.split_data()
+        elif self.config_file.endswith(".json"):
+            self.initialize_config()
+        else: 
+            raise ValueError("Invalid config_file argument. Must be 'Split Data' or a path to a JSON config file.")
     
+
+    def split_data(self):
+        
+        for cell_line in ["HepG2", "K562"]: 
+            cell_line_lf = pl.scan_ipc(
+                    f"{self.DATA_DIR}/{cell_line}_100.feather", 
+                )
+            # Get unique ENSEMBL Gene IDs
+            gene_ids = sorted(cell_line_lf.select("ENSEMBL Gene ID").unique().collect()["ENSEMBL Gene ID"].to_list())
+
+            # Split genes into train (80%) and test (20%)
+            train_genes, test_genes = train_test_split(
+                gene_ids, 
+                test_size=0.2, 
+                random_state=17
+            )
+
+            # Split train genes into train (90%) and validate (10%)
+            train_genes, validate_genes = train_test_split(
+                train_genes, 
+                test_size=0.1, 
+                random_state=17
+            )
+
+            # Get index values for each set
+            train_indices = cell_line_lf.filter(
+                pl.col("ENSEMBL Gene ID").is_in(train_genes)
+            ).select("index").collect()["index"].sort().to_list()
+
+            test_indices = cell_line_lf.filter(
+                pl.col("ENSEMBL Gene ID").is_in(test_genes)
+            ).select("index").collect()["index"].sort().to_list()
+
+            validate_indices = cell_line_lf.filter(
+                pl.col("ENSEMBL Gene ID").is_in(validate_genes)
+            ).select("index").collect()["index"].sort().to_list()
+
+            # Assert no overlap between sets
+            assert len(set(train_indices) & set(test_indices)) == 0, "Overlap between train and test"
+            assert len(set(train_indices) & set(validate_indices)) == 0, "Overlap between train and validate"
+            assert len(set(test_indices) & set(validate_indices)) == 0, "Overlap between test and validate"
+            assert len(train_indices) + len(test_indices) + len(validate_indices) == cell_line_lf.select(pl.col('index').count()).collect().item(), "Total indices do not match original dataframe length"
+
+            # Create and save dictionary
+            splits_dict = {
+                "train_ind": sorted(list(train_indices)),
+                "test_ind": sorted(list(test_indices)),
+                "validate_ind": sorted(list(validate_indices)),
+            }
+
+            with gzip.open(f"{DATA_SPLITS_DIR}/{cell_line}_splits.json.gz", 'wt') as f:
+                json.dump(splits_dict, f, indent=2)
+
+            logger.info(f"Saved splits for {cell_line}: train={len(train_indices)}, test={len(test_indices)}, validate={len(validate_indices)}")
+    
+        logger.success("Data splitting completed for all cell lines.")
+
 
     def initialize_config(self):
         with open(self.config_file, 'r') as f:
@@ -37,9 +101,6 @@ class YogiPlatigLibModelReplicator:
         self.cell_line = self.config.pop('cell_line')
         self.model_type = self.config.pop('name')
         self.config['random_state'] = self.config.pop('seed')
-
-        with gzip.open(f"{CONFIGS_DIR}/rows_to_reproduce/{self.cell_line}.pkl.gz", 'rb') as f:
-            self.indices_dict = pickle.load(f)
 
 
     def replicate_model(self): 
@@ -55,24 +116,21 @@ class YogiPlatigLibModelReplicator:
 
     def get_unique_ids_for_training_and_evaluation(self): 
 
-        unique_ids_dict = {}
-        for key, indices in self.indices_dict.items():
-
-            if key.endswith("_ind"):
-                metadata_df = self.indices_dict["metadata_df"]
-                subset_df = metadata_df[metadata_df['index'].isin(indices)]
-
-                assert len(subset_df) == len(indices), f"Length mismatch for {key}: {len(subset_df)} vs {len(indices)}"
-                unique_ids_dict[key] = set(subset_df["unique_id"])
-
-        if self.model_type !="XGBRegressor":
-            unique_ids_dict["train_meta_ind"] = unique_ids_dict["train_meta_ind"].union(unique_ids_dict["validate_meta_ind"])
-            del unique_ids_dict["validate_meta_ind"]
-
+        with gzip.open(f"{DATA_SPLITS_DIR}/{self.cell_line}_splits.json.gz", 'rt') as f:
+            indices_dict = json.load(f)
         
-        self.unique_ids_dict = unique_ids_dict
-        del self.indices_dict
-        gc.collect()
+        if self.model_type == "XGBRegressor":
+            self.unique_ids_dict = {
+                "train_ind": indices_dict["train_ind"],
+                "test_ind": indices_dict["test_ind"],
+                "validate_ind": indices_dict["validate_ind"],
+            }
+        
+        elif self.model_type == "ElasticNet":
+            self.unique_ids_dict = {
+                "train_ind": indices_dict["train_ind"] + indices_dict["validate_ind"],
+                "test_ind": indices_dict["test_ind"],
+            }
 
     
     def get_training_validation_test_data(self):
@@ -245,16 +303,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run XGBRegressor model with optional arguments.")
     parser.add_argument('--config_file', type=str, help="Provide JSON config file with data and model arguments.")
     parser.add_argument('--run_all', action='store_true', help="Run all JSON config files (1 job for each config).")
+    parser.add_argument('--split_data', action='store_true', help="Create the train/test/validate splits. This NEEDS TO BE RUN FIRST before running the model replication with --config_file or --run_all, but only needs to be run once.")
 
     # Parse arguments
     args = parser.parse_args() 
 
     if args.run_all:
-
         CPUS = 32
         MEM= 256
-        PARTITION="parallel"
-        ACCOUNT="platiglab"
+        PARTITION="standard"
+        ACCOUNT="platiglab_paid"
         SLURM_DIR="../outputs/SLURM_logs/"
 
         # Get all JSON config files in the directory
@@ -267,11 +325,13 @@ if __name__ == "__main__":
 
             if len(glob.glob(f"{PREDICTIONS_DIR}/**/{job_prefix}*.feather", recursive=True)) == 0: 
                 os.system(
-                    f"sbatch --job-name={job_prefix} -N2 -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
+                    f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --config_file {json_file}'"
                 )
             else: 
                 print(f"Skipping hash {job_prefix} as it has already been run.")
 
+    elif args.split_data:
+        YogiPlatigLibModelReplicator("Split Data")   
 
     elif args.config_file:
         YogiPlatigLibModelReplicator(args.config_file).replicate_model()
