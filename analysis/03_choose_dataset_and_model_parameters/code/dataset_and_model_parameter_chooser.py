@@ -1,5 +1,5 @@
 import pandas as pd, seaborn as sns, matplotlib.pyplot as plt, polars as pl, numpy as np
-import wandb, json, argparse, os, sys, glob, string
+import wandb, json, argparse, os, sys, glob, string, random
 from tqdm import tqdm
 
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ class DatasetAndModelParameterAnalyzer:
     sweep_projects = {
         # 'dataset': 'yogi-dataset-sweep-feb-2025', 
         'model': 'yogi-rbp-ml-gencode-v24-v29-matching-exons',
-        # 'linear_models': 'yogi-RBP-ML-linear-models-april-2025', 
+        'linear': "yogi-linear-models-gencode-v24-v29-matching-exons", 
         # 'variations_of_model': "yogi-wild-west-model-variation-rapid-testing-v1" 
     }
 
@@ -239,7 +239,6 @@ class DatasetAndModelParameterAnalyzer:
         assert all(len(group) == 7 for _, group in grouped), "Not all groups have exactly 7 entries"
         
         average_per_config = grouped['holdout_r2_score'].mean().reset_index().rename(columns={'holdout_r2_score': 'avg_holdout_r2_score'})
-        
         combined_configs = []
         for cell_line in average_per_config[self.platiglib_cell_line_col].unique().tolist():
 
@@ -357,13 +356,8 @@ class DatasetAndModelParameterAnalyzer:
                     size=1
                     linewidth=0.1
 
-                if type != 'linear': 
-                    sns.swarmplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
-                    sns.boxplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
-                elif type == 'linear': 
-                    sns.violinplot(
-                        x=self.platiglib_cell_line_col, y=y_variable, data=data, inner='box', palette=['lightblue', 'lightcoral']
-                    )
+                sns.swarmplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, palette=['lightblue', 'lightcoral'], linewidth=linewidth, edgecolor='black', size=size)
+                sns.boxplot(x=self.platiglib_cell_line_col, y=y_variable, data=data, showcaps=False, boxprops={'facecolor':'None', 'edgecolor':'black'}, whiskerprops={'color':'black', 'linewidth':2}, medianprops={'color':'black'}, showfliers=False)
 
                 plt.title(f'{type.capitalize()} Sweep: $R^2$ Score Distribution', y=1.03)
                 plt.xlabel('Cell Line')
@@ -666,8 +660,7 @@ class DatasetAndModelParameterAnalyzer:
         model_sweep = self.sweep_results['model'].copy(deep=True)
         model_sweep = model_sweep[model_sweep['training.seed'] == 100]
 
-        if not hasattr(self, 'top_model_configs'):
-            self.show_top_model_configs_after_averaging_by_seed(all_configs=True)
+        self.show_top_model_configs_after_averaging_by_seed(all_configs=True, linear=False)
 
         outer_loop_candidates = pd.concat([
             self.top_model_configs[self.top_model_configs[self.platiglib_cell_line_col] == cell_line].head(self.choose_n_configs)
@@ -750,8 +743,8 @@ class DatasetAndModelParameterAnalyzer:
             data=self.inner_vs_outer_r2_scores_table, 
             palette="Set2", 
             edgecolor="black", 
-            linewidth=1,
-            s=40
+            linewidth=0.5,
+            s=30
         )
 
         # Add the y=x line
@@ -913,21 +906,23 @@ class DatasetAndModelParameterAnalyzer:
 
         run_ids = []
         for cell_line in configs[self.platiglib_cell_line_col].unique():
-            top_row = configs[configs[self.platiglib_cell_line_col] == cell_line].iloc[0]
-            alpha = top_row['model.alpha']
-            l1_ratio = top_row['model.l1_ratio']
+            top_rows = configs[configs[self.platiglib_cell_line_col] == cell_line].head(self.choose_n_configs)
+            
+            for _, top_row in top_rows.iterrows():
+                alpha = top_row['model.alpha']
+                l1_ratio = top_row['model.l1_ratio']
 
-            linear_sweep = self.sweep_results['linear'].copy(deep=True)
-            linear_sweep = linear_sweep[linear_sweep['training.seed'] == 100]
-            matching_row = linear_sweep[
-                (linear_sweep['model.alpha'] == alpha) &
-                (linear_sweep['model.l1_ratio'] == l1_ratio) &
-                (linear_sweep[self.platiglib_cell_line_col] == cell_line)
-            ]
+                linear_sweep = self.sweep_results['linear'].copy(deep=True)
+                linear_sweep = linear_sweep[linear_sweep['training.seed'] == 100]
+                matching_row = linear_sweep[
+                    (linear_sweep['model.alpha'] == alpha) &
+                    (linear_sweep['model.l1_ratio'] == l1_ratio) &
+                    (linear_sweep[self.platiglib_cell_line_col] == cell_line)
+                ]
 
-            assert matching_row.shape[0] == 1, f"Expected exactly 1 matching row, found {matching_row.shape[0]} for cell line {cell_line}"
+                assert matching_row.shape[0] == 1, f"Expected exactly 1 matching row, found {matching_row.shape[0]} for cell line {cell_line}"
 
-            run_ids.append(matching_row['run_id'].iloc[0])
+                run_ids.append(matching_row['run_id'].iloc[0])
 
         output_file = "../output/chosen_models_for_outer_loop/elasticnet_run_ids.txt"
         with open(output_file, "w") as f:
@@ -944,7 +939,7 @@ class DatasetAndModelParameterAnalyzer:
 
         # Subset to where outer_loop_holdout_r2_score is not null
         linear_sweep = linear_sweep[linear_sweep['outer_loop_holdout_r2_score'].notna()]
-        assert linear_sweep.shape[0] == 2, "Expected exactly 2 rows where outer_loop_holdout_r2_score is not null"
+        assert linear_sweep.shape[0] == 10, f"Expected 10 rows in linear_sweep after subsetting for non-null outer_loop_holdout_r2_score, but found {linear_sweep.shape[0]}"
 
         configs = self.show_top_model_configs_after_averaging_by_seed(
             all_configs=True, 
@@ -960,7 +955,7 @@ class DatasetAndModelParameterAnalyzer:
             on=[self.platiglib_cell_line_col, 'model.l1_ratio', 'model.alpha'],
             how='inner'
         )
-        assert merged_data.shape[0] == 2, "Expected exactly 2 rows after merging with linear_sweep"
+        assert merged_data.shape[0] == 10, "Expected exactly 2 rows after merging with linear_sweep"
 
         # Create a scatterplot
         plt.figure(figsize=(4,3), dpi=200)
@@ -971,8 +966,8 @@ class DatasetAndModelParameterAnalyzer:
             data=merged_data,
             palette="Set2",
             edgecolor="black",
-            linewidth=1,
-            s=50
+            linewidth=0.5,
+            s=30
         )
 
         # Add the y=x line
