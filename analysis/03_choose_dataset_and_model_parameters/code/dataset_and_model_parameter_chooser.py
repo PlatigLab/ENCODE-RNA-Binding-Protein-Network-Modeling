@@ -1015,6 +1015,62 @@ class DatasetAndModelParameterAnalyzer:
         plt.close()
 
 
+    def create_model_parameter_configs_for_replication(self): 
+
+        MODEL_PARAMS_DIR = "../output/model_reproduction/model_parameters/"
+        alphanumeric_characters = string.ascii_lowercase
+        
+        xgboost_candidates = self.show_top_model_configs_after_averaging_by_seed(
+            all_configs=True, 
+            linear=False
+        )
+
+        linear_candidates = self.show_top_model_configs_after_averaging_by_seed(
+            all_configs=True, 
+            linear=True
+        )
+        
+        random.seed(17)
+        
+        # num of unique cell lines * number of configs per cell line * 2 (for both XGBoost and ElasticNet)
+        num_hashes_needed = len(xgboost_candidates[self.platiglib_cell_line_col].unique()) * self.choose_n_configs * 2
+        random_strings = sorted([''.join(random.choices(alphanumeric_characters, k=4)) for _ in range(num_hashes_needed)])
+        random_string_idx = 0
+
+        for df, name in [(xgboost_candidates, "XGBRegressor"), (linear_candidates, "ElasticNet")]:
+            
+            for cell_line in df[self.platiglib_cell_line_col].unique():
+                subset_rows = (
+                    df[df[self.platiglib_cell_line_col] == cell_line]
+                    .sort_values(by='avg_holdout_r2_score', ascending=False)
+                    .head(self.choose_n_configs)
+                )
+                
+                for _, subset in subset_rows.iterrows():
+                    config_dict = {"name": name, "seed": 17}
+                    config_dict[self.platiglib_cell_line_col.split(".")[-1]] = subset[self.platiglib_cell_line_col]
+
+                    if name == "XGBRegressor":
+                        config_dict['n_jobs'] = -1
+                        config_dict['objective'] = 'reg:logistic'
+                        config_dict['eval_metric'] = ['rmse', 'logloss']
+                        config_dict['n_estimators'] = 100000
+                    
+                    for col in subset.index:
+                        if col.startswith("model."):
+                            new_key = col.split(".")[-1]
+                            config_dict[new_key] = subset[col]
+                    
+                    OUTPUT_FILE = f"{MODEL_PARAMS_DIR}/{random_strings[random_string_idx]}.json"
+                    random_string_idx += 1
+
+                    assert not Path(OUTPUT_FILE).exists(), f"Filename {OUTPUT_FILE} already exists. This should be very unlikely due to the random string, but try again if this happens."
+                    with open(OUTPUT_FILE, "w") as f:
+                        json.dump(config_dict, f, indent=4)
+
+        logger.success(f"Saved model parameter configs for replication to {MODEL_PARAMS_DIR}")            
+
+
     def visualize_model_variation_results(self): 
         variations_df = self.sweep_results['variations'].copy(deep=True)
 
