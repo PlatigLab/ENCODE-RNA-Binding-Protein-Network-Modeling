@@ -17,7 +17,7 @@ os.chdir(SCRIPT_DIR)
 for cell_line_file in cell_line_yaml_files:
     # Run the sweep
     os.system(
-        f'python {SCRIPT_DIR}/send_wandb_sweep.py '
+        f'python3.11 {SCRIPT_DIR}/send_wandb_sweep.py '
         '--memory 128 '
         '--cpu 16 '
         f'--sweep-config {cell_line_file} '
