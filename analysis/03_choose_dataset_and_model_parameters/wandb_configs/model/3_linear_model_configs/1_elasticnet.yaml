@@ -1,5 +1,8 @@
 # Sweep configuration
 sweep:
+  name: ElasticNet
+  project: yogi-linear-models-gencode-v24-v29-matching-exons
+
   method: grid
   metric:
     name: holdout_r2_score
@@ -12,9 +15,11 @@ config_overlay:
 
   dataset:
     name: RBPSEDataset
-    three_exon_combos: all
-    window: 100
-    min_read_count: 40
+    data_source: 
+      EncodeRBPBindingDataSource:
+        three_exon_combos: all
+        min_read_count: 40
+        window: 100
 
     features: 
       binding_matrix: 
@@ -36,9 +41,6 @@ config_overlay:
     
     profile: 
       metrics: [r2_score, rmse, sigmoid_r2]
-
-    wandb:
-      project: yogi-RBP-ML-linear-models-april-2025 
   
   model:
     name: ElasticNet
@@ -47,13 +49,15 @@ config_overlay:
 # Parameters to sweep
 parameters:
 
-  dataset.cell_line: 
-    values: ["K562", "HepG2"]
+  # INCLUDED IN ALL SWEEPS
   training.seed: 
-    values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+    values: [100, 200, 300, 400, 500, 600, 700]
+
+  dataset.data_source.EncodeRBPBindingDataSource.cell_line:
+    values: [K562, HepG2]
 
   # REGULARIZATION
   model.alpha:
-    logspace: [-4, 2, 14]
+    values: [.0001, .0005, .001, .005, .01, .05, .1, .5, 1, 5, 10, 50, 100]
   model.l1_ratio:
     values: [0.1, 0.25, 0.5, 0.75, 0.9, 1]
