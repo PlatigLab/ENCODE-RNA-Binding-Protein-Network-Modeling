@@ -1,5 +1,5 @@
 import sys, os, argparse, glob, gzip, pickle, shap, gc
-import pandas as pd, polars as pl
+import pandas as pd, polars as pl, numpy as np
 from loguru import logger
 
 MODEL_DIR = "../outputs/pickled_models/XGBRegressor/"
@@ -7,9 +7,9 @@ PREDICTIONS_DIR = "../outputs/predictions/XGBRegressor/"
 SHAP_DIR = "../outputs/SHAP/"
 SLURM_DIR="../outputs/SLURM_logs/"
 
-CPUS = 32
+CPUS = 16
 MEM= 256
-PARTITION="parallel"
+PARTITION="standard"
 ACCOUNT="platiglab"
 
 
@@ -26,27 +26,11 @@ def main(hash, normal_or_interaction):
 
     predictions_lf = pl.scan_ipc(f"{PREDICTIONS_DIR}/{hash}.feather").sort('index')
     binding_cols = [col for col in predictions_lf.collect_schema().names() if col.endswith("_binding")]
-    
-    # Select background data: only rows from Train or Validate partitions and unique binding patterns
-    background_data = (
-        predictions_lf
-        .filter(pl.col("Partition").is_in(["Train", "Validate"]))
-        .unique(subset = binding_cols, keep='first', maintain_order=True)
-        .select(binding_cols)
-        .collect()
-        .to_pandas()
-    )
-
-    assert background_data.columns.tolist() == list(model.column_order_when_fitting)
-    
-    logger.info(f"Background data shape: {background_data.shape}")
-    assert len(background_data) > 50_000, f"Background data must have more than 50K rows. You have {background_data.shape}."
 
     explainer = shap.TreeExplainer(
         model, 
-        data = background_data, 
-        model_output="probability",
-        feature_perturbation="interventional",
+        model_output="raw",
+        feature_perturbation="tree_path_dependent",
     )
 
     # Select all data for SHAP analysis
@@ -62,10 +46,14 @@ def main(hash, normal_or_interaction):
     logger.info(f"Retrieving SHAP values for data with shape: {all_data.shape}")
 
     # Run SHAP analysis
-    shap_values = explainer.shap_values(all_data)
+    shap_values = explainer.shap_values(
+        all_data, 
+        approximate=False,
+        check_additivity=True,
+    )
 
     # Method 1: Use the pickled model's .predict functionality on all_data
-    model_preds = model.predict(all_data)
+    model_preds = model.predict(all_data, output_margin=True)
     del all_data  # Free memory
     gc.collect()
 
@@ -83,6 +71,8 @@ def main(hash, normal_or_interaction):
         .collect()["Predictions"]
         .to_numpy()
     )
+    predictions_np = np.log(predictions_np / (1 - predictions_np))
+
     assert predictions_np.shape[0] == shap_values.shape[0], f"Predictions shape ({predictions_np.shape}) does not match SHAP values shape ({shap_values.shape})"
     diff_pred_col = predictions_np - (shap_values.sum(axis=1) + explainer.expected_value)
 
@@ -113,16 +103,20 @@ def main(hash, normal_or_interaction):
     gc.collect()
 
     # Check for null or missing values and log a warning if any are found
-    if shap_values.null_count().sum_horizontal().item() != 0:
-        logger.warning("There are null or missing values in the SHAP values DataFrame.")
+    null_count = shap_values.null_count().sum_horizontal().item()
+    nan_count = shap_values.select(pl.selectors.float().is_nan().sum()).sum_horizontal().item()
+
+    assert null_count == 0, f"Found {null_count} null values in the SHAP values DataFrame."
+    assert nan_count == 0, f"Found {nan_count} NaN values in the SHAP values DataFrame."
 
     shap_values.write_ipc(f"{SHAP_DIR}/regular/normal/shap_values/{hash}_unique_binding.feather", compression="lz4")
     logger.success(f"SHAP value dataframe with shape {shap_values.shape} saved to {SHAP_DIR}/regular/normal/shap_values/{hash}_unique_binding.feather")
 
     with open(f"{SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl", "wb") as f:
         pickle.dump(explainer, f)
-    logger.success(f"Explainer object saved to {SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl")
 
+    logger.success(f"Explainer object saved to {SHAP_DIR}/regular/normal/explainer_objects/{hash}.pkl")
+    logger.success(f"COMPLETED: SHAP analysis for model hash {hash} with SHAP type '{normal_or_interaction}'")
 
 
 if __name__ == "__main__":
@@ -155,9 +149,9 @@ if __name__ == "__main__":
     else: 
         assert args.run_all_normal or args.run_all_interaction, "Please specify either --run_all_normal or --run_all_interaction."
         
-        model_hashes = [
+        model_hashes = sorted([
                     f.split('/')[-1].split('.pkl.gz')[0] for f in glob.glob(f"{MODEL_DIR}/*.pkl.gz")
-                ]
+                ])
         
         if args.run_all_normal: 
             flag = "--run_normal_SHAP"
@@ -175,5 +169,5 @@ if __name__ == "__main__":
                 job_prefix = f"SHAP_{model_hash}"
 
                 os.system(
-                    f"sbatch --job-name={job_prefix} -N2 -n{CPUS} --mem={MEM}GB --time=1-00:00:00 --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --hash {model_hash} {flag}'"
+                    f"sbatch --job-name={job_prefix} -n{CPUS} --mem={MEM}GB --partition={PARTITION} --account={ACCOUNT} --output={SLURM_DIR}/{job_prefix}.out --error={SLURM_DIR}/{job_prefix}.err --wrap='/bin/python3.11 {__file__} --hash {model_hash} {flag}'"
                 )
