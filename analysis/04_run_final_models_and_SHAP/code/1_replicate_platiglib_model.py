@@ -35,6 +35,8 @@ class YogiPlatigLibModelReplicator:
     def split_data(self):
         
         for cell_line in ["HepG2", "K562"]: 
+            OUTPUT_FILE = f"{DATA_SPLITS_DIR}/{cell_line}_splits.json.gz"
+
             cell_line_lf = pl.scan_ipc(
                     f"{self.DATA_DIR}/{cell_line}_100.feather", 
                 )
@@ -81,7 +83,15 @@ class YogiPlatigLibModelReplicator:
                 "validate_ind": sorted(list(validate_indices)),
             }
 
-            with gzip.open(f"{DATA_SPLITS_DIR}/{cell_line}_splits.json.gz", 'wt') as f:
+            # if there's a previous splits file for this cell line, assert that the splits are the same
+            if os.path.exists(OUTPUT_FILE):
+                with gzip.open(OUTPUT_FILE, 'rt') as f:
+                    previous_splits_dict = json.load(f)
+
+                for key in splits_dict.keys():
+                    assert set(splits_dict[key]) == set(previous_splits_dict[key]), f"Splits for {cell_line} have changed since the last time they were generated. Please investigate before proceeding. Key with mismatch: {key}"
+
+            with gzip.open(OUTPUT_FILE, 'wt') as f:
                 json.dump(splits_dict, f, indent=2)
 
             logger.info(f"Saved splits for {cell_line}: train={len(train_indices)}, test={len(test_indices)}, validate={len(validate_indices)}")
