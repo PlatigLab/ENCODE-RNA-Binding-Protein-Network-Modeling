@@ -10,7 +10,7 @@ ORIGINAL_DATA_DIR = "../outputs/predictions/XGBRegressor/"
 
 CPUS = 32
 MEM= 256
-PARTITION="parallel"
+PARTITION="standard"
 ACCOUNT="platiglab"
 
 
@@ -59,6 +59,7 @@ def main(mode, shap_file):
 
     # Assert no nulls in joined columns
     assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in joined SHAP columns."
+    assert joined_df.select(pl.selectors.float().is_nan().sum()).sum_horizontal().item() == 0, "NaN values found in joined SHAP columns."
 
     # Assert number of columns and rows
     assert joined_df.shape[1] == shap_num_cols, "Number of columns does not match SHAP file."
@@ -68,9 +69,8 @@ def main(mode, shap_file):
     grouped = joined_df.group_by(binding_cols).agg(
         [pl.struct(shap_cols).n_unique().alias("shap_row_nunique")]
     ).select('shap_row_nunique')
-    assert grouped["shap_row_nunique"].max() == 1, (
-        "For at least one unique combination of binding columns, SHAP columns have inconsistent values."
-    )
+
+    assert grouped.get_column("shap_row_nunique").eq(1).all(), f"Expected shap_row_nunique to be 1 for all groups, got {grouped.get_column('shap_row_nunique').unique().to_list()}"
 
     # Cast all binding columns to uint8 in a single call
     joined_df = joined_df.with_columns([pl.col(col).cast(pl.UInt8) for col in binding_cols])
@@ -126,7 +126,6 @@ if __name__ == "__main__":
                 "sbatch",
                 f"--account={ACCOUNT}",
                 f"--partition={PARTITION}",
-                f"-N 2" if PARTITION == "parallel" else '1',
                 f"-n {CPUS}",
                 f"--mem={MEM}G",
                 f"--output=../outputs/SLURM_logs/join_SHAP_with_all_data_{hash}.out",
