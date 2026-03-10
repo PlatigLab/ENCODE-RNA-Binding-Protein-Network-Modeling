@@ -196,6 +196,8 @@ if __name__ == "__main__":
             ).select("Unique Binding Pattern ID #").collect()
             
             total_ubp_ids = total_ubp_id_table["Unique Binding Pattern ID #"].to_list()
+            assert total_ubp_ids == sorted(total_ubp_ids), f"UBP IDs for {cell_line} are not sorted."
+
             total_ids_count = len(total_ubp_ids)
             
             batch_size = metadata_variables["SLURM_JOB_BATCH_SIZE"]
@@ -212,13 +214,16 @@ if __name__ == "__main__":
                 
                 unique_binding_pattern_ID_range = f"{start_id}-{end_id}"
 
-                partition = "standard" if partition_toggle % 2 == 0 else "parallel -N2"
-                partition_toggle += 1
+                OUTPUT_FILE = f"{metadata_variables['SHAP_INTERACTION_VALUES_DIR']}/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.feather"
 
-                os.system(
-                    f"sbatch --account=platiglab --partition={partition} -n4 --mem=32GB --out='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.out' --error='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.err'"
-                    f" --wrap='python3.11 {__file__} --cell_line {cell_line} --unique_binding_pattern_ID_range {unique_binding_pattern_ID_range}'"
-                )        
+                if not pathlib.Path(OUTPUT_FILE).exists():
+                    partition = "standard" if partition_toggle % 2 == 0 else "parallel -N2"
+                    partition_toggle += 1
+
+                    os.system(
+                        f"sbatch --account=platiglab_paid --partition={partition} -n16 --mem=128GB --time=8:00:00 --out='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.out' --error='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.err'"
+                        f" --wrap='python3.11 {__file__} --cell_line {cell_line} --unique_binding_pattern_ID_range {unique_binding_pattern_ID_range}'"
+                    )        
 
     else: 
 
