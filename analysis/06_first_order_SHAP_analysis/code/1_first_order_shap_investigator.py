@@ -42,11 +42,6 @@ class FirstOrderShapInvestigator:
     FDR_THRESHOLD = 0.1
     DPSI_THRESHOLD = 0.1
 
-    XGBOOST_BEST_MODEL_HASHES = {
-        "HepG2": "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd",
-        "K562": "8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db"
-    }
-
     CACHE_INFO = {
         "hash_metadata": "../outputs/hash_metadata/hash_metadata.tsv",
         # "SHAP_mp4": {
@@ -329,6 +324,19 @@ class FirstOrderShapInvestigator:
 
         self.make_model_metadata_from_hash()
         self.cell_lines = sorted(self.hash_metadata['cell_line'].unique().tolist())
+
+        self.XGBOOST_BEST_MODEL_HASHES = {}
+        for cell_line in self.cell_lines:
+            xgboost_subset = self.hash_metadata[
+                (self.hash_metadata['name'] == 'XGBRegressor') & 
+                (self.hash_metadata['cell_line'] == cell_line)
+            ]
+            assert len(xgboost_subset) == 5, f"Expected 5 XGBoost models for {cell_line}, but found {len(xgboost_subset)}"
+            
+            best_hash = xgboost_subset.sort_values('holdout_r2_score', ascending=False).iloc[0]['hash']
+            self.XGBOOST_BEST_MODEL_HASHES[cell_line] = best_hash
+
+        logger.info(f"Best XGBoost model hashes based on holdout R2 score: {self.XGBOOST_BEST_MODEL_HASHES}")
     
 
     def make_model_metadata_from_hash(self):
@@ -341,11 +349,10 @@ class FirstOrderShapInvestigator:
         else: 
             # Get all JSON files in the directory
             json_files = glob.glob(f"{self.PARAMS_DIR}/*.json")
-            assert len(json_files) == 12, "10 XGBoost and 2 ElasticNet JSON files should be present"
+            assert len(json_files) == 20, f"Expected 20 JSON files in {self.PARAMS_DIR}, but found {len(json_files)}"
 
             # List to hold dictionaries
             data = []
-
             # Process each JSON file
             for file_path in json_files:
                 with open(file_path, 'r') as f:
@@ -362,8 +369,20 @@ class FirstOrderShapInvestigator:
                         model = pickle.load(f)
                     file_data['shap_expected_value'] = model.expected_value
 
+            # Add Holdout R2 Score for each hash
+            for file_data in data:
+                hash_value = file_data['hash']
+                model_name = file_data['name']
+                
+                # Construct path to R2 score file
+                r2_score_file = Path(f"{self.PRED_DIR}/{model_name}/{hash_value}_test_r2_score.txt")
+                
+                with open(r2_score_file, 'r') as f:
+                    r2_score = float(f.read().strip())
+                file_data['holdout_r2_score'] = r2_score
+
             hash_metadata = pd.DataFrame(data)
-            hash_metadata = hash_metadata.set_index('hash').reset_index().sort_values(by=['name', 'cell_line'])
+            hash_metadata = hash_metadata.set_index('hash').reset_index().sort_values('hash')
             # Save to CSV
             hash_metadata.to_csv(f"{HASH_FILE}", sep="\t", index=False)
             logger.success(f"Created hash metadata file")
@@ -2030,6 +2049,10 @@ class FirstOrderShapInvestigator:
 
 
     def load_elasticnet_coefficients(self): 
+
+        raise NotImplementedError(
+            "This function was previously implemented for when there were only 2 ElasticNet models (1 per cell line). With the addition of 5 models per cell line, this function needs to be reworked to load and average coefficients across the 5 models for each cell line."
+        )
 
         # Filter hash metadata for rows where 'name' contains 'ElasticNet'
         elasticnet_metadata = self.hash_metadata[self.hash_metadata['name'] == "ElasticNet"].sort_values(by=['cell_line', 'hash'])
@@ -5813,6 +5836,7 @@ class FirstOrderShapInvestigator:
 
                 # Step 8: Assert that there are no missing or null values in the joined DataFrame
                 assert joined_df.null_count().sum_horizontal().item() == 0, "Null values found in the final joined DataFrame"
+                assert joined_df.select(pl.selectors.float().is_nan().sum()).sum_horizontal().item() == 0, "NaN values found in the final joined DataFrame"
 
                 # Step 9: Write to LZ4-compressed feather file
                 joined_df.sort('index').write_ipc(output_file, compression="lz4")
@@ -7100,22 +7124,22 @@ class FirstOrderShapInvestigator:
             logger.success(f"FROM CACHE: loading data for SHAP additivity assertions")
 
             additivity_df = pl.read_csv(data_file, separator="\t", dtypes={"model": str}).to_pandas()
-            logger.info(f'{additivity_df["difference_probability"].describe()}')
+            logger.info(f'{additivity_df["difference_log-odds"].describe()}')
 
-            probability_df = additivity_df.copy()
-            probability_df["Source"] = probability_df["model"].astype(str)
+            log_odds_df = additivity_df.copy()
+            log_odds_df["Source"] = log_odds_df["model"].astype(str)
 
             # Set cell line and source order
-            cell_line_order = sorted(probability_df["cell_line"].unique())
+            cell_line_order = sorted(log_odds_df["cell_line"].unique())
             source_order = [str(i) for i in range(5)] + ["Average"]
 
             plt.figure(figsize=(7, 4), dpi=300)
             
             ax = plt.gca()
             sns.violinplot(
-                data=probability_df,
+                data=log_odds_df,
                 x="cell_line",
-                y="difference_probability",
+                y="difference_log-odds",
                 hue="Source",
                 order=cell_line_order,
                 hue_order=source_order,
@@ -7126,7 +7150,7 @@ class FirstOrderShapInvestigator:
 
             ax.set_title("Difference between Predicted PSI and\n[sum(Local SHAP) + Expected Value]", fontsize=10)
             ax.set_xlabel("Cell Line", fontsize=12)
-            ax.set_ylabel("Difference (Probability)", fontsize=12)
+            ax.set_ylabel("Difference (Log-Odds)", fontsize=12)
 
             ax.tick_params(axis='x', labelsize=10)
             ax.tick_params(axis='y', labelsize=10)
@@ -7180,7 +7204,7 @@ class FirstOrderShapInvestigator:
                     else:
                         assert indices_list == indices, "Indices are not aligned across models"
 
-                    preds = unique_rows["Predictions"].to_numpy()
+                    preds = self.log_odds(unique_rows["Predictions"].to_numpy())
 
                     shap_sum = unique_rows.select(shap_cols).to_numpy().sum(axis=1)
                     diff = preds - (shap_sum + expected_value)
@@ -7190,11 +7214,11 @@ class FirstOrderShapInvestigator:
                             "cell_line": cell_line,
                             "model": model_num,
                             "index": idx,
-                            "difference_probability": d
+                            "difference_log-odds": d
                         })
                 
                 final_shap_lazy = final_shap_lazy_dict[cell_line]
-                final_shap_df = final_shap_lazy.select(["index", "Averaged Prediction (Probability)"] + shap_cols).sort("index").collect()
+                final_shap_df = final_shap_lazy.select(["index", "Averaged Prediction (Log-Odds)"] + shap_cols).sort("index").collect()
                 # Assert indices match
                 assert indices_list == final_shap_df["index"].to_list(), "Indices in final SHAP cache do not match indices_list"
                 
@@ -7203,15 +7227,15 @@ class FirstOrderShapInvestigator:
                 avg_expected_value = np.mean(expected_values)
 
                 # Assert that the lengths match before proceeding
-                assert len(shap_sum) == len(final_shap_df["Averaged Prediction (Probability)"]), "Length mismatch between shap_sum and Averaged Prediction (Probability)"
-                diff_avg = final_shap_df["Averaged Prediction (Probability)"].to_numpy() - (shap_sum + avg_expected_value)
+                assert len(shap_sum) == len(final_shap_df["Averaged Prediction (Log-Odds)"]), "Length mismatch between shap_sum and Averaged Prediction (Log-Odds)"
+                diff_avg = final_shap_df["Averaged Prediction (Log-Odds)"].to_numpy() - (shap_sum + avg_expected_value)
 
                 for idx, d in zip(indices_list, diff_avg):
                     all_results.append({
                         "cell_line": cell_line,
                         "model": "Average",
                         "index": idx,
-                        "difference_probability": d
+                        "difference_Log-Odds": d
                     })
 
                 del unique_rows, final_shap_df, shap_sum, diff_avg, indices_list
@@ -8610,7 +8634,7 @@ class FirstOrderShapInvestigator:
             combined_df = pd.concat(plot_dfs, ignore_index=True).sort_values(by=["Cell Line", "Feature", "rMATS Event ID"])
             combined_df.to_csv(OUTPUT_FILE, sep="\t", index=False, compression="gzip")
 
-            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition (FDR <= {FDR_threshold}) to {OUTPUT_FILE}")
+            logger.success(f"Saved dPSI vs Local SHAP scatterplot data for test partition to {OUTPUT_FILE}")
 
 
     def create_dpsi_vs_local_SHAP_for_all_partitions(self): 
@@ -8832,170 +8856,165 @@ class FirstOrderShapInvestigator:
         line_color = "#fc8d62"
         violin_colors = {"Not Significant": "#8da0cb", f"Significant": "#66c2a5"}
 
-        for dataset in DATASETS:
+        INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
+        
+        df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
+        min_shap = df["CTRL - KD Local SHAP"].min()
+        max_shap = df["CTRL - KD Local SHAP"].max()
 
-            if dataset == "probability":
-                INPUT_FILE = self.CACHE_INFO['dpsi_vs_local_SHAP_scatterplot_data']['test_partition']['table']
-            elif dataset == "logodds":
-                INPUT_FILE = "/project/PlatigLab/users/yogi/backups/2025-07-26_logodds_SHAP/log_odds_test_data_dpsi_vs_local_shap_scatterplot.tsv.gz"
-            
-            df = pd.read_csv(INPUT_FILE, sep="\t", compression="gzip")
-            min_shap = df["CTRL - KD Local SHAP"].min()
-            max_shap = df["CTRL - KD Local SHAP"].max()
+        for cutoff in FDR_CUTOFFS:
+            for dpsi_threshold in DPSI_THRESHOLDS:
 
-            for cutoff in FDR_CUTOFFS:
-                for dpsi_threshold in DPSI_THRESHOLDS:
+                fig, axes = plt.subplots(
+                    nrows=1, ncols=len(self.cell_lines), figsize=(12, 6), dpi=200, sharey=True, sharex=True
+                )
 
-                    fig, axes = plt.subplots(
-                        nrows=1, ncols=len(self.cell_lines), figsize=(12, 6), dpi=200, sharey=True, sharex=True
-                    )
+                for ax, cell_line in zip(axes, self.cell_lines):
+                    df_cell = df[df["Cell Line"] == cell_line].copy()
 
-                    for ax, cell_line in zip(axes, self.cell_lines):
-                        df_cell = df[df["Cell Line"] == cell_line].copy()
-
-                        if only_candidate_features:
-                            candidate_features = self.retrieve_differential_candidate_features()
-                            df_cell = df_cell[
-                                df_cell["Feature"].isin(
-                                    candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
-                                )
-                            ]
+                    if only_candidate_features:
+                        candidate_features = self.retrieve_differential_candidate_features()
+                        df_cell = df_cell[
+                            df_cell["Feature"].isin(
+                                candidate_features[CANDIDATE_FEATURE_KEY][cell_line]
+                            )
+                        ]
 
 
-                        # Assign dPSI sign based on dpsi_threshold (simplified)
-                        df_cell["dPSI Sign"] = np.nan
-                        df_cell.loc[df_cell["dPSI"] > dpsi_threshold, "dPSI Sign"] = "+ dPSI"
-                        df_cell.loc[df_cell["dPSI"] < -dpsi_threshold, "dPSI Sign"] = "- dPSI"
-                        
-                        # Assign significance status
-                        df_cell["Significance"] = np.where(
-                            df_cell["rMATS FDR"] <= cutoff, f"Significant (rMATS FDR≤{cutoff})", "Not Significant"
-                        )
-
-                        # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
-                        df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
-
-                        hue_order = [f"Significant (rMATS FDR≤{cutoff})", "Not Significant"]  # switched order
-                        palette = {f"Significant (rMATS FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
-
-                        sns.violinplot(
-                            data=df_cell,
-                            x="dPSI Sign",
-                            y="CTRL - KD Local SHAP",
-                            hue="Significance",
-                            order=dpsi_sign_order,
-                            hue_order=hue_order,
-                            palette=palette,
-                            cut=0,
-                            density_norm="width",
-                            ax=ax,
-                        )
-
-                        ax.axhline(0, color=line_color, linestyle="--", linewidth=1.5)
-                        ax.set_xlabel("")
-                        ax.set_ylabel("")
-                        ax.set_title(f"{cell_line}", fontsize=22, pad=10)
-                        ax.tick_params(axis='x', labelsize=18)
-                        ax.tick_params(axis='y', labelsize=14)
-                        ax.legend_.remove()
-
-                        ax.set_ylim(top = max_shap * 2)
-
-                        # Statistical annotation: run both tests for each dpsi_sign
-                        for dpsi_sign in dpsi_sign_order:
-                            subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
-
-                            group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
-                            group2 = subset[subset["Significance"] == f"Significant (rMATS FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
-
-                            xpos = dpsi_sign_order.index(dpsi_sign)
-                            ymax = subset["CTRL - KD Local SHAP"].max()
-                            yspan = ax.get_ylim()[1] - ax.get_ylim()[0]
-
-                            # Annotate number of points for each group just 5% above their max value
-                            offsets = [-0.19, 0.19]
-                            for i, significance in enumerate(hue_order):
-                                group = subset[subset["Significance"] == significance]["CTRL - KD Local SHAP"]
-                                color = palette[significance]
-                                offset = offsets[i]
-                                group_max = group.max()
-                                group_y = group_max + 0.02 * yspan
-
-                                ax.text(
-                                    xpos + offset, group_y,
-                                    f"{len(group)}",
-                                    ha="center", va="bottom", fontsize=12, color=color
-                                )
-
-                            # Draw a line ("roof") above the two violins
-                            line_y = ymax + 0.13 * yspan
-                            ax.plot([xpos - 0.2, xpos + 0.2], [line_y, line_y], color="black", linewidth=1.5)
-                            # Draw vertical ticks down from the ends
-                            ax.plot([xpos - 0.2, xpos - 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
-                            ax.plot([xpos + 0.2, xpos + 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
-                            
-                            # Add direction marker under the line
-                            direction = "<" if dpsi_sign == "- dPSI" else ">"
-                            ax.text(xpos, line_y - 0.08 * yspan, direction, ha="center", va="bottom", fontsize=20, fontweight="bold", color="#66c2a5")
-
-                            # Run both statistical tests and annotate both p-values
-                            stat_results = []
-                            for stat_test_name, stat_test in STAT_TESTS:
-                                
-                                if stat_test == "mann-whitney":
-                                    if dpsi_sign == "- dPSI":
-                                        _, pval = mannwhitneyu(group2, group1, alternative="less")
-                                    elif dpsi_sign == "+ dPSI":
-                                        _, pval = mannwhitneyu(group2, group1, alternative="greater")
-                                
-                                elif stat_test == "t-test_ind":
-                                    if dpsi_sign == "- dPSI":
-                                        _, pval = ttest_ind(group2, group1, alternative="less", equal_var=False)
-                                    elif dpsi_sign == "+ dPSI":
-                                        _, pval = ttest_ind(group2, group1, alternative="greater", equal_var=False)
-                                
-                                else:
-                                    raise ValueError(f"Unknown stat_test: {stat_test}")
-                                
-                                stat_results.append((stat_test_name, pval))
-
-                            # Annotate both p-values, one above the other
-                            for i, (stat_test_name, pval) in enumerate(stat_results):
-                                ax.text(
-                                    xpos, line_y + 0.03 * yspan + i * 0.06 * yspan,
-                                    f"{stat_test_name}: {pval:.1e}",
-                                    ha="center", va="bottom", fontsize=12, color="black"
-                                )
+                    # Assign dPSI sign based on dpsi_threshold (simplified)
+                    df_cell["dPSI Sign"] = np.nan
+                    df_cell.loc[df_cell["dPSI"] > dpsi_threshold, "dPSI Sign"] = "+ dPSI"
+                    df_cell.loc[df_cell["dPSI"] < -dpsi_threshold, "dPSI Sign"] = "- dPSI"
                     
-                    # Shared labels and legend
-                    fig.supxlabel("dPSI Sign", fontsize=20, x=0.53)
-                    fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
-                    # Custom legend for hue and y=0 line
-                    handles = [
-                        Patch(facecolor=palette[f"Significant (rMATS FDR≤{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR ≤ {cutoff})"),
-                        Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
-                        Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
-                    ]
-                    fig.legend(
-                        handles,
-                        [h.get_label() for h in handles],
-                        loc="center left",
-                        bbox_to_anchor=(0.97, 0.45),
-                        fontsize=14,
-                        frameon=False,
-                        title_fontsize=15,
+                    # Assign significance status
+                    df_cell["Significance"] = np.where(
+                        df_cell["rMATS FDR"] <= cutoff, f"Significant (rMATS FDR≤{cutoff})", "Not Significant"
                     )
 
-                    additional_note = f"NOTE 2: CANDIDATE FEATURES from {CANDIDATE_FEATURE_KEY}" if only_candidate_features else ""
-                    suffix = "(CANDIDATE FEATURES)" if only_candidate_features else ""
+                    # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
+                    df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
 
-                    fig.suptitle(
-                        f"NOTE 1: {dataset.capitalize()} SHAP; rMATS FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
-                        fontsize=18, y=1.01
+                    hue_order = [f"Significant (rMATS FDR≤{cutoff})", "Not Significant"]  # switched order
+                    palette = {f"Significant (rMATS FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
+
+                    sns.violinplot(
+                        data=df_cell,
+                        x="dPSI Sign",
+                        y="CTRL - KD Local SHAP",
+                        hue="Significance",
+                        order=dpsi_sign_order,
+                        hue_order=hue_order,
+                        palette=palette,
+                        cut=0,
+                        density_norm="width",
+                        ax=ax,
                     )
 
-                    plt.tight_layout(rect=[0, 0, 0.98, 1])
-                    plt.show()
+                    ax.axhline(0, color=line_color, linestyle="--", linewidth=1.5)
+                    ax.set_xlabel("")
+                    ax.set_ylabel("")
+                    ax.set_title(f"{cell_line}", fontsize=22, pad=10)
+                    ax.tick_params(axis='x', labelsize=18)
+                    ax.tick_params(axis='y', labelsize=14)
+                    ax.legend_.remove()
+
+                    ax.set_ylim(top = max_shap * 2)
+
+                    # Statistical annotation: run both tests for each dpsi_sign
+                    for dpsi_sign in dpsi_sign_order:
+                        subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
+
+                        group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
+                        group2 = subset[subset["Significance"] == f"Significant (rMATS FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
+
+                        xpos = dpsi_sign_order.index(dpsi_sign)
+                        ymax = subset["CTRL - KD Local SHAP"].max()
+                        yspan = ax.get_ylim()[1] - ax.get_ylim()[0]
+
+                        # Annotate number of points for each group just 5% above their max value
+                        offsets = [-0.19, 0.19]
+                        for i, significance in enumerate(hue_order):
+                            group = subset[subset["Significance"] == significance]["CTRL - KD Local SHAP"]
+                            color = palette[significance]
+                            offset = offsets[i]
+                            group_max = group.max()
+                            group_y = group_max + 0.02 * yspan
+
+                            ax.text(
+                                xpos + offset, group_y,
+                                f"{len(group)}",
+                                ha="center", va="bottom", fontsize=12, color=color
+                            )
+
+                        # Draw a line ("roof") above the two violins
+                        line_y = ymax + 0.13 * yspan
+                        ax.plot([xpos - 0.2, xpos + 0.2], [line_y, line_y], color="black", linewidth=1.5)
+                        # Draw vertical ticks down from the ends
+                        ax.plot([xpos - 0.2, xpos - 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                        ax.plot([xpos + 0.2, xpos + 0.2], [line_y, line_y - 0.02 * yspan], color="black", linewidth=1.5)
+                        
+                        # Add direction marker under the line
+                        direction = "<" if dpsi_sign == "- dPSI" else ">"
+                        ax.text(xpos, line_y - 0.08 * yspan, direction, ha="center", va="bottom", fontsize=20, fontweight="bold", color="#66c2a5")
+
+                        # Run both statistical tests and annotate both p-values
+                        stat_results = []
+                        for stat_test_name, stat_test in STAT_TESTS:
+                            
+                            if stat_test == "mann-whitney":
+                                if dpsi_sign == "- dPSI":
+                                    _, pval = mannwhitneyu(group2, group1, alternative="less")
+                                elif dpsi_sign == "+ dPSI":
+                                    _, pval = mannwhitneyu(group2, group1, alternative="greater")
+                            
+                            elif stat_test == "t-test_ind":
+                                if dpsi_sign == "- dPSI":
+                                    _, pval = ttest_ind(group2, group1, alternative="less", equal_var=False)
+                                elif dpsi_sign == "+ dPSI":
+                                    _, pval = ttest_ind(group2, group1, alternative="greater", equal_var=False)
+                            
+                            else:
+                                raise ValueError(f"Unknown stat_test: {stat_test}")
+                            
+                            stat_results.append((stat_test_name, pval))
+
+                        # Annotate both p-values, one above the other
+                        for i, (stat_test_name, pval) in enumerate(stat_results):
+                            ax.text(
+                                xpos, line_y + 0.03 * yspan + i * 0.06 * yspan,
+                                f"{stat_test_name}: {pval:.1e}",
+                                ha="center", va="bottom", fontsize=12, color="black"
+                            )
+                
+                # Shared labels and legend
+                fig.supxlabel("dPSI Sign", fontsize=20, x=0.53)
+                fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
+                # Custom legend for hue and y=0 line
+                handles = [
+                    Patch(facecolor=palette[f"Significant (rMATS FDR≤{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR ≤ {cutoff})"),
+                    Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
+                    Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
+                ]
+                fig.legend(
+                    handles,
+                    [h.get_label() for h in handles],
+                    loc="center left",
+                    bbox_to_anchor=(0.97, 0.45),
+                    fontsize=14,
+                    frameon=False,
+                    title_fontsize=15,
+                )
+
+                additional_note = f"NOTE 2: CANDIDATE FEATURES from {CANDIDATE_FEATURE_KEY}" if only_candidate_features else ""
+                suffix = "(CANDIDATE FEATURES)" if only_candidate_features else ""
+
+                fig.suptitle(
+                    f"NOTE 1: rMATS FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
+                    fontsize=18, y=1.01
+                )
+
+                plt.tight_layout(rect=[0, 0, 0.98, 1])
+                plt.show()
 
     
     def plot_feature_candidates_for_dpsi_vs_local_SHAP_in_test(self): 
@@ -9240,7 +9259,7 @@ class FirstOrderShapInvestigator:
 
         DPSI_THRESHOLDS = [0, 0.05, 0.1]
         FDR_THRESHOLDS = [1, 0.1, 0.05]
-        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.005, 0.01, 0.05]
+        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.05, 0.25, 0.5]
 
         DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
         DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
@@ -9775,165 +9794,95 @@ class FirstOrderShapInvestigator:
 
     
     def hacky_plot_bound_unbound_all_data_vs_unique_binding_global_SHAP(self): 
-        # Define output file path
-        output_file = "./unique_binding_bound_unbound_global_SHAP.pkl"
-        if os.path.exists(output_file):
-            # Load unique binding global SHAP (result)
-            with open(output_file, "rb") as f:
-                result = pickle.load(f)
-            logger.success(f"FROM CACHE: Loaded unique binding global SHAP from {output_file}")
 
-            # Load "All Data" bound and unbound global SHAP from cache
-            all_data_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None)
-            all_data_unbound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None)
+        # Load "All Data" bound and unbound global SHAP from cache
+        all_data_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data = "All-Data")
+        all_data_unbound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None, underlying_data = "All-Data")
 
-            # Prepare figure
-            fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=200)
-            cell_lines = ["HepG2", "K562"]
-            conditions = ["bound", "unbound"]
+        unique_binding_bound = self.calculate_specialized_global_SHAP(mode="Bound-Only", condition=None, underlying_data = "Unique-Binding")
+        unique_binding_unbound = self.calculate_specialized_global_SHAP(mode="NOT-Bound-Only", condition=None, underlying_data = "Unique-Binding")
 
-            for row_idx, cell_line in enumerate(cell_lines):
-                for col_idx, condition in enumerate(conditions):
-                    ax = axes[row_idx, col_idx]
+        # Prepare figure
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=200)
+        cell_lines = ["HepG2", "K562"]
+        conditions = ["bound", "unbound"]
 
-                    # Get unique binding and all data DataFrames for this cell line and condition
-                    unique_df = result[cell_line][condition]
-                    if condition == "bound":
-                        all_data_df = all_data_bound[cell_line]
-                    elif condition == "unbound":
-                        all_data_df = all_data_unbound[cell_line]
+        for row_idx, cell_line in enumerate(cell_lines):
+            for col_idx, condition in enumerate(conditions):
+                ax = axes[row_idx, col_idx]
 
-                    # Melt to long format for merging
-                    unique_long = unique_df.reset_index().melt(id_vars=unique_df.index.name or "index", var_name="RBP", value_name="unique_val")
-                    unique_long = unique_long.rename(columns={unique_df.index.name or "index": "Position"})
-                    unique_long["Feature"] = unique_long["RBP"].astype(str) + "_" + unique_long["Position"].astype(str)
-                    all_data_long = all_data_df.reset_index().melt(id_vars=all_data_df.index.name or "index", var_name="RBP", value_name="all_data_val")
-                    all_data_long = all_data_long.rename(columns={all_data_df.index.name or "index": "Position"})
-                    all_data_long["Feature"] = all_data_long["RBP"].astype(str) + "_" + all_data_long["Position"].astype(str)
+                if condition == "bound":
+                    all_data_df = all_data_bound[cell_line]
+                    unique_df = unique_binding_bound[cell_line]
+                elif condition == "unbound":
+                    all_data_df = all_data_unbound[cell_line]
+                    unique_df = unique_binding_unbound[cell_line]
 
-                    # Assert that all unique values of Feature in all_data_long and unique_long are the same
-                    assert set(all_data_long["Feature"].unique()) == set(unique_long["Feature"].unique()), "Unique values of Feature do not match between all_data_long and unique_long"
-                    # Merge on Feature
-                    merged = pd.merge(all_data_long[["Feature", "all_data_val"]], unique_long[["Feature", "unique_val"]], on="Feature", how="inner", validate="1:1")
+                # Melt to long format for merging
+                unique_long = unique_df.reset_index().melt(id_vars=unique_df.index.name or "index", var_name="RBP", value_name="unique_val")
+                unique_long = unique_long.rename(columns={unique_df.index.name or "index": "Position"})
+                unique_long["Feature"] = unique_long["RBP"].astype(str) + "_" + unique_long["Position"].astype(str)
+                all_data_long = all_data_df.reset_index().melt(id_vars=all_data_df.index.name or "index", var_name="RBP", value_name="all_data_val")
+                all_data_long = all_data_long.rename(columns={all_data_df.index.name or "index": "Position"})
+                all_data_long["Feature"] = all_data_long["RBP"].astype(str) + "_" + all_data_long["Position"].astype(str)
 
-                    # Assertions
-                    if condition == "unbound":
-                        assert not merged.isnull().values.any(), "Unbound: Null values found in merged table"
-                    elif condition == "bound":
-                        # For each row, either both columns are null or both are not null
-                        both_null = merged["all_data_val"].isnull() & merged["unique_val"].isnull()
-                        both_not_null = (~merged["all_data_val"].isnull()) & (~merged["unique_val"].isnull())
-                        assert (both_null | both_not_null).all(), "Bound: There are rows where only one column is null"
+                # Assert that all unique values of Feature in all_data_long and unique_long are the same
+                assert set(all_data_long["Feature"].unique()) == set(unique_long["Feature"].unique()), "Unique values of Feature do not match between all_data_long and unique_long"
+                # Merge on Feature
+                merged = pd.merge(all_data_long[["Feature", "all_data_val"]], unique_long[["Feature", "unique_val"]], on="Feature", how="inner", validate="1:1")
 
-                    # Remove rows where both are null (for plotting)
-                    merged = merged.dropna(subset=["all_data_val", "unique_val"], how="all")
+                # Assertions
+                if condition == "unbound":
+                    assert not merged.isnull().values.any(), "Unbound: Null values found in merged table"
+                elif condition == "bound":
+                    # For each row, either both columns are null or both are not null
+                    both_null = merged["all_data_val"].isnull() & merged["unique_val"].isnull()
+                    both_not_null = (~merged["all_data_val"].isnull()) & (~merged["unique_val"].isnull())
+                    assert (both_null | both_not_null).all(), "Bound: There are rows where only one column is null"
 
-                    # Scatterplot
-                    x = merged["all_data_val"]
-                    y = merged["unique_val"]
+                # Remove rows where both are null (for plotting)
+                merged = merged.dropna(subset=["all_data_val", "unique_val"], how="all")
 
-                    pearson_corr, _ = pearsonr(x, y)
-                    spearman_corr, _ = spearmanr(x, y)
-                
-                    num_points = len(merged)
+                # Scatterplot
+                x = merged["all_data_val"]
+                y = merged["unique_val"]
 
-                    sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.7, s=10)
-                    ax.plot([x.min(), x.max()], [x.min(), x.max()], color="lightgreen", linestyle="--", linewidth=1, label="y=x")
+                pearson_corr, _ = pearsonr(x, y)
+                spearman_corr, _ = spearmanr(x, y)
+            
+                num_points = len(merged)
 
-                    # Annotate top 10 points with the largest absolute difference between axes
-                    merged["abs_diff"] = (merged["all_data_val"] - merged["unique_val"]).abs()
-                    top_diff = merged.nlargest(10, "abs_diff")
-                    for _, row in top_diff.iterrows():
-                        ax.text(
-                            row["all_data_val"],
-                            row["unique_val"],
-                            row["Feature"],
-                            fontsize=6,
-                            color="red",
-                            alpha=0.8
-                        )
+                sns.scatterplot(x=x, y=y, ax=ax, color="deepskyblue", edgecolor="black", alpha=0.7, s=10)
+                ax.plot([x.min(), x.max()], [x.min(), x.max()], color="lightgreen", linestyle="--", linewidth=1, label="y=x")
 
-                    ax.set_title(f"{cell_line} - {condition.capitalize()}", fontsize=14)
-                    ax.set_xlabel("All Data Global SHAP", fontsize=12)
-                    ax.set_ylabel("Unique Binding Global SHAP", fontsize=12)
+                # Annotate top 10 points with the largest absolute difference between axes
+                merged["abs_diff"] = (merged["all_data_val"] - merged["unique_val"]).abs()
+                top_diff = merged.nlargest(10, "abs_diff")
+                for _, row in top_diff.iterrows():
                     ax.text(
-                        0.98, 0.02,
-                        f"Pearson: {pearson_corr:.5f}\nSpearman: {spearman_corr:.5f}\nPoints: {num_points}",
-                        transform=ax.transAxes,
-                        fontsize=10,
-                        verticalalignment='bottom',
-                        horizontalalignment='right'
+                        row["all_data_val"],
+                        row["unique_val"],
+                        row["Feature"],
+                        fontsize=6,
+                        color="red",
+                        alpha=0.8
                     )
 
-            plt.suptitle("Global SHAP: All Data vs Unique Binding Patterns\n(Columns: Bound/Unbound, Rows: HepG2/K562)", fontsize=16)
-            plt.tight_layout()
-            plt.show()
+                ax.set_title(f"{cell_line} - {condition.capitalize()}", fontsize=14)
+                ax.set_xlabel("All Data Global SHAP", fontsize=12)
+                ax.set_ylabel("Unique Binding Global SHAP", fontsize=12)
+                ax.text(
+                    0.98, 0.02,
+                    f"Pearson: {pearson_corr:.5f}\nSpearman: {spearman_corr:.5f}\nPoints: {num_points}",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='bottom',
+                    horizontalalignment='right'
+                )
 
-        else: 
-            result = {}
-            for cell_line in self.cell_lines:
-                logger.info(f"Processing cell line: {cell_line}")
-                shap_lazyframes = self.get_SHAP_data_as_lazyframe(cell_line)
-
-                unique_dfs = []
-                for lf in shap_lazyframes:
-                    schema = lf.collect_schema().names()
-                    binding_cols = [col for col in schema if col.endswith("_binding")]
-                    shap_cols = [col for col in schema if col.endswith("_shap")]
-                    # Get unique rows by binding pattern
-                    lf_unique = lf.unique(subset=binding_cols, maintain_order=True, keep="first")
-                    lf_selected = lf_unique.select(shap_cols + binding_cols + ["index"])
-                    df_collected = lf_selected.collect().sort("index")
-                    unique_dfs.append(df_collected)
-
-                assert all(df["index"].to_list() == unique_dfs[0]["index"].to_list() for df in unique_dfs), "All unique_dfs must have identical 'index' values in the same order"
-
-                # For each shap_col, compute abs mean for bound and unbound using pointwise metric function in parallel
-                feature_means = {"bound": {}, "unbound": {}}
-
-                def compute_abs_mean_for_shap_col_binding(shap_col, binding_value):
-                    binding_col = shap_col.replace("_shap", "_binding")
-                    filtered_dfs = [
-                        df.filter(pl.col(binding_col) == binding_value).select(["index", shap_col]).sort("index")
-                        for df in unique_dfs
-                    ]
-                    mean_df = self.calculate_pointwise_SHAP_metric_per_cell_line(
-                        cell_line_shap=filtered_dfs,
-                        metric="mean"
-                    )
-                    abs_mean = mean_df[shap_col].abs().mean()
-                    return shap_col, binding_value, abs_mean
-
-                tasks = []
-                for shap_col in shap_cols:
-                    for binding_status, binding_value in [("bound", 1), ("unbound", 0)]:
-                        tasks.append((shap_col, binding_status, binding_value))
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.get_slurm_job_num_cpus()) as executor:
-                    futures = {
-                        executor.submit(compute_abs_mean_for_shap_col_binding, shap_col, binding_value): (shap_col, binding_status)
-                        for shap_col, binding_status, binding_value in tasks
-                    }
-                    for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc=f"{cell_line} shap_col"):
-                        shap_col, binding_value, abs_mean = future.result()
-                        _, binding_status = futures[future]
-                        feature_means[binding_status][shap_col] = abs_mean
-
-                # Convert to DataFrames and then to heatmaps
-                for binding_status in ["bound", "unbound"]:
-                    df = pd.DataFrame([feature_means[binding_status]])
-                    heatmap = self.convert_RBP_position_to_2d_heatmap(df)
-                    if cell_line not in result:
-                        result[cell_line] = {}
-                    result[cell_line][binding_status] = heatmap
-
-                del unique_dfs
-                gc.collect()
-
-            with open(output_file, "wb") as f:
-                pickle.dump(result, f)
-            logger.success(f"Saved unique binding bound/unbound global SHAP to {output_file}")
-            return result
+        plt.suptitle("Global SHAP: All Data vs Unique Binding Patterns\n(Columns: Bound/Unbound, Rows: HepG2/K562)", fontsize=16)
+        plt.tight_layout()
+        plt.show()
 
 
     def hacky_explore_SHAP_in_PSI_units(self): 
@@ -10293,7 +10242,6 @@ if __name__ == "__main__":
         "specialized_global_shap_unsigned_unbound", 
         "specialized_global_shap_signed_local_SHAP_mean_bound",
         "specialized_global_shap_signed_local_SHAP_mean_unbound",
-        "specialized_global_shap_signed_local_SHAP_mean_LOG-ODDS_bound",
         "local_SHAP_mean_vs_variance_plot",
         "calculate_local_SHAP_percent_non_zero",
         "calculate_local_SHAP_mean_vs_variance_deciles_bound",
@@ -10303,8 +10251,6 @@ if __name__ == "__main__":
         "is_position_3_4_activating_and_others_repressing", 
         "binding_vs_diff_events_fishers_FDR_0.05", 
         "binding_vs_diff_events_fishers_FDR_0.1",
-        "arbs_narbs_bound", 
-        "arbs_narbs_unbound", 
     ]
 
 
@@ -10392,21 +10338,18 @@ if __name__ == "__main__":
             condition = None 
             underlying_data = "Unique-Binding"
             mode = None
-
-            if "LOG-ODDS" not in args.job_type:
-                if args.job_type.endswith("_bound"):
-                    if "unsigned" in args.job_type:
-                        mode = "Bound-Only"
-                    elif "signed_local_SHAP" in args.job_type:
-                        mode = "Signed-Local-SHAP-Mean-Bound-Only"
-                
-                elif args.job_type.endswith("_unbound"):
-                    if "unsigned" in args.job_type:
-                        mode = "NOT-Bound-Only"
-                    elif "signed_local_SHAP" in args.job_type:
-                        mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
-            else:
-                mode = "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"
+            
+            if args.job_type.endswith("_bound"):
+                if "unsigned" in args.job_type:
+                    mode = "Bound-Only"
+                elif "signed_local_SHAP" in args.job_type:
+                    mode = "Signed-Local-SHAP-Mean-Bound-Only"
+            
+            elif args.job_type.endswith("_unbound"):
+                if "unsigned" in args.job_type:
+                    mode = "NOT-Bound-Only"
+                elif "signed_local_SHAP" in args.job_type:
+                    mode = "Signed-Local-SHAP-Mean-NOT-Bound-Only"
             
             assert mode is not None, "Could not determine mode from job_type"
 
