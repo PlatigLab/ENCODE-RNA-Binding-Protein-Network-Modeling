@@ -3657,8 +3657,8 @@ class SecondOrderShapNetworkAnalyzer:
                         skip_row = True
                         break
                     
-                    row_dict[f"HepG2 - F{feature_idx} ({feature_idx}{"st" if feature_idx==1 else "nd"} Individual Feature in Interaction) SHAP"] = hepg2_val
-                    row_dict[f"K562 - F{feature_idx} ({feature_idx}{"st" if feature_idx==1 else "nd"} Individual Feature in Interaction) SHAP"] = k562_val
+                    row_dict[f"HepG2 - F{feature_idx} ({feature_idx}{'st' if feature_idx==1 else 'nd'} Individual Feature in Interaction) SHAP"] = hepg2_val
+                    row_dict[f"K562 - F{feature_idx} ({feature_idx}{'st' if feature_idx==1 else 'nd'} Individual Feature in Interaction) SHAP"] = k562_val
             
                 if not skip_row:
                     results.append(row_dict)

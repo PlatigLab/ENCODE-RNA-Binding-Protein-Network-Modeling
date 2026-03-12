@@ -1,5 +1,8 @@
 # Sweep configuration
 sweep:
+  name: 1:early_stopping_rounds-learning_rate-max_depth
+  project: yogi-rbp-ml-gencode-v24-v29-matching-exons
+
   method: grid
   metric:
     name: holdout_r2_score
@@ -12,9 +15,11 @@ config_overlay:
 
   dataset:
     name: RBPSEDataset
-    three_exon_combos: all
-    window: 100
-    min_read_count: 40
+    data_source: 
+      EncodeRBPBindingDataSource:
+        three_exon_combos: all
+        min_read_count: 40
+        window: 100
 
     features: 
       binding_matrix: 
@@ -35,9 +40,6 @@ config_overlay:
       num_folds: 5
       group_column: 'ensembl_gene_id'
       validate_frac_of_train: 0.10
-
-    wandb:
-      project: yogi-xgbregressor-hyperparameter-sweep-april-2025
   
   model:
     name: XGBRegressor
@@ -60,15 +62,16 @@ config_overlay:
 parameters:
 
   # INCLUDED IN ALL SWEEPS
-  dataset.cell_line:
-    values: [K562, HepG2]
   training.seed: 
-    values: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+    values: [100, 200, 300, 400, 500, 600, 700]
 
+  dataset.data_source.EncodeRBPBindingDataSource.cell_line:
+    values: [K562, HepG2]
+    
   # EARLY STOPPING, LEARNING RATE, MAX DEPTH
   model.early_stopping_rounds: 
-    values: [10, 50, 100, 250, 500]
+    values: [50, 100, 500, 1000]
   model.learning_rate:
-    values: [0.01, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4]
+    values: [0.01, 0.05, 0.1, 0.2, 0.3]
   model.max_depth:
     values: [3, 5, 7, 9, 11]

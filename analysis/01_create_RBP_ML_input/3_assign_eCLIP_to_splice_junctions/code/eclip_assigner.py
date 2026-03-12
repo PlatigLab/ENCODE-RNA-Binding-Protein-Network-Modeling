@@ -40,14 +40,24 @@ class EclipToSpliceJunctionAssigner:
     # glob path to all SE files 
     SE_glob = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/**/SE*.txt"
 
+    # distance thresholds for assigning eCLIP peaks to splice junctions, in base pairs
     thresholds = [25, 50, 75, 100, 150, 200, 250, 500, 1000]
-    
+    # only consider autosomal chromosomes
+    allowed_chromosomes = [f"chr{i}" for i in list(range(1, 23))]
+
+    # for parsing exons from rMATS events and making sure they are in allowed exons set
+    exon_definition_columns = (
+        ["upstreamES", "upstreamEE"], 
+        ["exonStart_0base", "exonEnd"], 
+        ["downstreamES", "downstreamEE"]
+    )
 
     def __post_init__(self):
         logger.remove()
         logger.add(sys.stdout, format="{time} {level} {message}", level="INFO")
         
         self.get_eCLIP_and_shRNA_RBPs()
+        self.retrieve_gencode_v24_and_v29_overlapping_exons()
         self.get_events()
         self.get_all_splice_junctions()
         self.get_eCLIP_peaks()
@@ -116,6 +126,58 @@ class EclipToSpliceJunctionAssigner:
 
         self.eclip_metadata = eclip_metadata
         
+    
+    def retrieve_gencode_v24_and_v29_overlapping_exons(self): 
+        
+        # Load all gunzipped GTF files from the annotations directory
+        gtf_files = [file for file in glob.glob("../../../../inputs/annotations/*.gtf.gz") if ".v24." in file or ".v29." in file]
+        assert len(gtf_files) == 2, f"Expected 2 GTF files (v24 and v29), but found {len(gtf_files)}: {gtf_files}"  
+
+        # Read and process each GTF file separately
+        exon_sets = []
+        for gtf_file in gtf_files:
+            # Read GTF file and filter for exon features
+            gtf_data = pl.scan_csv(
+                gtf_file,
+                separator="\t",
+                has_header=False,
+                comment_prefix="#",
+                new_columns=["seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"]
+            ).filter(
+                (pl.col("feature") == "exon") & 
+                (pl.col("seqname").is_in(self.allowed_chromosomes))
+            ).select(
+                ["seqname", "start", "end", "strand"]
+            ).collect()
+
+            # Convert to 0-based BED-style coordinates (subtract 1 from start)
+            gtf_data = gtf_data.with_columns(
+                (pl.col("start") - 1).alias("start_0based")
+            ).select(
+                [pl.col("seqname"), pl.col("start_0based"), pl.col("end"), pl.col("strand")]
+            )
+
+            # Create exon IDs - same concatenation order for all strands
+            exon_ids = gtf_data.with_columns(
+                pl.concat_str(
+                    [pl.col("seqname").cast(pl.Utf8), pl.col("strand").cast(pl.Utf8), pl.col("start_0based").cast(pl.Utf8), pl.col("end").cast(pl.Utf8)],
+                    separator="_"
+                ).alias("exon_id")
+            ).select("exon_id")
+            
+            exon_sets.append(set(exon_ids.to_series().to_list()))
+
+        matching_exons = exon_sets[0].intersection(exon_sets[1])
+        logger.info(f"Number of valid exons present in both Gencode v24 and v29: {len(matching_exons)}")
+
+        matching_exons_sorted = sorted(list(matching_exons))
+        output_file = "../output/allowed_exons/matching_exons.txt"
+        with open(output_file, 'w') as f:
+            for exon in matching_exons_sorted:
+                f.write(f"{exon}\n")
+        
+        self.annotation_matching_exons = matching_exons
+
 
     def get_events(self):
 
@@ -148,10 +210,24 @@ class EclipToSpliceJunctionAssigner:
             ).collect(streaming=True)
 
             dataframe = dataframe.filter(
-                ~pl.col("chr").str.starts_with("chrUn_") & 
-                ~pl.col("chr").str.ends_with("_random") & 
-                ~pl.col("chr").str.ends_with("_alt")
+                pl.col("chr").is_in(self.allowed_chromosomes)
             )
+
+            # Create a boolean column for each exon pair, then filter rows where ALL exon pairs are valid
+            for idx, exon_def_cols in enumerate(self.exon_definition_columns, 1):
+                dataframe = dataframe.with_columns(
+                    pl.concat_str(
+                        [pl.col("chr").cast(pl.Utf8), pl.col("strand").cast(pl.Utf8)] + \
+                            [pl.col(col).cast(pl.Utf8) for col in exon_def_cols], 
+                        separator="_"
+                    ).is_in(self.annotation_matching_exons).alias(f"valid_exon_{idx}")
+                )
+            
+            # Filter to keep only rows where all exon pairs are valid
+            valid_columns = [col for col in dataframe.columns if col.startswith("valid_")]
+            dataframe = dataframe.filter(
+                pl.all_horizontal(valid_columns)
+            ).drop(valid_columns)
 
             logger.info(f"Number of unique {cell_line} events: {dataframe.shape[0]}")
 
@@ -383,6 +459,8 @@ class EclipToSpliceJunctionAssigner:
                 distance_column = peaks_to_splice_junctions.columns[-1]
                 # Remove the peaks that did not have any splice junctions to map to
                 peaks_to_splice_junctions = peaks_to_splice_junctions.filter(pl.col(distance_column) >= 0)
+                
+                assert peaks_to_splice_junctions.null_count().sum_horizontal().item()==0, "Null values found in the dataframe after filtering for valid mappings"
                 # Assert that the 6th and 12th columns are equal in the whole dataframe
                 assert (peaks_to_splice_junctions[:, 5] == peaks_to_splice_junctions[:, 11]).all(), "6th and 12th columns are not equal"
 
@@ -418,7 +496,6 @@ class EclipToSpliceJunctionAssigner:
                 
                 # Ensure there are no null values in matrix
                 assert peaks_to_splice_junctions.null_count().sum_horizontal().sum()==0, "Null values found in the dataframe"
-
 
                 # for each distance threshold 
                 for threshold in self.thresholds: 

@@ -10,9 +10,6 @@ ECLIP_RBP_DIR = Path("../01_create_RBP_ML_input/3_assign_eCLIP_to_splice_junctio
 PPI_DIR = Path("../../inputs/RBP-RBP_PPI/")
 CELL_LINES = ["K562", "HepG2"]
 
-# Configure logger
-logger.add(sys.stdout, format="{time} {level} {message}", level="INFO")
-
 
 def get_eclip_rbps_for_cell_line(cell_line):
     file_path = ECLIP_RBP_DIR / f"{cell_line}_eclip_rbps.txt"
@@ -44,9 +41,13 @@ def define_eCLIP_RBP_2_order_combinations():
 
 def build_rec_y2h_table(combos): 
 
-    logger.warning("REMINDER when buiding Rec-Y2H table: since paper does not provide all \
-        possible interaction results and they screen ~98-99% of possible RBP-RBP pairs, \
-        we are assuming that any pair not listed as a positive hit is a negative hit.")
+    logger.warning(
+        (
+            "REMINDER: when buiding Rec-Y2H table: since paper does not provide all "
+            "possible interaction results and they screen ~98-99% of possible RBP-RBP pairs, "
+            "we are assuming that any pair not listed as a positive hit is a negative hit."
+        )
+    )
     
     screened_rbps = pl.read_excel(
         PPI_DIR / "Rec-Y2H" / "all_rbps_screened.xlsx", 
@@ -55,6 +56,7 @@ def build_rec_y2h_table(combos):
 
     assert "" not in unique_screened_rbps, "Empty RBP names found in screened RBPs"
 
+    # SumIS >= 7.1 is the threshold for positive interactions as defined in the Rec-Y2H paper.
     results = pl.read_excel(
         PPI_DIR / "Rec-Y2H" / "lang_et_al_rec-y2h_screening_results.xlsx", 
     ).filter(pl.col("sumIS") >= 7.1)
@@ -85,6 +87,11 @@ def build_rec_y2h_table(combos):
         else:
             # Check for positive interaction
             found = (rbp1 in positive_hits and rbp2 in positive_hits[rbp1])
+            
+            if found: 
+                assert (rbp2 in positive_hits and rbp1 in positive_hits[rbp2]), \
+                    f"Inconsistent positive interaction: {rbp1}-{rbp2} found but not {rbp2}-{rbp1}"
+
             rec_y2h = True if found else False
 
         row = {
@@ -106,8 +113,7 @@ def build_street_et_al_table(combos):
         "Street et al | IP/SEC-MS (Both)": "both"
     }
 
-    logger.warning("REMINDER: Street et al. table construction uses synonyms for 2 RBPs that we have data for, \
-                   which are U2AF1 and EIF3H. Manually setting those synonyms back to eCLIP RBP names.")
+    logger.warning("REMINDER: Street et al. table construction uses synonyms for 2 RBPs that we have data for, which are U2AF1 and EIF3H. Manually setting those synonyms back to eCLIP RBP names.")
 
     # need to skip first row and then second row becomes header
     all_rbps_screened = pd.read_excel(
@@ -139,7 +145,7 @@ def build_street_et_al_table(combos):
         )
 
         partners_dict = {}
-        # Clean up bait and prey columns using polars when-then-otherwise
+        # Clean up bait and prey columns 
         bait_list = [
             "u2af1" if "u2af1" in bait else "eif3h" if "eif3h" in bait else bait
             for bait in df["Bait"].to_list()
@@ -157,6 +163,8 @@ def build_street_et_al_table(combos):
                 partners_dict[bait] = set()
             if prey not in partners_dict:
                 partners_dict[prey] = set()
+            
+            assert prey != bait, f"Found self-interaction for {bait}"
 
             partners_dict[bait].add(prey)
             partners_dict[prey].add(bait)
@@ -184,6 +192,13 @@ def build_street_et_al_table(combos):
 
             # For Both mode: only check in Both category 
             both_mode = True if found_both else False
+
+            if both_mode: 
+                assert rbp2 in both_dict and rbp1 in both_dict[rbp2], \
+                    f"Inconsistent IP-MS interaction: {rbp1}-{rbp2} found but not {rbp2}-{rbp1}"
+            elif ip_ms: 
+                assert rbp2 in ip_dict and rbp1 in ip_dict[rbp2], \
+                    f"Inconsistent IP-MS interaction: {rbp1}-{rbp2} found but not {rbp2}-{rbp1}"
 
         row = {
             "Interaction": interaction,
@@ -227,7 +242,6 @@ def join_tables_by_interaction(table1, table2, combos):
 
     # Check row count
     assert joined.height == len(combos), f"Joined table row count {joined.height} != combos length {len(combos)}"
-
     logger.info(f"Joined table has {joined.height} rows corresponding to {len(combos)} unique RBP-RBP combinations.")
 
     return joined

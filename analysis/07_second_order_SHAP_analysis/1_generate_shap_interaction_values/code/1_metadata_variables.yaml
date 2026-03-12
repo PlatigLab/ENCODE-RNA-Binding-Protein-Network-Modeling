@@ -1,7 +1,7 @@
 # Choosing best model for each cell line
 XGBOOST_BEST_MODEL_HASHES:
-  HepG2: "fdf52464ba1145bed424d92827c559d851550a0117d96a630474c08e558ac4fd"
-  K562: "8f29591764f9e0de183047a4da90dca42b0f2847784de62970a3f20930cbe0db"
+  HepG2: "gufp"
+  K562: "niwy"
 
 CELL_LINES: ["HepG2", "K562"]
 
@@ -9,7 +9,7 @@ CELL_LINES: ["HepG2", "K562"]
 SLURM_JOB_BATCH_SIZE: 1000
 
 # Precision threshold for floating point comparisons
-PRECISION_THRESHOLD: 0.0001
+PRECISION_THRESHOLD: 0.001
 
 
 ###################

@@ -7,5 +7,11 @@ YAML_ABS_PATH = os.path.abspath(YAML_FILE)
 os.chdir(SCRIPT_DIR)
 
 os.system(
-    f'python {SCRIPT_DIR}/send_wandb_sweep.py --memory 128 --cpu 16 --sweep-config {YAML_ABS_PATH} --sweep-name "1:early_stopping_rounds-learning_rate-max_depth" --max-agents 500'
+    f'python3.11 {SCRIPT_DIR}/send_wandb_sweep.py '
+    '--memory 128 '
+    '--cpu 16 '
+    f'--sweep-config {YAML_ABS_PATH} '
+    '--time=08:00:00 '
+    '--account=platiglab_paid '
+    '--max-agents 200'
 )
