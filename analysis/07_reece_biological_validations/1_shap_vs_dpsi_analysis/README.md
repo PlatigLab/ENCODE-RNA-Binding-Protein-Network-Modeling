@@ -1,26 +1,33 @@
 # SHAP vs dPSI Analysis
 
 
-## Code
+# Code
 
-## 1_rbfox2_plot
+# 1_ignore_old_shap_v_dpsi_individual_RBP_plots
+
+Old one-off plots -> ignore
+
+### 1_rbfox2_plot
 - Creates volcano plots for rows where RBFOX2 is bound at pos. 4 and where RBFOX2 is bound at pos. 4 but not 3
 
-## 2_rbfox2_counts_vs_shap
+### 2_rbfox2_counts_vs_shap
 - Histograms of the distribution of SHAP values at position 4 for RBFOX2
 
-## 3_30_volcano_plots
+### 3_30_volcano_plots
 - Creates a volcano plot for RBPs with the highest and lowest mean bound local SHAP values
 - Assesses RBP KD events at the position where the RBP is bound (in-silico KD rows)
 - Gauges RBP activity (activator / repressor) at a specific position
 
-## 4_RBP_Activity_Heatmap_Figures
-- Makes heatmap of RBP Activity Score:
+# 2_figure_3
 
-### RBP Activity Metric
+All code to make Figure 3
 
-- Based exclusively off the rMATS data
-- Meant to be comparable in magnitude to SHAP values (positive, negative)
+## activity_heatmap_and_scatterplot
+- Makes heatmap of RBP Activity Score and scatterplot of sign concordance
+
+## Tables
+- activity_heatmap.csvs have the RBP activity scores for a 10 event cutoff
+- merged_heatmap.csv merges the above csvs
 
 **Key Question:** Do the mean local SHAP values align with the RBP activity demonstrated in the rMATS data?
 
@@ -35,3 +42,6 @@ where `num_pos` is the number of rMATS significant splicing events (FDR  < 0.05 
 
 ## data_path.txt
 - Path to big table
+
+# 3_comparing_event_cutoffs
+One-off analysis to compare how RBP activity metric changesdepending on the cuto
