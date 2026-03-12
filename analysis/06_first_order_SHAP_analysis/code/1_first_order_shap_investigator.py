@@ -3,7 +3,7 @@ import glob, os, json, gc, pickle, gzip, tempfile, shutil, copy, sys, concurrent
 import pandas as pd, polars as pl, numpy as np
 import matplotlib.pyplot as plt, matplotlib as mpl, seaborn as sns, matplotlib.gridspec as gridspec
 import scipy.cluster.hierarchy as sch
-import adjustText, shap, tqdm 
+import adjustText, shap, tqdm, weasyprint
 
 from dataclasses import dataclass
 from IPython.display import display, Video
@@ -20,7 +20,11 @@ from pathlib import Path
 from matplotlib import collections as mcoll
 from matplotlib.patches import Patch
 from statsmodels.stats.multitest import multipletests
+from great_tables import GT, loc, style
+from IPython.display import display_pdf
 
+
+# CUSTOM FILE
 from waterfall_plot import waterfall
 
 
@@ -89,6 +93,7 @@ class FirstOrderShapInvestigator:
                     None:
                         {
                             "Unique-Binding": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_unique_binding.pkl",
+                            "All-Data": "../outputs/specialized_global_SHAP/signed_local_SHAP_mean_bound_only_all_data.pkl",
                         }
                 }, 
             "Signed-Local-SHAP-Mean-NOT-Bound-Only":
@@ -219,7 +224,9 @@ class FirstOrderShapInvestigator:
             "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
             "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
             "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
+            "KDE": "../outputs/publication_figures/pred_vs_actual/kde_plots_all_data_psi/predicted_vs_actual_PSI_kde_all_data", 
         }, 
+        "avg_performance_table": "../outputs/publication_figures/pred_vs_actual/avg_performance_table", 
         "global_SHAP_distribution": {
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_distribution_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_distribution_unique_binding.png",
@@ -261,6 +268,7 @@ class FirstOrderShapInvestigator:
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
         },
+        "global_SHAP_paper_vignette_heatmaps": "../outputs/publication_figures/global_shap/paper_vignette_heatmap",
         "position_3_4_global_shap_beta_coeff_violinplot": {
             "grouped_positions": {
                 "5_dfs_average": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_GROUPED_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
@@ -577,7 +585,7 @@ class FirstOrderShapInvestigator:
 
         # Check if the SLURM_JOB_CPUS_PER_NODE environment variable is set
         if 'SLURM_JOB_CPUS_PER_NODE' in os.environ:
-            num_cpus = int(os.environ['SLURM_NTASKS'])
+            num_cpus = int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
             return num_cpus
         else:
             logger.warning("SLURM_JOB_CPUS_PER_NODE not set, defaulting to 1 CPU")
@@ -1697,6 +1705,105 @@ class FirstOrderShapInvestigator:
 
             plt.tight_layout()
             plt.show()
+
+    
+    def plot_signed_global_SHAP_row_min_and_max_vignette(self, top_n=None, binding_unique=None):
+        assert binding_unique == "Unique-Binding", "binding_unique should be 'Unique-Binding'"
+        assert top_n > 0, "top_n should be a positive integer"
+
+        global_SHAP = self.calculate_specialized_global_SHAP(
+                mode="Signed-Local-SHAP-Mean-Bound-Only",
+                underlying_data=binding_unique
+            )
+
+        # Collect min and max RBPs per cell line
+        candidate_rbps = {
+            "max": dict(), 
+            "min": dict(),
+        }
+        for cell_line, heatmap in global_SHAP.items():
+            max_per_rbp = heatmap.max()
+            min_per_rbp = heatmap.min()
+            
+            # Get top_n RBPs by max value
+            top_n_max_rbps = list(max_per_rbp.nlargest(top_n).index)
+            # Get top_n RBPs by min value (most negative)
+            top_n_min_rbps = list(min_per_rbp.nsmallest(top_n).index)
+
+            candidate_rbps["max"][cell_line] = top_n_max_rbps
+            candidate_rbps["min"][cell_line] = top_n_min_rbps
+
+        final_rbps = []
+        for type in ["min", "max"]:
+            k562_rbps = candidate_rbps[type]["K562"]
+            hepg2_rbps = candidate_rbps[type]["HepG2"]
+
+            for a, b in zip(hepg2_rbps, k562_rbps):
+                final_rbps.extend([a, b])
+        
+        final_rbps= pd.Series(final_rbps).drop_duplicates(keep="first")   
+
+        heatmap_data = {
+            cell_line: heatmap.T.reindex(index=final_rbps) for cell_line, heatmap in global_SHAP.items()
+        }
+
+        # Plot
+        plt.style.use("../../paper.mplstyle")
+        fig, axes = plt.subplots(1, 2, figsize=(6.5, 0.6*top_n), dpi=300, sharex=True, sharey=True)
+        cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.6])
+
+        vmin=min(heatmap_data[cell_line].min().min() for cell_line in heatmap_data)
+        vmax=max(heatmap_data[cell_line].max().max() for cell_line in heatmap_data)
+
+        for idx, (cell_line, heatmap) in enumerate(heatmap_data.items()):
+            ax = axes[idx]
+            sns.heatmap(
+                heatmap,
+                ax=ax,
+                cmap="seismic",
+                center=0,
+                vmin=vmin,
+                vmax=vmax,
+                cbar=(idx == 0),
+                cbar_ax=(cbar_ax if idx == 0 else None),
+                linewidths=0.4,
+                linecolor="black",
+            )
+
+            logger.info(f"# nulls in heatmap for {cell_line}: {heatmap.isnull().sum().sum()} out of {heatmap.size} total cells")
+            
+            # Set background color for null cells to gray
+            ax.set_facecolor("lemonchiffon")
+            
+            ax.set_title(f"{cell_line}", fontsize=12, pad=5)
+            ax.set_ylabel("")
+            ax.set_xlabel("")
+            ax.tick_params(axis='x', labelsize=12)
+            ax.tick_params(axis='y', labelsize=7)
+
+
+        cbar_ax.set_title(self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=14, pad=10)
+        cbar_ax.tick_params(labelsize=10)
+
+        fig.supylabel("RBP", fontsize=14, x=0.04, y=.52, fontweight="bold")
+        fig.supxlabel("Position", fontsize=14, x=0.53, y=0.04, fontweight="bold")
+        plt.suptitle(
+            f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
+            f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
+            f"NOTE 2: Values organized from min to max\n"
+            f"NOTE 3: Null values shown in different color\n"
+            f"NOTE 4: Using {binding_unique} data\n\n"
+            f"Top {top_n} Max/Min RBPs Per Cell Line",
+
+            fontsize=5, y=0.97
+        )
+
+        plt.tight_layout(rect=[0, 0, 0.91, 1])
+
+        OUTPUT_FILE = f"{self.FIGURES['global_SHAP_paper_vignette_heatmaps']}_top_{top_n}_rbps_{binding_unique}.pdf"
+        plt.savefig(OUTPUT_FILE, dpi=1000, bbox_inches='tight')
+
+        plt.show()
 
 
     def calculate_SHAP_CV(self, binding_unique=None):
@@ -5857,6 +5964,121 @@ class FirstOrderShapInvestigator:
         plt.show()
 
 
+    def create_model_average_performance_table(self): 
+        
+        # Load hash metadata to get model hashes per cell line
+        hash_metadata = self.hash_metadata[self.hash_metadata['name'] == "XGBRegressor"].copy()
+        
+        # Calculate R² and Pearson correlation for each model per cell line
+        results = []
+        for cell_line in self.cell_lines:
+            cell_line_models = hash_metadata[hash_metadata['cell_line'] == cell_line]
+            
+            # Get input features for modeling
+            cell_line_lf = self.get_SHAP_data_as_lazyframe(cell_line)[0]
+            non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+            cell_line_df = cell_line_lf.filter(
+                pl.col("Partition") == "Test"
+            ).select(non_shap_cols).sort('index').collect()
+            
+            # Extract binding columns for model input
+            binding_cols = [col for col in cell_line_df.columns if "_binding" in col]
+            model_input = cell_line_df.select(binding_cols).to_pandas()
+            y_true = cell_line_df["Target_PSI"].to_numpy()
+            
+            # Get predictions from each model
+            for _, row in cell_line_models.iterrows():
+                model_hash = row['hash']
+                
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
+                
+                # Ensure column order matches model's expected input
+                model_input_reordered = model_input[list(model.column_order_when_fitting)]
+                y_pred = model.predict(model_input_reordered)
+                
+                # Calculate metrics
+                r2 = r2_score(y_true, y_pred)
+                pearson_corr, _ = pearsonr(y_true, y_pred)
+                
+                results.append({
+                        'Cell Line': cell_line,
+                        'Model Hash': model_hash,
+                        'R2': r2,
+                        'Pearson Correlation': pearson_corr
+                    })
+
+            del model_input, cell_line_df
+            gc.collect()
+        
+        performance_df = pd.DataFrame(
+                results
+            ).sort_values(
+                by=['Cell Line', 'R2'], 
+                ascending=[True, False]
+            ).drop(columns=['Model Hash'])
+
+        performance_df = performance_df.groupby('Cell Line').agg({
+                'R2': ['mean', 'std'],
+                'Pearson Correlation': ['mean', 'std']
+            }).reset_index()
+        performance_df.columns = ['Cell Line', 'R2 Mean', 'R2 Std', 'Pearson Correlation Mean', 'Pearson Correlation Std']
+
+        # Create formatted strings for each metric
+        metrics = [
+            ('R2', 'R2 Mean', 'R2 Std', 'R2 Formatted'),
+            ('Pearson', 'Pearson Correlation Mean', 'Pearson Correlation Std', 'Pearson Formatted')
+        ]
+        for metric_name, mean_col, std_col, output_col in metrics:
+            performance_df[output_col] = performance_df.apply(
+                lambda row: f"{row[mean_col]:.3f} ± {row[std_col]:.4f}", axis=1
+            )
+        
+        HTML_FILE = f"{self.FIGURES['avg_performance_table']}.html"
+        PDF_FILE = f"{self.FIGURES['avg_performance_table']}.pdf"
+
+        table = (
+            GT(performance_df[['Cell Line', 'Pearson Formatted', 'R2 Formatted']])
+            .tab_header(
+                title="Performance Across Top 5 Models",
+                subtitle="Mean ± Standard Deviation"
+            )
+            .cols_label(**{
+                'R2 Formatted': 'R²',
+                'Pearson Formatted': 'Pearson r'
+            })
+            .cols_align(align='center')
+            .tab_options(
+                table_font_size='large',
+            )
+            .tab_style(
+                style=style.text(weight="bold"),
+                locations=loc.column_labels()
+            )
+            .tab_style(
+                style = style.borders(
+                    sides="all", color="black", weight="0.1px", style="solid"
+                ), 
+                locations = loc.body()
+            )
+            .opt_table_font(
+                font="Arial",
+            )
+            .write_raw_html(
+                HTML_FILE,
+                inline_css=True, 
+                make_page=True, 
+            )
+            
+        )
+
+        weasyprint.HTML(
+                filename=HTML_FILE
+            ).write_pdf(
+                PDF_FILE,
+            )
+
+
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
 
         assert underlying_data in ["All-Data", "Unique-Binding", "Delta"], "underlying_data must be 'All-Data', 'Unique-Binding', or 'Delta'"
@@ -6015,6 +6237,107 @@ class FirstOrderShapInvestigator:
 
         del dfs 
         gc.collect()
+
+    
+    def plot_actual_vs_predicted_as_kde(self, bw_adjust=None, levels=None): 
+        assert bw_adjust is not None and levels is not None, "bw_adjust and levels must be provided for this function"
+
+        ACTUAL_PSI = self.latex_symbols["PSI"]["Actual"]
+        PREDICTED_PSI = self.latex_symbols["PSI"]["Predicted"]
+
+        OUTPUT_FILE = f'{self.FIGURES["predicted_vs_actual_PSI_plot"]["KDE"]}_bw{str(bw_adjust)}_levels{str(levels)}.pdf'
+        
+        if Path(OUTPUT_FILE).exists():
+            logger.warning(f"Output file {OUTPUT_FILE} already exists. Not creating new plot")
+            with open(OUTPUT_FILE, "rb") as f:
+                display_pdf(f.read(), raw=True)
+        
+        else: 
+            logger.info("Plotting actual vs predicted PSI as 2D KDE...")
+            
+            # Load the best XGBoost models and get actual/predicted values
+            dfs = {}
+            for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
+                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
+                    model = pickle.load(f)
+
+                # Get test data
+                cell_line_lf = self.get_SHAP_data_as_lazyframe(cell_line)[0]
+                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
+                cell_line_df = cell_line_lf.filter(
+                    pl.col("Partition") == "Test"
+                ).select(non_shap_cols).sort('index').collect()
+
+                # Get predictions
+                model_prediction_input = cell_line_df.select(
+                    [col for col in cell_line_df.columns if "_binding" in col]
+                ).to_pandas()
+                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch"
+                
+                predictions = model.predict(model_prediction_input)
+                
+                dfs[cell_line] = pd.DataFrame({
+                    "y_true": cell_line_df["Target_PSI"].to_numpy(),
+                    "y_pred": predictions
+                })
+                
+                del model_prediction_input, cell_line_df
+                gc.collect()
+
+            logger.info("Finished creating data")
+            
+            plt.style.use('../../paper.mplstyle')
+            # Create 2D KDE plots with YlGn colormap
+            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300, sharex=True, sharey=True)
+
+            for ax, cell_line in zip(axes, self.cell_lines):
+                df = dfs[cell_line]
+                
+                # Create 2D KDE plots
+                sns.kdeplot(
+                    data=df,
+                    x="y_true",
+                    y="y_pred",
+                    ax=ax,
+                    cmap="plasma",
+                    fill=False, 
+                    linewidths=0.75,
+                    cut=0, 
+                    thresh=0,
+                    bw_adjust=bw_adjust,
+                    levels=levels
+                )
+                
+                # Add diagonal line
+                ax.plot([0, 1], [0, 1], color="#7FFF00", linestyle="--", linewidth=1.5)
+                
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.set_aspect("equal")
+
+                ax.set_title(cell_line, fontsize=14)
+                ax.set_xlabel("",)
+                ax.set_ylabel("",)
+
+            fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54, fontweight='bold')
+            fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42, fontweight='bold')
+
+            fig.suptitle(
+                f"NOTE 1: Using 'All-Data' for this plot\n"
+                f"NOTE 2: bw_adjust={bw_adjust}, levels={levels} for KDE\n"
+                f"NOTE 3: Using best XGBoost model per cell line based on outer holdout $R^2$\n\n"
+                f"{ACTUAL_PSI} vs {PREDICTED_PSI}", 
+                y=1.02
+            )
+
+            plt.tight_layout()
+            plt.savefig(OUTPUT_FILE, bbox_inches='tight', dpi=1000)
+            plt.show()
+
+            del dfs
+            gc.collect()
+
+            logger.success(f"COMPLETED: Saved actual vs predicted PSI KDE plot to {OUTPUT_FILE}")
 
 
     def plot_global_SHAP_distributions_across_binding_modes(self): 
@@ -9930,10 +10253,10 @@ if __name__ == "__main__":
         "binding_vs_diff_events_fishers_FDR_0.1",
     ]
 
+
     parser.add_argument(
         "--parallelize",
         type=str,
-        choices=PARALLELIZE_CHOICES,
         help="Specify the job type to parallelize. If provided, will run the job in parallel using sbatch.",
         required=False
     )
@@ -9941,24 +10264,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--job_type", 
         type=str,
-        choices=PARALLELIZE_CHOICES, 
         required=False, 
         help="Specify the job type for specific job."
     )
 
     parser.add_argument(
-        "--run_all", 
-        action="store_true",
+        "--create_actual_vs_pred_kde_plots",
+        type=str,
         required=False,
-    )     
+        help="Create 2D KDE plot of actual vs predicted values across a wide range of bandwidth adjustments and contour levels. Input 'all' to run all combinations of bw_adjust and levels. USAGE: --create_actual_vs_pred_kde_plots '<bw_adjust> <levels>' (e.g. --create_actual_vs_pred_kde_plots '0.5 10')"
+    )   
 
     args = parser.parse_args()
 
-    if args.run_all:
-        for job in PARALLELIZE_CHOICES:
-            subprocess.run(["python3.11", __file__, "--parallelize", job], check=True)
-    
-    elif args.parallelize:
+    if args.parallelize:
 
         sbatch_prefix = "sbatch -N2 --partition=parallel -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
@@ -10051,3 +10370,34 @@ if __name__ == "__main__":
 
         else:
             raise ValueError(f"Unknown job type: {args.job_type}")
+
+    elif args.create_actual_vs_pred_kde_plots:
+
+        if args.create_actual_vs_pred_kde_plots == "all": 
+
+            BW_ADJUST_VALS = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0]
+            LEVELS_VALS = [10, 20, 30, 40, 50]
+
+            for bw_adjust in BW_ADJUST_VALS:
+                for levels in LEVELS_VALS:
+                    sbatch_command = (
+                        "sbatch -N2 --partition=parallel -n4 --mem=16GB --account=platiglab_paid --time=23:00:00 "
+                        f"--job-name=actual_vs_pred_kde_bw{bw_adjust}_levels{levels} "
+                        f"--output=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.out "
+                        f"--error=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.err "
+                        f"--wrap='python3.11 {__file__} --create_actual_vs_pred_kde_plots \"{bw_adjust} {levels}\"'"
+                    )
+                    logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
+                    subprocess.run(sbatch_command, shell=True, check=True)
+            
+        else: 
+
+            split = args.create_actual_vs_pred_kde_plots.split(" ")
+            assert len(split) == 2, "create_actual_vs_pred_kde_plots argument must be in the format '<bw_adjust> <levels>'"
+
+            bw_adjust_str, levels_str = split
+            bw_adjust = float(bw_adjust_str)
+            levels = int(levels_str)
+
+            analyzer = FirstOrderShapInvestigator()
+            analyzer.plot_actual_vs_predicted_as_kde(bw_adjust=bw_adjust, levels=levels)
