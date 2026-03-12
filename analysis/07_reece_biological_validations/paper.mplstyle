@@ -1,0 +1,17 @@
+# ============================
+#   FONT SETTINGS
+# ============================
+font.family: sans-serif
+font.sans-serif: Arial
+
+mathtext.fontset: custom
+mathtext.rm: Arial
+mathtext.it: Arial:italic
+mathtext.bf: Arial:bold
+
+# ============================
+#   VECTOR OUTPUT SETTINGS
+# ============================
+svg.fonttype: none     # Keep text as text in SVG
+pdf.fonttype: 42       # Embed TrueType fonts in PDF
+ps.fonttype: 42        # Embed TrueType fonts in PS/EPS
