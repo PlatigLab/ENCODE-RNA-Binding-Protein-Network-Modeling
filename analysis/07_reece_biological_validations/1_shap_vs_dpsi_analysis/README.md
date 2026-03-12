@@ -44,4 +44,4 @@ where `num_pos` is the number of rMATS significant splicing events (FDR  < 0.05 
 - Path to big table
 
 # 3_comparing_event_cutoffs
-One-off analysis to compare how RBP activity metric changesdepending on the cuto
+One-off analysis to compare how RBP activity metric changesdepending on the cutoff of significant events
