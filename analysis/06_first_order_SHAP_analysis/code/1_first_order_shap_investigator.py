@@ -1749,62 +1749,62 @@ class FirstOrderShapInvestigator:
         }
 
         # Plot
-        plt.style.use("../../paper.mplstyle")
-        fig, axes = plt.subplots(1, 2, figsize=(6.5, 0.6*top_n), dpi=300, sharex=True, sharey=True)
-        cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.6])
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(1, 2, figsize=(6.5, 0.62*top_n), dpi=300, sharex=True, sharey=True)
+            cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.6])
 
-        vmin=min(heatmap_data[cell_line].min().min() for cell_line in heatmap_data)
-        vmax=max(heatmap_data[cell_line].max().max() for cell_line in heatmap_data)
+            vmin=min(heatmap_data[cell_line].min().min() for cell_line in heatmap_data)
+            vmax=max(heatmap_data[cell_line].max().max() for cell_line in heatmap_data)
 
-        for idx, (cell_line, heatmap) in enumerate(heatmap_data.items()):
-            ax = axes[idx]
-            sns.heatmap(
-                heatmap,
-                ax=ax,
-                cmap="seismic",
-                center=0,
-                vmin=vmin,
-                vmax=vmax,
-                cbar=(idx == 0),
-                cbar_ax=(cbar_ax if idx == 0 else None),
-                linewidths=0.4,
-                linecolor="black",
+            for idx, (cell_line, heatmap) in enumerate(heatmap_data.items()):
+                ax = axes[idx]
+                sns.heatmap(
+                    heatmap,
+                    ax=ax,
+                    cmap="bwr",
+                    center=0,
+                    vmin=vmin,
+                    vmax=vmax,
+                    cbar=(idx == 0),
+                    cbar_ax=(cbar_ax if idx == 0 else None),
+                    linewidths=0.4,
+                    linecolor="black",
+                )
+
+                logger.info(f"# nulls in heatmap for {cell_line}: {heatmap.isnull().sum().sum()} out of {heatmap.size} total cells")
+                
+                # Set background color for null cells
+                ax.set_facecolor("gainsboro")
+                
+                ax.set_title(f"{cell_line}", fontsize=16, pad=8)
+                ax.set_ylabel("")
+                ax.set_xlabel("")
+                ax.tick_params(axis='x', labelsize=12)
+                ax.tick_params(axis='y', labelsize=7)
+
+
+            cbar_ax.set_title(self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=14, pad=10)
+            cbar_ax.tick_params(labelsize=10)
+
+            fig.supylabel("RBP", fontsize=14, x=0.03, y=.51, fontweight="bold")
+            fig.supxlabel("Position", fontsize=14, x=0.52, y=0.04, fontweight="bold")
+            plt.suptitle(
+                f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
+                f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
+                f"NOTE 2: Values organized from min to max\n"
+                f"NOTE 3: Null values shown in different color\n"
+                f"NOTE 4: Using {binding_unique} data\n\n"
+                f"Top {top_n} Max/Min RBPs Per Cell Line",
+
+                fontsize=5, y=0.97
             )
 
-            logger.info(f"# nulls in heatmap for {cell_line}: {heatmap.isnull().sum().sum()} out of {heatmap.size} total cells")
-            
-            # Set background color for null cells to gray
-            ax.set_facecolor("lemonchiffon")
-            
-            ax.set_title(f"{cell_line}", fontsize=12, pad=5)
-            ax.set_ylabel("")
-            ax.set_xlabel("")
-            ax.tick_params(axis='x', labelsize=12)
-            ax.tick_params(axis='y', labelsize=7)
+            plt.tight_layout(rect=[0, 0, 0.91, 1])
 
+            OUTPUT_FILE = f"{self.FIGURES['global_SHAP_paper_vignette_heatmaps']}_top_{top_n}_rbps_{binding_unique}.pdf"
+            plt.savefig(OUTPUT_FILE, dpi=1000, bbox_inches='tight')
 
-        cbar_ax.set_title(self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=14, pad=10)
-        cbar_ax.tick_params(labelsize=10)
-
-        fig.supylabel("RBP", fontsize=14, x=0.04, y=.52, fontweight="bold")
-        fig.supxlabel("Position", fontsize=14, x=0.53, y=0.04, fontweight="bold")
-        plt.suptitle(
-            f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
-            f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
-            f"NOTE 2: Values organized from min to max\n"
-            f"NOTE 3: Null values shown in different color\n"
-            f"NOTE 4: Using {binding_unique} data\n\n"
-            f"Top {top_n} Max/Min RBPs Per Cell Line",
-
-            fontsize=5, y=0.97
-        )
-
-        plt.tight_layout(rect=[0, 0, 0.91, 1])
-
-        OUTPUT_FILE = f"{self.FIGURES['global_SHAP_paper_vignette_heatmaps']}_top_{top_n}_rbps_{binding_unique}.pdf"
-        plt.savefig(OUTPUT_FILE, dpi=1000, bbox_inches='tight')
-
-        plt.show()
+            plt.show()
 
 
     def calculate_SHAP_CV(self, binding_unique=None):
