@@ -281,6 +281,7 @@ class FirstOrderShapInvestigator:
                 "NOT-Bound-Only": "../outputs/publication_figures/global_shap_elasticnet_coef_violinplots/POSITION_SEPARATED_NOT_bound_only_position_3_4_global_shap_beta_coeff_violinplot_unique_binding.png",
             }, 
         },
+        "position_3_4_global_shap_violinplot": "../outputs/publication_figures/global_shap_position_3_4/position_3_4_unique_binding_global_shap_violinplot_paper_figure.pdf",
         "global_shap_position_highlighting_bar_plots": {
             "Bound-Only": {
                 "pos_other_highlight": "../outputs/publication_figures/global_shap_position_highlighting_bar_plots/OTHER_POS_global_shap_highlight_bar_plot.png",
@@ -2506,7 +2507,107 @@ class FirstOrderShapInvestigator:
 
             plt.savefig(self.FIGURES["position_3_4_global_shap_beta_coeff_violinplot"]["separated_positions"][shap_key], dpi=600, bbox_inches='tight')
             plt.show()
-        
+    
+
+    def show_3_and_4_significance_for_bound_global_SHAP(self):
+        # Load Bound-Only Global SHAP
+        bound_global = self.calculate_specialized_global_SHAP(
+            mode="Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+
+        # Prepare long-form DataFrame for plotting
+        rows = []
+        for cell_line in self.cell_lines:
+            df = bound_global[cell_line]
+            for pos in df.index:
+                group = "3, 4" if pos in [3, 4] else "1, 2, 5, 6"
+                for rbp in df.columns:
+                    rows.append({
+                        "Cell Line": cell_line,
+                        "Position Group": group,
+                        "Bound Global SHAP": df.at[pos, rbp]
+                    })
+        plot_df = pd.DataFrame(rows).dropna(how='any')
+
+        # Set categorical order for cell line and position group
+        plot_df["Cell Line"] = pd.Categorical(plot_df["Cell Line"], categories=self.cell_lines, ordered=True)
+        plot_df["Position Group"] = pd.Categorical(plot_df["Position Group"], categories=["1, 2, 5, 6", "3, 4"], ordered=True)
+    
+        palette = {"1, 2, 5, 6": "#5ae9bc", "3, 4": "#e29a7d"}
+
+        with plt.style.context("../../paper.mplstyle"):
+            plt.figure(figsize=(3.5,3), dpi=300)
+            
+            ax = plt.gca()
+            sns.violinplot(
+                data=plot_df,
+                x="Cell Line",
+                y="Bound Global SHAP",
+                hue="Position Group",
+                hue_order=["3, 4", "1, 2, 5, 6"],
+                linecolor="black",
+                linewidth=0.4,
+                palette=palette,
+                cut=0,
+                gap=0.1,
+                density_norm="width",
+                inner=None,
+                ax=ax
+            )
+
+            for i, cell_line in enumerate(self.cell_lines):
+                # Subset data for this cell line
+                cell_df = plot_df[plot_df["Cell Line"] == cell_line]
+                # Always assign group1 as "1, 2, 5, 6" and group2 as "3, 4"
+                group1 = cell_df[cell_df["Position Group"] == "1, 2, 5, 6"]["Bound Global SHAP"]
+                group2 = cell_df[cell_df["Position Group"] == "3, 4"]["Bound Global SHAP"]
+                # Test if group2 ("3, 4") is greater than group1 ("1, 2, 5, 6")
+                pval = mannwhitneyu(group2, group1, alternative="greater", nan_policy="raise").pvalue
+
+                # Find max value for this cell line
+                max_val = cell_df["Bound Global SHAP"].max()
+                y_bar = max_val + 0.06 * max_val
+
+                # Set x positions for the two groups for each cell line
+                if i == 0:
+                    x1, x2 = -0.2, 0.2
+                elif i == 1:
+                    x1, x2 = 0.8, 1.2
+
+                # Draw significance bar
+                ax.plot([x1, x1, x2, x2], [y_bar, y_bar + 0.02 * max_val, y_bar + 0.02 * max_val, y_bar], lw=1.2, c='black')
+
+                # Add ">" symbol underneath the horizontal part of the significance bar
+                ax.text(
+                    (x1 + x2) / 2, y_bar - 0.01 * max_val,
+                    ">", ha='center', va='top', fontsize=12, color="#6966b0", fontweight="bold"
+                )
+
+                # Add annotation above the bar
+                ax.text(
+                    (x1 + x2) / 2, y_bar + 0.05 * max_val,
+                    f"M.W.U. =\n{pval:.1e}",
+                    ha='center', va='bottom', fontsize=7, color="black", fontweight="bold"
+                )
+
+            ax.set_title("Bound Global SHAP by Cell Line and Position Group\nNOTE 1: Mann-Whitney U test: '3,4' > '1,2,5,6'", fontsize=6, y=1.12)
+            ax.set_xlabel("Cell Line", fontsize=9, fontweight="bold")
+            ax.set_ylabel(self.latex_symbols["Unique-Binding"]["Bound-Only"], fontsize=12, fontweight="bold")
+            
+            ax.tick_params(axis='x', labelsize=8)
+            ax.tick_params(axis='y', labelsize=7)
+
+            # Move legend outside right and remove top/right spines
+            ax.legend(title="Positions", fontsize=6, title_fontsize=7, loc="upper center", bbox_to_anchor=(0.18, 1.08))
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["position_3_4_global_shap_violinplot"], dpi=1000, bbox_inches='tight')
+            plt.show()
+
 
     def get_has_RBP_KD_results(self, df, cell_line):
 
