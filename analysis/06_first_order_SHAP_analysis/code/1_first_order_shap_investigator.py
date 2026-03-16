@@ -6079,7 +6079,6 @@ class FirstOrderShapInvestigator:
                 PDF_FILE,
             )
 
-
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
 
         assert underlying_data in ["All-Data", "Unique-Binding", "Delta"], "underlying_data must be 'All-Data', 'Unique-Binding', or 'Delta'"
@@ -6090,34 +6089,19 @@ class FirstOrderShapInvestigator:
         for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
 
             if underlying_data != "Delta":
-                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
-                    model = pickle.load(f)
-
-                cell_line_lf = self.get_SHAP_data_as_lazyframe(
-                    cell_line
-                )[0] # Get the first SHAP lazyframe
-
-                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
-                cell_line_df = cell_line_lf.filter(
+                
+                cell_line_df = pl.scan_ipc(
+                    f"{self.PRED_DIR}/XGBRegressor/{model_hash}.feather"
+                ).filter(
                     pl.col("Partition") == "Test"
-                ).select(non_shap_cols).sort('index').collect()
-
-                model_prediction_input = cell_line_df.select(
-                    [col for col in cell_line_df.columns if "_binding" in col]
-                ).to_pandas()
-                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch for model prediction input"
-
-                predictions = model.predict(model_prediction_input)
-                cell_line_df = cell_line_df.with_columns(
-                    pl.Series("Predictions", predictions)
                 )
+                binding_cols = [col for col in cell_line_df.collect_schema().names() if col.endswith("_binding")]
 
-                del model_prediction_input
-                gc.collect()
+                cell_line_df = cell_line_df.select(
+                    ['index', "Target_PSI", "Predictions"] + binding_cols
+                ).sort('index').collect()
 
                 if underlying_data == "Unique-Binding":
-                    # Get all columns ending with "_binding"
-                    binding_cols = [col for col in cell_line_df.collect_schema().names() if col.endswith("_binding")]
                     # Group by all binding columns and aggregate mean of Target_PSI and Predictions
                     cell_line_df = cell_line_df.group_by(binding_cols).agg(
                         [
@@ -6259,81 +6243,71 @@ class FirstOrderShapInvestigator:
             # Load the best XGBoost models and get actual/predicted values
             dfs = {}
             for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
-                with gzip.open(f"{self.MODEL_PICKLE_DIR}/XGBRegressor/{model_hash}.pkl.gz", "rb") as f:
-                    model = pickle.load(f)
-
-                # Get test data
-                cell_line_lf = self.get_SHAP_data_as_lazyframe(cell_line)[0]
-                non_shap_cols = [col for col in cell_line_lf.collect_schema().names() if not col.endswith("_shap")]
-                cell_line_df = cell_line_lf.filter(
+                cell_line_df = pl.scan_ipc(
+                    f"{self.PRED_DIR}/XGBRegressor/{model_hash}.feather"
+                ).filter(
                     pl.col("Partition") == "Test"
-                ).select(non_shap_cols).sort('index').collect()
+                )
 
-                # Get predictions
-                model_prediction_input = cell_line_df.select(
-                    [col for col in cell_line_df.columns if "_binding" in col]
-                ).to_pandas()
-                assert list(model_prediction_input.columns) == list(model.column_order_when_fitting), "Column order mismatch"
-                
-                predictions = model.predict(model_prediction_input)
-                
+                cell_line_df = cell_line_df.select(["index", "Target_PSI", "Predictions"]).sort('index').collect()
+
                 dfs[cell_line] = pd.DataFrame({
                     "y_true": cell_line_df["Target_PSI"].to_numpy(),
-                    "y_pred": predictions
+                    "y_pred": cell_line_df["Predictions"].to_numpy()
                 })
                 
-                del model_prediction_input, cell_line_df
+                del cell_line_df
                 gc.collect()
 
             logger.info("Finished creating data")
             
-            plt.style.use('../../paper.mplstyle')
-            # Create 2D KDE plots with YlGn colormap
-            fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300, sharex=True, sharey=True)
+            with plt.style.context('../../paper.mplstyle'): 
+                # Create 2D KDE plots with YlGn colormap
+                fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300, sharex=True, sharey=True)
 
-            for ax, cell_line in zip(axes, self.cell_lines):
-                df = dfs[cell_line]
-                
-                # Create 2D KDE plots
-                sns.kdeplot(
-                    data=df,
-                    x="y_true",
-                    y="y_pred",
-                    ax=ax,
-                    cmap="plasma",
-                    fill=False, 
-                    linewidths=0.75,
-                    cut=0, 
-                    thresh=0,
-                    bw_adjust=bw_adjust,
-                    levels=levels
+                for ax, cell_line in zip(axes, self.cell_lines):
+                    df = dfs[cell_line]
+                    
+                    # Create 2D KDE plots
+                    sns.kdeplot(
+                        data=df,
+                        x="y_true",
+                        y="y_pred",
+                        ax=ax,
+                        cmap="plasma",
+                        fill=False, 
+                        linewidths=0.75,
+                        cut=0, 
+                        thresh=0,
+                        bw_adjust=bw_adjust,
+                        levels=levels
+                    )
+                    
+                    # Add diagonal line
+                    ax.plot([0, 1], [0, 1], color="#7FFF00", linestyle="--", linewidth=1.5)
+                    
+                    ax.set_xlim(0, 1)
+                    ax.set_ylim(0, 1)
+                    ax.set_aspect("equal")
+
+                    ax.set_title(cell_line, fontsize=14)
+                    ax.set_xlabel("",)
+                    ax.set_ylabel("",)
+
+                fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54, fontweight='bold')
+                fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42, fontweight='bold')
+
+                fig.suptitle(
+                    f"NOTE 1: Using 'All-Data' for this plot\n"
+                    f"NOTE 2: bw_adjust={bw_adjust}, levels={levels} for KDE\n"
+                    f"NOTE 3: Using best XGBoost model per cell line based on outer holdout $R^2$\n\n"
+                    f"{ACTUAL_PSI} vs {PREDICTED_PSI}", 
+                    y=1.02
                 )
-                
-                # Add diagonal line
-                ax.plot([0, 1], [0, 1], color="#7FFF00", linestyle="--", linewidth=1.5)
-                
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-                ax.set_aspect("equal")
 
-                ax.set_title(cell_line, fontsize=14)
-                ax.set_xlabel("",)
-                ax.set_ylabel("",)
-
-            fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54, fontweight='bold')
-            fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42, fontweight='bold')
-
-            fig.suptitle(
-                f"NOTE 1: Using 'All-Data' for this plot\n"
-                f"NOTE 2: bw_adjust={bw_adjust}, levels={levels} for KDE\n"
-                f"NOTE 3: Using best XGBoost model per cell line based on outer holdout $R^2$\n\n"
-                f"{ACTUAL_PSI} vs {PREDICTED_PSI}", 
-                y=1.02
-            )
-
-            plt.tight_layout()
-            plt.savefig(OUTPUT_FILE, bbox_inches='tight', dpi=1000)
-            plt.show()
+                plt.tight_layout()
+                plt.savefig(OUTPUT_FILE, bbox_inches='tight', dpi=1000)
+                plt.show()
 
             del dfs
             gc.collect()
