@@ -313,6 +313,7 @@ class FirstOrderShapInvestigator:
         "position_3_4_activating_and_others_repressing": {
             "Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_bound_local_SHAP.png",
             "NOT Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_NOT_bound_local_SHAP.png",
+            "Average Bar Plot": "../outputs/publication_figures/middle_position_activating_others_repressing/position_3_4_activating_and_others_repressing_average_bar_plot.pdf",
         },
         "elasticnet_coefficients_heatmap": {
             "All": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_all_features.png",
@@ -8043,6 +8044,84 @@ class FirstOrderShapInvestigator:
 
                 del local_shap, all_rows
                 gc.collect()
+
+
+    def plot_position_signed_average_barplot(self): 
+        
+        BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["Bound Local SHAP Values"]
+        table = pl.read_csv(BOUND_LOCAL_SHAP, separator="\t")
+
+        position_palette = {
+            i: '#e29a7d' if i in [3, 4] else '#5ae9bc' for i in range(1, 7) 
+        }
+        chosen_hatch = '**'
+
+        avg_data = []
+        for cell_line in self.cell_lines:
+            for pos in range(1, 7):
+                avg_val = table.filter(
+                    (pl.col("Cell Line") == cell_line) & 
+                    (pl.col("Position") == pos)
+                )["Bound Local SHAP"].mean()
+                avg_data.append({"Cell Line": cell_line, "Position": pos, "Mean SHAP": avg_val})
+
+        avg_df = pd.DataFrame(avg_data)
+
+        with plt.style.context("../../paper.mplstyle"):
+            plt.figure(figsize=(4.5, 3), dpi=300)
+            
+            positions = sorted(avg_df["Position"].unique())        
+            bar_width = 0.32
+            gap = 0.025
+            
+            ax = plt.gca()
+
+            for i, pos in enumerate(positions):
+                for cell_line in self.cell_lines:
+                    color = position_palette[pos]
+                    hatch = None if cell_line == "HepG2" else chosen_hatch
+                    offset = (-bar_width / 2 - gap) if cell_line == "HepG2" else (bar_width / 2 + gap)
+                    mean_shap = avg_df[(avg_df["Position"] == pos) & (avg_df["Cell Line"] == cell_line)]["Mean SHAP"].values
+                    ax.bar(
+                        i + offset, mean_shap[0], width=bar_width,
+                        color=color, edgecolor="black", hatch=hatch, label=cell_line if i == 0 else ""
+                    )
+
+            plt.axhline(0, color="black", linestyle="-", linewidth=1, alpha=0.8)
+
+            ax.tick_params(axis='x', labelsize=10)
+
+            # Remove top and right spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+            # Add thin gray grid lines
+            ax.grid(True, axis='y', which='major', color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
+
+            # Move lower y-limit down
+            ymin, ymax = ax.get_ylim()
+            ax.set_ylim(ymin - 0.07 * (ymax - ymin), ymax)
+
+            plt.xlabel("Position", fontsize=12, fontweight="bold")
+            plt.ylabel(f"Mean({self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-Bound-Only"]})", fontsize=12, fontweight="bold")
+            plt.title("Average Directional Position Effect", fontsize=10, y=1.05)
+
+            # Custom legend
+            handles = [
+                Patch(facecolor="white", edgecolor="black", hatch=None, label="HepG2"),
+                Patch(facecolor="white", edgecolor="black", hatch=chosen_hatch, label="K562"),
+            ]
+            
+            plt.legend(handles=handles, title="Cell Line", fontsize=9, loc="best", bbox_to_anchor=(0.3, 0.7))
+            plt.xticks(range(len(positions)), [str(p) for p in positions])
+            
+            plt.tight_layout()
+            plt.savefig(
+                self.FIGURES["position_3_4_activating_and_others_repressing"]["Average Bar Plot"],
+                dpi=1000, 
+                bbox_inches='tight'
+            )
+            plt.show()
 
     
     def compare_bound_global_SHAP_and_signed_mean_bound_local_SHAP(self):
