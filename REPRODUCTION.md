@@ -309,7 +309,7 @@ The following sections of the notebook are either those that:
 
 #### Relevant sections (as denoted with headers in <span style="color: teal;">teal</span> color within notebook): 
 * Data QC + Cache Creation
-* Predicted vs Actual Plots 
+* Predicted vs Actual Plots & Performance
 * Global SHAP Across Models and for Average Local SHAP
 * Position 3 + 4 Significance in Global SHAP/ElasticNet
 * Is Position 3/4 Activator-Like and Other Positions Repressor-Like?

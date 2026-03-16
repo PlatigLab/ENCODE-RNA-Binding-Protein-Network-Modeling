@@ -396,6 +396,7 @@ class FirstOrderShapInvestigator:
             lfs = self.get_SHAP_data_as_lazyframe(cell_line)
 
             for i, lf in enumerate(tqdm.tqdm(lfs, desc=f"Checking SHAP DataFrames for {cell_line}")):
+                assert lf.select(pl.selectors.float().is_nan().sum()).collect().sum_horizontal().item() == 0, f"NaN values found in SHAP DataFrame {i+1} for cell line {cell_line}"
                 assert lf.null_count().collect().sum_horizontal().item() == 0, f"Null values found in SHAP DataFrame {i+1} for cell line {cell_line}"
 
                 binding_cols = [col for col in lf.collect_schema().names() if col.endswith("_binding")]
@@ -584,11 +585,11 @@ class FirstOrderShapInvestigator:
     def get_slurm_job_num_cpus(self): 
 
         # Check if the SLURM_JOB_CPUS_PER_NODE environment variable is set
-        if 'SLURM_JOB_CPUS_PER_NODE' in os.environ:
-            num_cpus = int(os.environ['SLURM_JOB_CPUS_PER_NODE'])
+        if 'SLURM_CPUS_PER_TASK' in os.environ:
+            num_cpus = int(os.environ['SLURM_CPUS_PER_TASK'])
             return num_cpus
         else:
-            logger.warning("SLURM_JOB_CPUS_PER_NODE not set, defaulting to 1 CPU")
+            logger.warning("SLURM_CPUS_PER_TASK environment variable not found. Defaulting to 1 CPU.")
             return 1
     
 
@@ -10279,7 +10280,7 @@ if __name__ == "__main__":
 
     if args.parallelize:
 
-        sbatch_prefix = "sbatch -N2 --partition=parallel -n16 --mem=128GB --account=platiglab"
+        sbatch_prefix = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
         sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
         logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
