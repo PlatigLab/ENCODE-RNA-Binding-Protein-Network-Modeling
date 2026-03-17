@@ -319,6 +319,7 @@ class FirstOrderShapInvestigator:
             "All": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_all_features.png",
             "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
         }, 
+        "dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf", 
     }
 
 
@@ -9395,7 +9396,7 @@ class FirstOrderShapInvestigator:
 
         DPSI_THRESHOLDS = [0, 0.05, 0.1]
         FDR_THRESHOLDS = [1, 0.1, 0.05]
-        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.05, 0.25, 0.5]
+        DELTA_LOCAL_SHAP_THRESHOLDS = [0, 0.05, 0.1, 0.2]
 
         DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
         DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
@@ -9526,7 +9527,8 @@ class FirstOrderShapInvestigator:
             results_df["FDR"] = pvals_corrected
 
             results_df.sort_values(
-                by=["Cell Line", "dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"]
+                by=["dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"],
+                ascending=[True, True, False]
             ).to_csv(self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode], sep="\t", index=False)
 
         elif across_thresholds:
@@ -9633,6 +9635,7 @@ class FirstOrderShapInvestigator:
 
         else: 
             raise ValueError("across_thresholds must be True or False")
+
 
     def run_fishers_test_across_confusion_matrices_for_dpsi_sign_vs_local_SHAP_sign(self, data_mode=None):
         assert data_mode in ["test", "test candidate features"], "data_mode must be 'test' or 'test candidate features'"
@@ -9763,6 +9766,119 @@ class FirstOrderShapInvestigator:
         
         plt.tight_layout(rect=[0, 0, 0.88, 1])
         plt.show()
+
+
+    def plot_dpsi_vs_local_SHAP_fishers_test_odds_ratios_as_barplot(self): 
+        
+        logger.warning('"Test Candidate Features" are ignored and instead all features (i.e. "Test") are used\n\n')
+
+        INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
+        results_df = pd.read_csv(INPUT_FILE, sep="\t")
+
+        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+
+        cell_lines = sorted(results_df["Cell Line"].unique(), reverse=True)  
+        chosen_thresholds = [
+            {
+                "Delta SHAP Threshold": 0.05, 
+                "dPSI Threshold": 0, 
+                "FDR Threshold": 0.05
+            }, 
+            {
+                "Delta SHAP Threshold": 0.1, 
+                "dPSI Threshold": 0,   
+                "FDR Threshold": 0.05
+            }, 
+            {
+                "Delta SHAP Threshold": 0.2, 
+                "dPSI Threshold": 0,   
+                "FDR Threshold": 0.05
+            }
+        ]
+        
+        with plt.style.context("../../paper.mplstyle"):
+            # Create figure with 2 rows (one per cell line)
+            fig, axes = plt.subplots(2, 1, figsize=(4,3.8), dpi=300, sharex=True, sharey=True)
+
+            colors = ["#f7d5d1", "#faa2b8", "#ff6aa5"]
+
+            for row_idx, cell_line in enumerate(reversed(self.cell_lines)):
+                ax = axes[row_idx]
+                
+                odds_ratios = []
+                fdr_values = []
+                total_counts = []
+                delta_shap_labels = []
+                
+                # Iterate through thresholds in order (so first threshold appears at bottom)
+                for threshold_set in chosen_thresholds:
+                    # Filter results_df for this cell line and all threshold values
+                    filtered = results_df[
+                        (results_df["Cell Line"] == cell_line) &
+                        (results_df["Delta SHAP Threshold"] == threshold_set["Delta SHAP Threshold"]) &
+                        (results_df["dPSI Threshold"] == threshold_set["dPSI Threshold"]) &
+                        (results_df["FDR Threshold"] == threshold_set["FDR Threshold"])
+                    ]
+
+                    assert filtered.shape[0] == 1, f"Expected exactly one row for Cell Line: {cell_line} with thresholds {threshold_set}, but got {filtered.shape[0]}"
+                    
+                    odds_ratios.append(filtered["(A*D / B*C) Odds Ratio"].values[0])
+                    fdr_values.append(filtered["FDR"].values[0])
+                    total_counts.append(filtered["(A) dPSI +, SHAP +"].values[0] + filtered["(B) dPSI +, SHAP -"].values[0] + filtered["(C) dPSI -, SHAP +"].values[0] + filtered["(D) dPSI -, SHAP -"].values[0])
+
+                    delta_shap_labels.append(f"{threshold_set['Delta SHAP Threshold']}")
+                
+                # Create horizontal bar plot
+                ax.barh(delta_shap_labels, odds_ratios, 
+                    color=colors, edgecolor='black', alpha = 1,
+                    linewidth=1.5, height=0.55
+                    )
+
+                ax.set_xlim(0, 4.2)
+
+                ax.axvline(x=1, color='blue', linestyle='--', linewidth=1.5, label='Odds Ratio = 1')
+                ax.axvspan(1, ax.get_xlim()[1], alpha=0.08, color='blue', zorder=0)
+                
+                if row_idx == 0:
+                    ax.text(1.05, len(delta_shap_labels)-0.3, 'Concordance $\longrightarrow$', color='blue', fontsize=8, va='center')
+
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                # Add value labels on bars
+                for idx, (val, fdr, count) in enumerate(zip(odds_ratios, fdr_values, total_counts)):
+                    ax.text(
+                        val + 0.15, 
+                        idx, 
+                        f"FDR: {fdr:.1e}\nN: {count:,}", 
+                        va='center', 
+                        fontsize=8
+                    )
+
+                ax.set_ylabel(
+                    cell_line,
+                    fontsize=10,
+                    fontstyle='italic',
+                    bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),
+                    labelpad=10
+                )
+
+
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby Delta SHAP Threshold", 
+                        fontsize=4, y=0.97)
+
+            fig.supxlabel("Odds Ratio", fontsize=12, y=0.06, x=0.53, fontweight='bold')
+            fig.supylabel(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥", fontsize=12, x=0.02, y=0.51, fontweight='bold')
+
+            plt.tight_layout(h_pad=1)
+            plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
+            plt.show()
+            
+
+
+
+
 
 
 
