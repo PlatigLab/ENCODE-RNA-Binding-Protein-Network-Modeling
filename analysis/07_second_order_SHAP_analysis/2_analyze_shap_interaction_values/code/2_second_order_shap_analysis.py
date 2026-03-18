@@ -1429,19 +1429,15 @@ class SecondOrderShapNetworkAnalyzer:
                             curve_input = curve_input.drop(ppi_sources)
 
                             if plot_type == "RBP-SPECIFIC_MAX_VALUE":
-                                # Create a new column with sorted tuple of RBP 1 and RBP 2
-                                curve_input = curve_input.with_columns(
-                                    pl.struct(["RBP 1", "RBP 2"]).map_elements(lambda x: "-".join(sorted([x["RBP 1"], x["RBP 2"]]))).alias("RBP_PAIR")
-                                )
                                 # Sort by Abs. SHAP Value descending and keep only the first occurrence per RBP_PAIR (max value)
                                 curve_input = curve_input.sort("Abs. SHAP Value", descending=True).unique(
-                                    subset=["RBP_PAIR"], 
+                                    subset=["Sorted RBP Pair"],
                                     keep="first", 
                                     maintain_order=True    
                                 )
                                 
                             # Sort by "Abs. SHAP Value" descending, then by "PPI" descending
-                            curve_input = curve_input.sort(["Abs. SHAP Value", "PPI"], descending=True)
+                            curve_input = curve_input.sort(["Abs. SHAP Value"], descending=True)
                             
                             # Assert no nulls in the entire dataframe
                             assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
