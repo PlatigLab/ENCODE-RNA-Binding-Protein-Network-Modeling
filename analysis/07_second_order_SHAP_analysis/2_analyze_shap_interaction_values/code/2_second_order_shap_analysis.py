@@ -2826,58 +2826,64 @@ class SecondOrderShapNetworkAnalyzer:
         # Convert results to a DataFrame
         results_df = pd.DataFrame(results).sort_values(by="SHAP Threshold")
 
-        # Create a scatter plot with color representing total interactions considered
-        fig, ax = plt.subplots(figsize=(6, 5), dpi=400)
-        
-        # Line plot to connect the dots (without color parameter)
-        sns.lineplot(
-            data=results_df,
-            x="SHAP Threshold",
-            y="% Direction Concordance",
-            color="#E74C3C",
-            linewidth=1.5,
-            ax=ax,
-            legend=False
-        )
-        
-        # Scatterplot with color parameter for legend using cividis palette
-        scatter = ax.scatter(
-            results_df["SHAP Threshold"],
-            results_df["% Direction Concordance"],
-            c=results_df["# Total"],
-            cmap="cividis",
-            s=75,
-            alpha=1.0,
-            edgecolor="gray",
-            linewidth=1
-        )
-        
-        # Add colorbar for the # Total values
-        cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label("# Interaction Features Considered", fontsize=8)
-        
-        # Set log scale for x-axis
-        ax.set_xscale('log')
-        ax.grid(True, alpha=0.3)
+        with plt.style.context("../../../paper.mplstyle"): 
+            # Create a scatter plot with color representing total interactions considered
+            fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
+            
+            # Line plot to connect the dots (without color parameter)
+            sns.lineplot(
+                data=results_df,
+                x="SHAP Threshold",
+                y="% Direction Concordance",
+                color="#E63030",
+                linewidth=1.5,
+                ax=ax,
+                legend=False, 
+                zorder=0
+            )
+            
+            # Scatterplot with color parameter for legend using cividis palette
+            scatter = ax.scatter(
+                results_df["SHAP Threshold"],
+                results_df["% Direction Concordance"],
+                c=results_df["# Total"],
+                cmap="YlGnBu",
+                s=70,
+                alpha=1.0,
+                edgecolor="black",
+                linewidth=1.2, 
+                zorder=9
+            )
+            
+            # Add colorbar for the # Total values
+            cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
+            cbar.set_label("# Interaction Features Considered", fontsize=8, labelpad=10)
+            
+            # Set log scale for x-axis
+            ax.set_xscale('log')
+            ax.grid(True, alpha=0.25, zorder=0, linestyle ='-.')
 
-        ax.set_ylim(0, 105)        
-        ax.set_title("% Both-Cell-Line-Learned Interactions\nwith Same Direction as function of Min. SHAP Threshold", fontsize=10)
-        ax.set_xlabel(f"|{latex_symbol}| Threshold", fontsize=12, fontweight='bold')
-        ax.set_ylabel("% Interactions w/ Same Direction", fontsize=10, fontweight='bold')
+            ax.tick_params(axis='both', labelsize=12)
 
-        fig.suptitle(
-            (
-                "NOTE 1: Only considers interactions where BOTH cell lines\nhave non-zero \"Signed Mean Average\" values\n\n"
-                "NOTE 2: Threshold means that BOTH cell lines\nmust have |\"Signed Mean Average\"| > threshold to be included\n"
-                "\n"
-            ), 
-            fontsize=8,
-            y=0.93, 
-            x=0.48
-        )
+            ax.set_ylim(0, 105)        
+            ax.set_title("% Both-Cell-Line-Learned Interactions with Same Direction as function of Min. SHAP Threshold", fontsize=7, pad=15)
+            ax.set_xlabel(f"|{latex_symbol}| Threshold", fontsize=13, fontweight='bold', labelpad=-1)
+            ax.set_ylabel("% Concordant Interactions", fontsize=12, fontweight='bold')
 
-        plt.tight_layout()
-        plt.show()
+            fig.suptitle(
+                (
+                    "NOTE 1: Only considers interactions where BOTH cell lines have non-zero \"Signed Mean Average\" values\n"
+                    "NOTE 2: Threshold means that BOTH cell lines must have |\"Signed Mean Average\"| > threshold to be included\n"
+                    "\n"
+                ), 
+                fontsize=6,
+                y=0.93, 
+                x=0.48
+            )
+
+            plt.tight_layout()
+            plt.savefig(self.CONFIG["FIGURES"]["cell_line_interaction_sign_similarity"], dpi=1000, bbox_inches='tight')
+            plt.show()
 
 
     def plot_position_combination_directionality(self):

@@ -15,6 +15,7 @@ FIGURES:
     side_by_side_heatmap_dir: "../outputs/figures/side_by_side_heatmaps/"
     prc_roc_curves_dir: '../outputs/figures/roc_prc_curves/'
     actual_psi_by_binding_dir: "../outputs/figures/actual_PSI_by_binding/"
+    cell_line_interaction_sign_similarity: "../outputs/figures/learned_interaction_cell_line_sign_similarity/learned_interaction_cell_line_sign_similarity.pdf"
 
 # PPI Info 
 PPI_SOURCES: ["Rec-Y2H", "Street et al | IP-MS", "Street et al | IP/SEC-MS (Both)"]
@@ -63,7 +64,7 @@ PARTIAL_AUC_THRESHOLDS: [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
 # SHAP percentile thresholds 
 SHAP_PERCENTILE_THRESHOLDS: [50, 75, 90, 95, 99]
 # RAW SHAP thresholds
-RAW_SHAP_THRESHOLDS: [0.0, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4, 5.0e-4, 1.0e-3, 5.0e-3, 1.0e-2, 5.0e-2, .1, .2, .3, .4, .5]
+RAW_SHAP_THRESHOLDS: [0.0, 1.0e-4, 5.0e-4, 1.0e-3, 5.0e-3, 1.0e-2, 5.0e-2, .1, .2, .3, .4, .5,]
 # First order SHAP Cache Directory 
 FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL_AVERAGE_SHAP_CACHE/"
 

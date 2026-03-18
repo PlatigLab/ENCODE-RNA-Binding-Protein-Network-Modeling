@@ -367,6 +367,3 @@ python3.11 2_second_order_shap_analysis.py --aggregate_all_metrics
 
 Run the following notebook top to bottom to explore the results from the `Second Order SHAP` analysis: 
 `./analysis/07_second_order_SHAP_analysis/2_analyze_shap_interaction_values/code/2_analysis_of_second_order_SHAP_interactions.ipynb`
-
-
-## TODO make sure that it's still necessary to invert `dPSI` values by checking raw PSI values
