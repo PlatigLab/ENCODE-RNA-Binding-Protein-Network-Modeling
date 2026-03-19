@@ -9801,7 +9801,10 @@ class FirstOrderShapInvestigator:
             # Create figure with 2 rows (one per cell line)
             fig, axes = plt.subplots(2, 1, figsize=(4,3.8), dpi=300, sharex=True, sharey=True)
 
-            colors = ["#f7d5d1", "#faa2b8", "#ff6aa5"]
+            colors = {
+                "K562": "#1B95DC", 
+                "HepG2": "#E8AB26"
+            }
 
             for row_idx, cell_line in enumerate(reversed(self.cell_lines)):
                 ax = axes[row_idx]
@@ -9831,17 +9834,11 @@ class FirstOrderShapInvestigator:
                 
                 # Create horizontal bar plot
                 ax.barh(delta_shap_labels, odds_ratios, 
-                    color=colors, edgecolor='black', alpha = 1,
+                    color=colors[cell_line], edgecolor='black', alpha = 1,
                     linewidth=1.5, height=0.55
                     )
 
-                ax.set_xlim(0, 4.2)
-
-                ax.axvline(x=1, color='blue', linestyle='--', linewidth=1.5, label='Odds Ratio = 1')
-                ax.axvspan(1, ax.get_xlim()[1], alpha=0.08, color='blue', zorder=0)
-                
-                if row_idx == 0:
-                    ax.text(1.05, len(delta_shap_labels)-0.3, 'Concordance $\longrightarrow$', color='blue', fontsize=8, va='center')
+                ax.axvline(x=1, color="#49cc2f", linestyle='--', linewidth=1.5, label='Odds Ratio = 1')
 
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
@@ -9861,15 +9858,15 @@ class FirstOrderShapInvestigator:
                     fontsize=10,
                     fontstyle='italic',
                     bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),
-                    labelpad=10
+                    labelpad=5
                 )
 
 
             fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby Delta SHAP Threshold", 
                         fontsize=4, y=0.97)
 
-            fig.supxlabel("Odds Ratio", fontsize=12, y=0.06, x=0.53, fontweight='bold')
-            fig.supylabel(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥", fontsize=12, x=0.02, y=0.51, fontweight='bold')
+            fig.supxlabel("Odds Ratio", fontsize=12, y=0.065, x=0.53, fontweight='bold')
+            fig.supylabel(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥", fontsize=12, x=0.04, y=0.53, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
