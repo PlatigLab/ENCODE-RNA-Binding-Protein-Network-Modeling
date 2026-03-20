@@ -1524,7 +1524,7 @@ class SecondOrderShapNetworkAnalyzer:
         return curve_data
     
     
-    def plot_roc_and_prc_curves_for_metric(self, metric=None, curve_data=None, figure_file_name_suffix=None): 
+    def plot_roc_and_prc_curves_for_metric(self, metric=None, curve_data=None, figure_file_name_suffix=None, cell_line_combined=False): 
         """
         For a given metric, plot ROC and PRC curves using output from calculate_roc_and_prc_curve_data_for_metric()
         """
@@ -1533,65 +1533,94 @@ class SecondOrderShapNetworkAnalyzer:
         assert curve_data is not None, "Curve data must be provided for plotting."
         assert isinstance(figure_file_name_suffix, str) is True, "figure_file_name_suffix must be a string to append to the saved figure filename."
                 
-        sns.set_palette("Set3")
+        if cell_line_combined:
+            sns.set_palette("Set2")
+        elif not cell_line_combined:
+            sns.set_palette("Set3")
+
                 
         for plot_type in curve_data.keys():
             
             with plt.style.context("../../../paper.mplstyle"):
                 fig, axes = plt.subplots(
-                    #TODO switch dpi back 
-                    nrows=2, ncols=2, figsize=(12, 12), dpi=100,
+                    nrows= 1 if cell_line_combined else len(curve_data[plot_type].keys()),
+                    ncols=2, 
+                    figsize=(13, 8) if cell_line_combined else (12, 12),
+                    dpi=400,
                     sharex=True, sharey=True
                 )
 
-                for row_idx, cell_line in enumerate(curve_data[plot_type].keys()):
+                if cell_line_combined:
+                    cell_lines_list = ["Combined Cell Lines"]
+                elif not cell_line_combined:
+                    cell_lines_list = curve_data[plot_type].keys()
+
+                for row_idx, cell_line in enumerate(cell_lines_list):
                     for col_idx, curve_type in enumerate(["roc", "prc"]):
-                        ax = axes[row_idx, col_idx]
+                        if not cell_line_combined:
+                            ax = axes[row_idx, col_idx]
+                        else: 
+                            ax = axes[col_idx]
                         
                         if curve_type == "roc":
                             ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
-                      
-                        for ppi_source in curve_data[plot_type][cell_line].keys():
-                            for ppi_type in curve_data[plot_type][cell_line][ppi_source].keys():
-                                data = curve_data[plot_type][cell_line][ppi_source][ppi_type]
-                                
-                                if curve_type == "roc":
-                                    ax.plot(data["fpr"], data["tpr"], label=f"{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.7)
-                                else:
-                                    ax.plot(data["recall"], data["precision"], label=f"{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [ΔBaseline={data['prc_auc'] - data['baseline']:.3f}]", alpha=0.7)
+
+                        if cell_line_combined:
+                            iterate_cell_lines = curve_data[plot_type].keys()
+                        else:
+                            iterate_cell_lines = [cell_line]
+                        
+                        # use HepG2 just to get keys
+                        for ppi_source in curve_data[plot_type]["HepG2"].keys():
+                            for ppi_type in curve_data[plot_type]["HepG2"][ppi_source].keys():
+                                for cell_line_iterated in iterate_cell_lines:
+                                    data = curve_data[plot_type][cell_line_iterated][ppi_source][ppi_type]
+                                    
+                                    if cell_line_combined: 
+                                        prefix_label = f"{cell_line_iterated} - "
+                                    else:
+                                        prefix_label = ""
+
+                                    if curve_type == "roc":
+                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.8)
+                                    else:
+                                        delta_baseline = data['prc_auc'] - data['baseline']
+                                        sign = "+" if delta_baseline > 0 else "-"
+                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [ΔBaseline={sign}{abs(delta_baseline):.3f}]", alpha=0.8)
                         
                         if row_idx ==0: 
                             ax.set_title(f"{curve_type.upper()}", fontsize=24, fontweight='bold', pad=10)
 
-                        # Add cell line label in top left corner with rounded dashed box
-                        cell_line_text = ax.text(
-                            0.5, 
-                            0.95,
-                            f"{cell_line}",
-                            transform=ax.transAxes,
-                            fontsize=16,
-                            style='italic',
-                            verticalalignment='top',
-                            horizontalalignment='center',
-                            bbox=dict(boxstyle='round,pad=0.5', linestyle='--', linewidth=1.5, edgecolor='black', facecolor='white', alpha=0.7)
-                        )
+                        if not cell_line_combined:
+                            # Add cell line label in top left corner with rounded dashed box
+                            cell_line_text = ax.text(
+                                0.5, 
+                                0.95,
+                                f"{cell_line}",
+                                transform=ax.transAxes,
+                                fontsize=16,
+                                style='italic',
+                                verticalalignment='top',
+                                horizontalalignment='center',
+                                bbox=dict(boxstyle='round,pad=0.5', linestyle='--', linewidth=1.5, edgecolor='black', facecolor='white', alpha=0.7)
+                            )
 
                         ax.tick_params(axis='both', which='major', labelsize=14)
 
                         if curve_type == "roc":
 
-                            if row_idx == len(curve_data[plot_type].keys()) - 1:  # Only add x label to bottom row
+                            if (cell_line_combined ==False and row_idx == len(curve_data[plot_type].keys()) - 1) or (cell_line_combined and col_idx == 0):  # Only add x label to bottom row
                                 ax.set_xlabel("False Positive Rate", fontsize=20, fontweight='bold')
 
                             ax.set_ylabel("True Positive Rate", fontsize=20, fontweight='bold')
-                            legend_fontsize = 5.5
-                            ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.98, 0.02))
+                            legend_fontsize = 5.9 if not cell_line_combined else 7.9
+                            ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.99, 0.02), edgecolor='sienna')
                         else:
-                            if row_idx == len(curve_data[plot_type].keys()) - 1:  # Only add x label to bottom row
+                            if (cell_line_combined ==False and row_idx == len(curve_data[plot_type].keys()) - 1) or (cell_line_combined and col_idx == 1):  # Only add x label to bottom row 
                                 ax.set_xlabel("Recall", fontsize=20, fontweight='bold')
                             ax.set_ylabel("Precision", fontsize=20, fontweight='bold')
-                            legend_fontsize = 7.5
-                            ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.98, 0.8))
+                            legend_fontsize = 7.5 if not cell_line_combined else 8.1
+                            ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.99, 0.7), edgecolor='sienna')
                 
                 if plot_type == "RBP-SPECIFIC_MAX_VALUE":
                     note = "\nNOTE 7: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
