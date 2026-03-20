@@ -1524,81 +1524,115 @@ class SecondOrderShapNetworkAnalyzer:
         return curve_data
     
     
-    def plot_roc_and_prc_curves_for_metric(self, metric=None, curve_data=None):
+    def plot_roc_and_prc_curves_for_metric(self, metric=None, curve_data=None, figure_file_name_suffix=None): 
         """
         For a given metric, plot ROC and PRC curves using output from calculate_roc_and_prc_curve_data_for_metric()
         """
 
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
         assert curve_data is not None, "Curve data must be provided for plotting."
+        assert isinstance(figure_file_name_suffix, str) is True, "figure_file_name_suffix must be a string to append to the saved figure filename."
                 
         sns.set_palette("Set3")
                 
         for plot_type in curve_data.keys():
-            fig, axes = plt.subplots(
-                nrows=2, ncols=2, figsize=(12, 12), dpi=400,
-                sharex=True, sharey=True
-            )
-
-            for row_idx, cell_line in enumerate(curve_data[plot_type].keys()):
-                for col_idx, curve_type in enumerate(["roc", "prc"]):
-                    ax = axes[row_idx, col_idx]
-                    
-                    for ppi_source in curve_data[plot_type][cell_line].keys():
-                        for ppi_type in curve_data[plot_type][cell_line][ppi_source].keys():
-                            data = curve_data[plot_type][cell_line][ppi_source][ppi_type]
-                            
-                            if curve_type == "roc":
-                                ax.plot(data["fpr"], data["tpr"], label=f"{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.7)
-                            else:
-                                ax.plot(data["recall"], data["precision"], label=f"{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [Baseline: {data['baseline']:.3f}]", alpha=0.5)
-                    
-                    if curve_type == "roc":
-                        ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
-                        ax.set_xlabel("False Positive Rate", fontsize=12)
-                        ax.set_ylabel("True Positive Rate", fontsize=12)
-                        ax.set_title(f"ROC Curve - {cell_line}", fontweight='bold', fontsize=16)
-                        legend_fontsize = 5.5
-                    else:
-                        ax.set_xlabel("Recall", fontsize=12)
-                        ax.set_ylabel("Precision", fontsize=12)
-                        ax.set_title(f"PRC Curve - {cell_line}", fontweight='bold', fontsize=16)
-                        legend_fontsize = 7
-
-                    ax.legend(loc="best", fontsize=legend_fontsize, frameon=True)
             
-            if plot_type == "RBP-SPECIFIC_MAX_VALUE":
-                note = "\nNOTE 7: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
-            else: 
-                note = ""
+            with plt.style.context("../../../paper.mplstyle"):
+                fig, axes = plt.subplots(
+                    #TODO switch dpi back 
+                    nrows=2, ncols=2, figsize=(12, 12), dpi=100,
+                    sharex=True, sharey=True
+                )
 
-            fig.suptitle(
-                "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
-                "\nNOTE 2: Null PPI values removed from curve creation to keep only True Positive and True Negatives" +
-                "\nNOTE 3: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
-                '\nNOTE 4: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
-                "\nNOTE 5: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
-                "\nNOTE 6: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
-                note +
-                f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
-                fontsize=13, y=1.01
-            )
+                for row_idx, cell_line in enumerate(curve_data[plot_type].keys()):
+                    for col_idx, curve_type in enumerate(["roc", "prc"]):
+                        ax = axes[row_idx, col_idx]
+                        
+                        if curve_type == "roc":
+                            ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
+                      
+                        for ppi_source in curve_data[plot_type][cell_line].keys():
+                            for ppi_type in curve_data[plot_type][cell_line][ppi_source].keys():
+                                data = curve_data[plot_type][cell_line][ppi_source][ppi_type]
+                                
+                                if curve_type == "roc":
+                                    ax.plot(data["fpr"], data["tpr"], label=f"{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.7)
+                                else:
+                                    ax.plot(data["recall"], data["precision"], label=f"{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [ΔBaseline={data['prc_auc'] - data['baseline']:.3f}]", alpha=0.7)
+                        
+                        if row_idx ==0: 
+                            ax.set_title(f"{curve_type.upper()}", fontsize=24, fontweight='bold', pad=10)
 
-            plt.tight_layout()
-            plt.savefig(
-                f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{plot_type}-{metric}-roc_prc_curves.png",
-                bbox_inches='tight',
-                dpi=400
-            )
+                        # Add cell line label in top left corner with rounded dashed box
+                        cell_line_text = ax.text(
+                            0.5, 
+                            0.95,
+                            f"{cell_line}",
+                            transform=ax.transAxes,
+                            fontsize=16,
+                            style='italic',
+                            verticalalignment='top',
+                            horizontalalignment='center',
+                            bbox=dict(boxstyle='round,pad=0.5', linestyle='--', linewidth=1.5, edgecolor='black', facecolor='white', alpha=0.7)
+                        )
 
-            plt.show()
+                        ax.tick_params(axis='both', which='major', labelsize=14)
+
+                        if curve_type == "roc":
+
+                            if row_idx == len(curve_data[plot_type].keys()) - 1:  # Only add x label to bottom row
+                                ax.set_xlabel("False Positive Rate", fontsize=20, fontweight='bold')
+
+                            ax.set_ylabel("True Positive Rate", fontsize=20, fontweight='bold')
+                            legend_fontsize = 5.5
+                            ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.98, 0.02))
+                        else:
+                            if row_idx == len(curve_data[plot_type].keys()) - 1:  # Only add x label to bottom row
+                                ax.set_xlabel("Recall", fontsize=20, fontweight='bold')
+                            ax.set_ylabel("Precision", fontsize=20, fontweight='bold')
+                            legend_fontsize = 7.5
+                            ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.98, 0.8))
+                
+                if plot_type == "RBP-SPECIFIC_MAX_VALUE":
+                    note = "\nNOTE 7: RBP-Specific takes max SHAP val per unique RBP pair within Same, or Different, or All Positions"
+                else: 
+                    note = ""
+
+                fig.suptitle(
+                    "\nNOTE 1: PPI status: True (tested & interacts), False (tested & no interaction), and Null (not tested)" + 
+                    "\nNOTE 2: Null PPI values removed from curve creation to keep only True Positive and True Negatives" +
+                    "\nNOTE 3: [Only applicable to 'Bound-Only' based metrics] NaN values removed (aka. no binding observed)" +
+                    '\nNOTE 4: "Same" and "Different" position PPI curves subset to only interactions at same or different positions, respectively' +
+                    "\nNOTE 5: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
+                    "\nNOTE 6: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
+                    note +
+                    f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
+                    fontsize=13, y=1.01
+                )
+
+                plt.tight_layout()
+                plt.savefig(
+                    f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/plots/{plot_type}-{metric}_{figure_file_name_suffix}.pdf", 
+                    dpi=1000, 
+                    bbox_inches='tight'
+                )
+                plt.show()  
     
 
-    def plot_all_roc_and_prc_curve_combinations(self, metric = None):
+    def plot_all_roc_and_prc_curve_combinations_for_rbp_specific_max_value(self, metric = None):
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
-        
+
+        # Only plot RBP-Specific
         curve_data = self.calculate_roc_and_prc_curve_data_for_metric(metric=metric)
-        self.plot_roc_and_prc_curves_for_metric(metric=metric, curve_data=curve_data)
+        del curve_data["FEATURE-SPECIFIC"]
+
+        plot = self.plot_roc_and_prc_curves_for_metric(
+            metric=metric, 
+            curve_data=curve_data, 
+            figure_file_name_suffix="roc_prc_curves-SUPPLEMENTARY_ALL_COMBINATIONS"
+        )
+
+    
 
 
     def plot_actual_psi_by_binding_for_PPI(self,):
