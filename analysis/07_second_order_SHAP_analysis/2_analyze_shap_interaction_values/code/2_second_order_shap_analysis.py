@@ -3690,7 +3690,7 @@ class SecondOrderShapNetworkAnalyzer:
             distribution_names = ["Both Bound", "F1 Bound Only", "F2 Bound Only",] # "Either Bound"]
             metric_names = ["# Points", "Average", "Median"]
             
-            for row in tqdm(results_df.iter_rows(named=True), desc="Processing interactions"):
+            for row in tqdm(results_df.iter_rows(named=True), desc="Processing interactions", total=results_df.height):
                 interaction_col = row["Feature-Feature Interaction"]
                 
                 # Get the two binding features from the interaction column
@@ -3702,7 +3702,7 @@ class SecondOrderShapNetworkAnalyzer:
                 }
                 
                 # Process each cell line
-                temp_data = {}
+                calculated_stats = {}
                 distributions_by_cell_line = {}
                 for cell_line in self.CONFIG["CELL_LINES"]:
                     cell_line_data = first_order_shap_data[cell_line]
@@ -3730,14 +3730,14 @@ class SecondOrderShapNetworkAnalyzer:
                         # "Either Bound": xor_combined
                     }
                     
-                    temp_data[cell_line] = {}
+                    calculated_stats[cell_line] = {}
                     distributions_by_cell_line[cell_line] = distributions
                     for dist_name, dist_values in distributions.items():
                         n_points = len(dist_values)
                         avg_val = float(np.mean(dist_values))
                         median_val = float(np.median(dist_values)) 
                         
-                        temp_data[cell_line][dist_name] = {
+                        calculated_stats[cell_line][dist_name] = {
                             "# Points": n_points,
                             "Average": avg_val,
                             "Median": median_val
@@ -3747,7 +3747,8 @@ class SecondOrderShapNetworkAnalyzer:
                 for dist_name in distribution_names:
                     for metric in metric_names:
                         for cell_line in self.CONFIG["CELL_LINES"]:
-                            row_dict[f"{cell_line} - {dist_name}: {metric}"] = temp_data[cell_line][dist_name][metric]
+                            row_dict[f"{cell_line} - {dist_name}: {metric}"] = calculated_stats[cell_line][dist_name][metric]
+
                 
                 # Determine testing direction based on interaction SHAP sign
                 hepg2_interaction_shap = row["HepG2 - Interaction SHAP"]
@@ -3755,22 +3756,33 @@ class SecondOrderShapNetworkAnalyzer:
 
                 assert (hepg2_interaction_shap > 0 and k562_interaction_shap > 0) or (hepg2_interaction_shap < 0 and k562_interaction_shap < 0), "Expected interaction SHAP values to have the same sign between cell lines due to earlier filtering, but got different signs."
                 
-                # Add testing direction column (assume both have same sign since we filtered earlier)
-                testing_direction = "greater" if hepg2_interaction_shap > 0 else "less"
-                row_dict["Statistical Testing Directionality"] = testing_direction
-                
                 # Add statistical test columns: Cell Line, Groups Compared, Statistical Test
                 group_pairs = [
                     ("Both Bound", "F1 Bound Only"),
                     ("Both Bound", "F2 Bound Only")
                 ]
                 statistical_tests = ["Mann-Whitney U", "Welch's t-test"]
-                
+
                 for group1, group2 in group_pairs:
-                    for test_name in statistical_tests:
+                    for cell_line in self.CONFIG["CELL_LINES"]:
+                        avg1 = calculated_stats[cell_line][group1]["Average"]
+                        avg2 = calculated_stats[cell_line][group2]["Average"]
+                        median1 = calculated_stats[cell_line][group1]["Median"]
+                        median2 = calculated_stats[cell_line][group2]["Median"]
+                        
+                        row_dict[f"{cell_line} - {group1} vs {group2}: Abs(Diff Average)"] = abs(avg1 - avg2)
+                        row_dict[f"{cell_line} - {group1} vs {group2}: Abs(Diff Median)"] = abs(median1 - median2)
+                
+                # Add testing direction column (assume both have same sign since we filtered earlier)
+                testing_direction = "greater" if hepg2_interaction_shap > 0 else "less"
+                row_dict["Statistical Testing Directionality"] = testing_direction
+                for test_name in statistical_tests:
+                    for group1, group2 in group_pairs:
                         for cell_line in self.CONFIG["CELL_LINES"]:
                             col_name = f"{cell_line} - {group1} vs {group2}: {test_name}"
                             
+                            # (e.g. if interaction SHAP is positive, then we expect Both Bound to have higher PSI than F1/F2 only, 
+                            # so we should test if Both Bound > F1/F2 only)
                             dist1 = distributions_by_cell_line[cell_line][group1]
                             dist2 = distributions_by_cell_line[cell_line][group2]
                             
@@ -3785,7 +3797,18 @@ class SecondOrderShapNetworkAnalyzer:
 
             # Convert to polars DataFrame and join with results_df
             stats_df = pl.DataFrame(interaction_stats)
+            stats_df = stats_df.with_columns(
+                pl.concat_list([
+                    pl.col(f"{cell_line} - {group1} vs {group2}: Mann-Whitney U")
+                    for cell_line in self.CONFIG["CELL_LINES"]
+                    for group1, group2 in group_pairs
+                ]).map_elements(
+                    lambda x: all(p < 0.05 for p in x),
+                    return_dtype=pl.Boolean
+                ).alias("All MWU Significant")
+            )
             
+            original_num_rows = results_df.height
             results_df = results_df.join(
                 stats_df,
                 on="Feature-Feature Interaction",
@@ -3794,7 +3817,17 @@ class SecondOrderShapNetworkAnalyzer:
             # Validate the results DataFrame
             assert results_df.null_count().sum_horizontal().item() == 0, "Null values found in results DataFrame"
             assert results_df.select(pl.col(pl.Float64).is_nan().sum()).sum_horizontal().item() == 0, "NaN values found in results DataFrame"
-            
+            assert results_df.height == original_num_rows, f"Expected {original_num_rows} rows in results DataFrame after join, but got {results_df.height}"
+
+            # Sort by "All MWU Significant" (True first), then by all "Abs(...)" columns in sorted order
+            abs_cols = sorted([col for col in results_df.columns if "Abs(" in col])
+            sort_cols = ["All MWU Significant"] + abs_cols
+
+            results_df = results_df.sort(
+                sort_cols,
+                descending=True
+            )
+
             results_df.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"Screened interaction PSI changes table created and saved to {OUTPUT_FILE}")
             
