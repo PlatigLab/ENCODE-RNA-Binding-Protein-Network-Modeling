@@ -1662,6 +1662,36 @@ class SecondOrderShapNetworkAnalyzer:
         )
 
     
+    def plot_selected_roc_and_prc_curves_for_main_figure(self, metric=None): 
+        assert metric == "Signed-Local-SHAP-Mean-Bound-Only", "This function is specifically designed for the main figure and only supports 'Signed-Local-SHAP-Mean-Bound-Only' metric."
+        
+        curve_data = self.calculate_roc_and_prc_curve_data_for_metric(metric=metric)
+        
+        selected_plot_type = "RBP-SPECIFIC_MAX_VALUE"
+        selected_ppi_type = "All-Positions"
+        selected_ppi_sources = [
+            "Rec-Y2H",
+            "Street et al | IP-MS",
+            "Street et al | IP/SEC-MS (Both)",
+        ]
+
+        filtered_curve_data = {selected_plot_type: {}}
+
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            filtered_curve_data[selected_plot_type][cell_line] = {}
+
+            for ppi_source in selected_ppi_sources:
+
+                filtered_curve_data[selected_plot_type][cell_line][ppi_source] = {
+                    selected_ppi_type: curve_data[selected_plot_type][cell_line][ppi_source][selected_ppi_type]
+                }
+
+        self.plot_roc_and_prc_curves_for_metric(
+            metric=metric, 
+            curve_data=filtered_curve_data, 
+            figure_file_name_suffix="roc_prc_curves-MAIN_FIGURE_SELECTED_CURVES",
+            cell_line_combined=True
+        )
 
 
     def plot_actual_psi_by_binding_for_PPI(self,):
