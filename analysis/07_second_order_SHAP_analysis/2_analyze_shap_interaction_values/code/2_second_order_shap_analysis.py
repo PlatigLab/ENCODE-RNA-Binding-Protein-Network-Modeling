@@ -1584,9 +1584,7 @@ class SecondOrderShapNetworkAnalyzer:
                                     if curve_type == "roc":
                                         ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.8)
                                     else:
-                                        delta_baseline = data['prc_auc'] - data['baseline']
-                                        sign = "+" if delta_baseline > 0 else "-"
-                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [ΔBaseline={sign}{abs(delta_baseline):.3f}]", alpha=0.8)
+                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [Baseline={data['baseline']:.3f}]", alpha=0.8)
                         
                         if row_idx ==0: 
                             ax.set_title(f"{curve_type.upper()}", fontsize=24, fontweight='bold', pad=10)
