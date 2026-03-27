@@ -9867,7 +9867,7 @@ class FirstOrderShapInvestigator:
                         fontsize=4, y=0.97)
 
             fig.supxlabel("Odds Ratio", fontsize=12, y=0.065, x=0.53, fontweight='bold')
-            fig.supylabel(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥", fontsize=12, x=0.04, y=0.53, fontweight='bold')
+            fig.supylabel(f"|{DELTA_LOCAL_SHAP_SYMBOL}|", fontsize=12, x=0.04, y=0.53, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
