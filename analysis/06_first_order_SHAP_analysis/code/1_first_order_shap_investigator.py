@@ -2581,17 +2581,19 @@ class FirstOrderShapInvestigator:
                 # Draw significance bar
                 ax.plot([x1, x1, x2, x2], [y_bar, y_bar + 0.02 * max_val, y_bar + 0.02 * max_val, y_bar], lw=1.2, c='black')
 
-                # Add ">" symbol underneath the horizontal part of the significance bar
-                ax.text(
-                    (x1 + x2) / 2, y_bar - 0.01 * max_val,
-                    ">", ha='center', va='top', fontsize=12, color="#6966b0", fontweight="bold"
-                )
+                # # Add ">" symbol underneath the horizontal part of the significance bar
+                # ax.text(
+                #     (x1 + x2) / 2, y_bar - 0.01 * max_val,
+                #     ">", ha='center', va='top', fontsize=12, color="#6966b0", fontweight="bold"
+                # )
 
                 # Add annotation above the bar
+                exponent = int(np.floor(np.log10(pval)))
                 ax.text(
-                    (x1 + x2) / 2, y_bar + 0.05 * max_val,
-                    f"M.W.U. =\n{pval:.1e}",
-                    ha='center', va='bottom', fontsize=7, color="black", fontweight="bold"
+                    (x1 + x2) / 2, y_bar + 0.04* max_val,
+                    f"p = $10^{{{exponent}}}$",
+                    ha='center', va='bottom', fontsize=7, color="black",
+
                 )
 
             ax.set_title("Bound Global SHAP by Cell Line and Position Group\nNOTE 1: Mann-Whitney U test: '3,4' > '1,2,5,6'", fontsize=6, y=1.12)
