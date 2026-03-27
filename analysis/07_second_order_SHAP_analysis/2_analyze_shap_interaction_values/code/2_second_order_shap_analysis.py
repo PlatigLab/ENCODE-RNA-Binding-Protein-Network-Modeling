@@ -3287,11 +3287,11 @@ class SecondOrderShapNetworkAnalyzer:
                     "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
                 },
                 {
-                    "name": f"{feature_1_clean} | No {feature_2_clean}",
+                    "name": f"{feature_1_clean} Only",
                     "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
                 },
                 {
-                    "name": f"{feature_2_clean} | No {feature_1_clean}",
+                    "name": f"{feature_2_clean} Only",
                     "filter": (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
                 },
                 {
@@ -3320,9 +3320,14 @@ class SecondOrderShapNetworkAnalyzer:
         # Define ordering by extracting names from binding_modes
         cell_line_order = self.CONFIG["CELL_LINES"]
         binding_mode_order = [mode["name"] for mode in binding_modes]
+        
+        fig = plt.figure(figsize=(8, 5), dpi=200)
+        gs = GridSpec(2, 1, height_ratios=[2, 1])
+
+        axes = []
+        axes.append(fig.add_subplot(gs[0]))
 
         # Create violinplot
-        plt.figure(figsize=(8, 5), dpi=300)
         ax = sns.violinplot(
             data=plot_df,
             x="Binding Mode",
@@ -3331,7 +3336,8 @@ class SecondOrderShapNetworkAnalyzer:
             hue_order=cell_line_order,
             order=binding_mode_order,
             cut=0,
-            density_norm='width'
+            density_norm='width', 
+            ax = axes[0]
         )
 
         # Add counts and mean values above each violin
@@ -3361,11 +3367,11 @@ class SecondOrderShapNetworkAnalyzer:
                         f"{n_points:,}\n{mean_val:.2f}",
                         ha="center",
                         va="bottom",
-                        fontsize=7
+                        fontsize=7.5,
                     )
 
         ax.set_ylim(top=max_psi * 1.15)
-        ax.tick_params(axis='x', labelsize=8)
+        ax.tick_params(axis='x', labelsize=9)
 
         ax.set_xlabel("Binding Mode", fontsize=10, fontweight='bold')
         ax.set_ylabel("Target PSI", fontsize=10, fontweight='bold')
@@ -3383,7 +3389,62 @@ class SecondOrderShapNetworkAnalyzer:
             frameon=True,
         )
 
-        plt.xticks(rotation=45, ha='right')
+        # Prepare data for bottom bar plot
+        metric = "Signed-Local-SHAP-Mean-Bound-Only"
+        val_col = f"Value - {metric}"
+        latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
+        shap_table = self.retrieve_shap_values_for_metric(metric=metric)
+        
+        cell_lines = self.CONFIG["CELL_LINES"]
+        feature_names = [f"{feature_1_clean} & {feature_2_clean}", feature_1_clean, feature_2_clean,]
+        
+        main_shap_col1 = f"{feature_1_clean}-main-shap"
+        main_shap_col2 = f"{feature_2_clean}-main-shap"
+        column_names = [interaction_feature, main_shap_col1, main_shap_col2]
+        
+        bar_data = []
+        for cell_line in cell_lines:
+            for feature_name, column_name in zip(feature_names, column_names):
+                subset = shap_table.filter(
+                    (pl.col("Cell Line") == cell_line) &
+                    (pl.col("Column") == column_name)
+                )
+                assert subset.height == 1, f"Expected exactly one row for Cell Line {cell_line} and Column {column_name}, but got {subset.height}"
+                
+                bar_data.append({
+                    "Feature": feature_name,
+                    "Value": subset[val_col].item(),
+                    "Cell Line": cell_line
+                })
+
+        bar_df_bottom = pd.DataFrame(bar_data)
+
+        axes.append(fig.add_axes([0.08, -0.07, 0.42, 0.3]))
+
+        # Create grouped bar plot
+        cell_line_colors = {'HepG2': 'steelblue', 'K562': 'coral'}
+        sns.barplot(
+            data=bar_df_bottom,
+            x="Feature",
+            y="Value",
+            hue="Cell Line",
+            order=feature_names,
+            hue_order=cell_lines,
+            ax=axes[1],
+            palette=cell_line_colors,
+            edgecolor='black',
+            linewidth=0.8,
+            width=0.6
+        )
+
+        axes[1].axhline(y=0, color='black', linestyle='-', linewidth=1)
+        axes[1].set_ylabel(latex_symbol, fontsize=10)
+        axes[1].set_title("Main & Interaction SHAP Values", fontsize=10)
+        axes[1].set_xlabel("Feature", fontsize=10)
+        axes[1].tick_params(axis='x', labelsize=7)
+        axes[1].legend(loc='upper left', fontsize=9, frameon=True, bbox_to_anchor=(1.02, .6))
+        axes[1].grid(True, alpha=0.3, axis='y')
+
         plt.tight_layout()
         plt.show()
 
@@ -3967,10 +4028,35 @@ class SecondOrderShapNetworkAnalyzer:
 
 
     def plot_actual_psi_distributions_for_top_candidates_from_screened_interactions(self): 
+        # shap_cols = [
+        #     "HepG2 - F1 (1st Individual Feature in Interaction) SHAP",
+        #     "HepG2 - F2 (2nd Individual Feature in Interaction) SHAP",
+        #     "K562 - F1 (1st Individual Feature in Interaction) SHAP",
+        #     "K562 - F2 (2nd Individual Feature in Interaction) SHAP"
+        # ]
+        
+        # # Check if all SHAP values have the same sign (all positive or all negative)
+        # all_positive = None
+        # for col in shap_cols:
+        #     if all_positive is None:
+        #         all_positive = pl.col(col) > 0
+        #     else:
+        #         all_positive = all_positive & (pl.col(col) > 0)
+        
+        # all_negative = None
+        # for col in shap_cols:
+        #     if all_negative is None:
+        #         all_negative = pl.col(col) < 0
+        #     else:
+        #         all_negative = all_negative & (pl.col(col) < 0)
+        
+        # same_sign = all_positive | all_negative
+        
         interactions = pl.read_csv(self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"], separator="\t").filter(
             pl.col("All MWU Significant") == True
         )["Feature-Feature Interaction"].to_list()
 
+        logger.info(f"Plotting actual PSI distributions for top candidates from screened interactions...\nFound {len(interactions)} interactions that passed MWU significance and same sign filtering criteria.")
         for interaction in interactions:
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
 
