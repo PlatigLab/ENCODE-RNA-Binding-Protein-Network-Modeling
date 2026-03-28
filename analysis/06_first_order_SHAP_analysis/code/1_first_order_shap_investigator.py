@@ -2537,7 +2537,7 @@ class FirstOrderShapInvestigator:
         plot_df["Cell Line"] = pd.Categorical(plot_df["Cell Line"], categories=self.cell_lines, ordered=True)
         plot_df["Position Group"] = pd.Categorical(plot_df["Position Group"], categories=["1, 2, 5, 6", "3, 4"], ordered=True)
     
-        palette = {"1, 2, 5, 6": "#5ae9bc", "3, 4": "#e29a7d"}
+        palette = {"3, 4": "#a6ff00", "1, 2, 5, 6": "#00ff99"}
 
         with plt.style.context("../../paper.mplstyle"):
             plt.figure(figsize=(3.5,3), dpi=300)
@@ -8055,8 +8055,8 @@ class FirstOrderShapInvestigator:
         table = pl.read_csv(BOUND_LOCAL_SHAP, separator="\t")
 
         cell_line_palette = {
-            "HepG2": "#ffb300",  # light red
-            "K562": "#73ffb3",   # light blue
+            "HepG2": "#ff00ff",  # light red
+            "K562": "#ff9100",   # light blue
         }
 
         avg_data = []
