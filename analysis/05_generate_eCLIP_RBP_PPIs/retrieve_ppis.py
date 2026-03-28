@@ -154,7 +154,8 @@ def build_street_et_al_table(combos):
             "u2af1" if "u2af1" in prey else "eif3h" if "eif3h" in prey else prey
             for prey in df["Prey"].to_list()
         ]
-
+        
+        # synonyms/aliases for the proteins that we have in our dataset should not be there anymore 
         assert not any("u2af1l5" in s for s in bait_list + prey_list), "Found string containing 'u2af1l5'"
         assert not any("eif3s3" in s for s in bait_list + prey_list), "Found string containing 'eif3s3'"
         
