@@ -2588,10 +2588,9 @@ class FirstOrderShapInvestigator:
                 # )
 
                 # Add annotation above the bar
-                exponent = int(np.floor(np.log10(pval)))
                 ax.text(
                     (x1 + x2) / 2, y_bar + 0.04* max_val,
-                    f"p = $10^{{{exponent}}}$",
+                    f"p = {pval:.1e}",
                     ha='center', va='bottom', fontsize=7, color="black",
 
                 )
