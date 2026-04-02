@@ -2537,7 +2537,7 @@ class FirstOrderShapInvestigator:
         plot_df["Cell Line"] = pd.Categorical(plot_df["Cell Line"], categories=self.cell_lines, ordered=True)
         plot_df["Position Group"] = pd.Categorical(plot_df["Position Group"], categories=["1, 2, 5, 6", "3, 4"], ordered=True)
     
-        palette = {"3, 4": "#a6ff00", "1, 2, 5, 6": "#00ff99"}
+        palette = {"3, 4": "#7E6148", "1, 2, 5, 6": "#B09C85"}
 
         with plt.style.context("../../paper.mplstyle"):
             plt.figure(figsize=(3.5,3), dpi=300)
