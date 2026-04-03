@@ -1,0 +1,147 @@
+Loading BAT...
+This is for SAFB in HepG2 with read counts = 10
+The shape of the rMATS file for SAFB in HepG2 is (60396, 19)
+The shape of the read-counts filtered rMATS file for SAFB in HepG2 is (52505, 23)
+Here is the shape of matches between SAFB KD events and the BAT for HepG2:
+(3528328, 665)
+Shape of unique ctrl rows
+(31942, 665)
+Shape of duplicated:
+(63884, 666)
+The shape of final df for SAFB in HepG2 is (63884, 636)
+Saved SAFB → precomputed_rmats/SAFB_HepG2.feather  shape=(63884, 636)
+This is for NOLC1 in HepG2 with read counts = 10
+The shape of the rMATS file for NOLC1 in HepG2 is (37640, 19)
+The shape of the read-counts filtered rMATS file for NOLC1 in HepG2 is (29516, 23)
+Here is the shape of matches between NOLC1 KD events and the BAT for HepG2:
+(2761664, 665)
+Shape of unique ctrl rows
+(20668, 665)
+Shape of duplicated:
+(41336, 666)
+The shape of final df for NOLC1 in HepG2 is (41336, 636)
+Saved NOLC1 → precomputed_rmats/NOLC1_HepG2.feather  shape=(41336, 636)
+This is for ZC3H11A in HepG2 with read counts = 10
+The shape of the rMATS file for ZC3H11A in HepG2 is (77455, 19)
+The shape of the read-counts filtered rMATS file for ZC3H11A in HepG2 is (68118, 23)
+Here is the shape of matches between ZC3H11A KD events and the BAT for HepG2:
+(3855067, 665)
+Shape of unique ctrl rows
+(39268, 665)
+Shape of duplicated:
+(78536, 666)
+The shape of final df for ZC3H11A in HepG2 is (78536, 636)
+Saved ZC3H11A → precomputed_rmats/ZC3H11A_HepG2.feather  shape=(78536, 636)
+This is for EXOSC5 in HepG2 with read counts = 10
+The shape of the rMATS file for EXOSC5 in HepG2 is (36573, 19)
+The shape of the read-counts filtered rMATS file for EXOSC5 in HepG2 is (28583, 23)
+Here is the shape of matches between EXOSC5 KD events and the BAT for HepG2:
+(2715861, 665)
+Shape of unique ctrl rows
+(20088, 665)
+Shape of duplicated:
+(40176, 666)
+The shape of final df for EXOSC5 in HepG2 is (40176, 636)
+Saved EXOSC5 → precomputed_rmats/EXOSC5_HepG2.feather  shape=(40176, 636)
+This is for WDR43 in HepG2 with read counts = 10
+The shape of the rMATS file for WDR43 in HepG2 is (45293, 19)
+The shape of the read-counts filtered rMATS file for WDR43 in HepG2 is (37404, 23)
+Here is the shape of matches between WDR43 KD events and the BAT for HepG2:
+(3095771, 665)
+Shape of unique ctrl rows
+(25047, 665)
+Shape of duplicated:
+(50094, 666)
+The shape of final df for WDR43 in HepG2 is (50094, 636)
+Saved WDR43 → precomputed_rmats/WDR43_HepG2.feather  shape=(50094, 636)
+This is for RBM5 in HepG2 with read counts = 10
+The shape of the rMATS file for RBM5 in HepG2 is (21779, 19)
+The shape of the read-counts filtered rMATS file for RBM5 in HepG2 is (14109, 23)
+Here is the shape of matches between RBM5 KD events and the BAT for HepG2:
+(1706663, 665)
+Shape of unique ctrl rows
+(10722, 665)
+Shape of duplicated:
+(21444, 666)
+The shape of final df for RBM5 in HepG2 is (21444, 636)
+Saved RBM5 → precomputed_rmats/RBM5_HepG2.feather  shape=(21444, 636)
+This is for FXR2 in HepG2 with read counts = 10
+The shape of the rMATS file for FXR2 in HepG2 is (25042, 19)
+The shape of the read-counts filtered rMATS file for FXR2 in HepG2 is (15446, 23)
+Here is the shape of matches between FXR2 KD events and the BAT for HepG2:
+(1912098, 665)
+Shape of unique ctrl rows
+(11945, 665)
+Shape of duplicated:
+(23890, 666)
+The shape of final df for FXR2 in HepG2 is (23890, 636)
+Saved FXR2 → precomputed_rmats/FXR2_HepG2.feather  shape=(23890, 636)
+This is for DROSHA in HepG2 with read counts = 10
+The shape of the rMATS file for DROSHA in HepG2 is (24148, 19)
+The shape of the read-counts filtered rMATS file for DROSHA in HepG2 is (18662, 23)
+Here is the shape of matches between DROSHA KD events and the BAT for HepG2:
+(2025159, 665)
+Shape of unique ctrl rows
+(13520, 665)
+Shape of duplicated:
+(27040, 666)
+The shape of final df for DROSHA in HepG2 is (27040, 636)
+Saved DROSHA → precomputed_rmats/DROSHA_HepG2.feather  shape=(27040, 636)
+This is for STAU2 in HepG2 with read counts = 10
+The shape of the rMATS file for STAU2 in HepG2 is (72928, 19)
+The shape of the read-counts filtered rMATS file for STAU2 in HepG2 is (64179, 23)
+Here is the shape of matches between STAU2 KD events and the BAT for HepG2:
+(3784457, 665)
+Shape of unique ctrl rows
+(37386, 665)
+Shape of duplicated:
+(74772, 666)
+The shape of final df for STAU2 in HepG2 is (74772, 636)
+Saved STAU2 → precomputed_rmats/STAU2_HepG2.feather  shape=(74772, 636)
+This is for CDC40 in HepG2 with read counts = 10
+The shape of the rMATS file for CDC40 in HepG2 is (33748, 19)
+The shape of the read-counts filtered rMATS file for CDC40 in HepG2 is (26292, 23)
+Here is the shape of matches between CDC40 KD events and the BAT for HepG2:
+(2491314, 665)
+Shape of unique ctrl rows
+(18699, 665)
+Shape of duplicated:
+(37398, 666)
+The shape of final df for CDC40 in HepG2 is (37398, 636)
+Saved CDC40 → precomputed_rmats/CDC40_HepG2.feather  shape=(37398, 636)
+This is for SRSF7 in HepG2 with read counts = 10
+The shape of the rMATS file for SRSF7 in HepG2 is (52938, 19)
+The shape of the read-counts filtered rMATS file for SRSF7 in HepG2 is (43534, 23)
+Here is the shape of matches between SRSF7 KD events and the BAT for HepG2:
+(3355862, 665)
+Shape of unique ctrl rows
+(28870, 665)
+Shape of duplicated:
+(57740, 666)
+The shape of final df for SRSF7 in HepG2 is (57740, 636)
+Saved SRSF7 → precomputed_rmats/SRSF7_HepG2.feather  shape=(57740, 636)
+This is for DGCR8 in HepG2 with read counts = 10
+ERROR for DGCR8: No such file or directory (os error 2): ...atigLab/data/ENCORE2026/rMATS_analysis/v29_rMATS_RBPKD/DGCR8-CRISPR-HepG2/SE.MATS.JC.txt (set POLARS_VERBOSE=1 to see full path)
+This is for SDAD1 in HepG2 with read counts = 10
+The shape of the rMATS file for SDAD1 in HepG2 is (38725, 19)
+The shape of the read-counts filtered rMATS file for SDAD1 in HepG2 is (30579, 23)
+Here is the shape of matches between SDAD1 KD events and the BAT for HepG2:
+(2818404, 665)
+Shape of unique ctrl rows
+(21310, 665)
+Shape of duplicated:
+(42620, 666)
+The shape of final df for SDAD1 in HepG2 is (42620, 636)
+Saved SDAD1 → precomputed_rmats/SDAD1_HepG2.feather  shape=(42620, 636)
+This is for IGF2BP1 in HepG2 with read counts = 10
+The shape of the rMATS file for IGF2BP1 in HepG2 is (51300, 19)
+The shape of the read-counts filtered rMATS file for IGF2BP1 in HepG2 is (42500, 23)
+Here is the shape of matches between IGF2BP1 KD events and the BAT for HepG2:
+(3322135, 665)
+Shape of unique ctrl rows
+(28179, 665)
+Shape of duplicated:
+(56358, 666)
+The shape of final df for IGF2BP1 in HepG2 is (56358, 636)
+Saved IGF2BP1 → precomputed_rmats/IGF2BP1_HepG2.feather  shape=(56358, 636)
+Done.
