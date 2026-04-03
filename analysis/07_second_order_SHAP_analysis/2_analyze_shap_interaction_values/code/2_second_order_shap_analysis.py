@@ -4073,7 +4073,7 @@ class SecondOrderShapNetworkAnalyzer:
 
         if pathlib.Path(OUTPUT_FILE).exists():
             logger.success("FROM CACHE: loading interaction GREATER THAN main effects screening table")
-            return pd.read_csv(OUTPUT_FILE, separator="\t")
+            return pl.read_csv(OUTPUT_FILE, separator="\t")
         
         else: 
             logger.info("No cached table found, screening for interactions with larger SHAP values than main effects...")
@@ -4122,7 +4122,7 @@ class SecondOrderShapNetworkAnalyzer:
                     avg_abs_diff = (abs_diff_main1 + abs_diff_main2) / 2
 
                     results.append({
-                        "Feature": interaction_col,
+                        "Feature-Feature Interaction": interaction_col,
                         "Cell Line": cell_line,
                         "interaction_shap": interaction_val,
                         "f1_main_effect": main1_val,

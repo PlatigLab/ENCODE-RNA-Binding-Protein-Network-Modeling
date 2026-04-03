@@ -1,4 +1,4 @@
-Feature	Cell Line	interaction_shap	f1_main_effect	f2_main_effect	abs_difference_interaction_vs_main1	abs_difference_interaction_vs_main2	avg_of_abs_differences
+Feature-Feature Interaction	Cell Line	interaction_shap	f1_main_effect	f2_main_effect	abs_difference_interaction_vs_main1	abs_difference_interaction_vs_main2	avg_of_abs_differences
 HNRNPM_2-SUB1_5-interaction-shap	HepG2	-1.1173992156982422	-0.010453871451318264	-0.15214145183563232	1.106945344246924	0.9652577638626099	1.036101554054767
 HLTF_2-PRPF8_4-interaction-shap	K562	-1.3102924823760986	-0.08273261785507202	1.0885541439056396	1.2275598645210266	0.22173833847045898	0.7246491014957428
 NCBP2_1-U2AF2_2-interaction-shap	HepG2	-0.8651083111763	-0.08615437895059586	-0.2393088936805725	0.7789539322257042	0.6257994174957275	0.7023766748607159
