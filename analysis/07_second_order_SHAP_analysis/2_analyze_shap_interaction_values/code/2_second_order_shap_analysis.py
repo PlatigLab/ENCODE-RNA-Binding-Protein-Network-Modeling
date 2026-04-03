@@ -4066,6 +4066,76 @@ class SecondOrderShapNetworkAnalyzer:
         for interaction in interactions:
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
 
+    
+    def find_instances_where_interaction_larger_than_main_effects(self): 
+        
+        OUTPUT_FILE = self.CONFIG["INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING"]
+
+        if pathlib.Path(OUTPUT_FILE).exists():
+            logger.success("FROM CACHE: loading interaction GREATER THAN main effects screening table")
+            return pd.read_csv(OUTPUT_FILE, separator="\t")
+        
+        else: 
+            logger.info("No cached table found, screening for interactions with larger SHAP values than main effects...")
+            metric = "Signed-Local-SHAP-Mean-Bound-Only"
+            val_col = f"Value - {metric}"
+            shap_table = self.retrieve_shap_values_for_metric(metric=metric)
+            
+            interaction_rows = (
+                shap_table
+                .filter(pl.col("Column Type") == "interaction")
+                .filter(
+                    (~pl.col(val_col).is_nan()) &
+                    (pl.col(val_col).abs() > 0)
+                )
+            )
+
+            results = []
+            for row in tqdm(interaction_rows.iter_rows(named=True), desc="Processing interactions", total=interaction_rows.height):
+                interaction_col = row["Column"]
+                interaction_val = row[val_col]
+                cell_line = row["Cell Line"]
+
+                # Extract the two features involved in the interaction
+                feature1, feature2 = self.get_rbp_position_from_column(interaction_col, binding_fmt=False)
+                main_shap_col1 = f"{feature1}-main-shap"
+                main_shap_col2 = f"{feature2}-main-shap"
+
+                # Pull the corresponding main-effect rows
+                main_effects = shap_table.filter(
+                    (pl.col("Column").is_in({main_shap_col1, main_shap_col2})) &
+                    (pl.col("Cell Line") == cell_line)
+                )
+
+                assert main_effects.height == 2, f"Expected 2 rows for main effects of {interaction_col} in cell line {cell_line}, but got {main_effects.height}"
+
+                # Extract main effect values
+                main_vals = main_effects[val_col].to_list()
+                main1_val, main2_val = main_vals
+
+                # Condition: |interaction| > |main1| and |interaction| > |main2|
+                if abs(interaction_val) > abs(main1_val) and abs(interaction_val) > abs(main2_val):
+
+                    # Compute absolute differences
+                    abs_diff_main1 = abs(interaction_val) - abs(main1_val)
+                    abs_diff_main2 = abs(interaction_val) - abs(main2_val)
+                    avg_abs_diff = (abs_diff_main1 + abs_diff_main2) / 2
+
+                    results.append({
+                        "Feature": interaction_col,
+                        "Cell Line": cell_line,
+                        "interaction_shap": interaction_val,
+                        "f1_main_effect": main1_val,
+                        "f2_main_effect": main2_val,
+                        "abs_difference_interaction_vs_main1": abs_diff_main1,
+                        "abs_difference_interaction_vs_main2": abs_diff_main2,
+                        "avg_of_abs_differences": avg_abs_diff,
+                    })
+
+            # Convert to pandas DataFrame
+            interaction_df = pd.DataFrame(results).sort_values(by="avg_of_abs_differences", ascending=False).reset_index(drop=True)
+            interaction_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Screening complete. Found {len(interaction_df)} interactions where interaction SHAP value is larger than both main effect SHAP values. Results saved to {OUTPUT_FILE}")
 
 
 #########################################################
