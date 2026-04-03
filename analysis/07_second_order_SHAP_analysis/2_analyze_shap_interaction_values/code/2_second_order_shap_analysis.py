@@ -3240,8 +3240,9 @@ class SecondOrderShapNetworkAnalyzer:
         return pivot_table
 
 
-    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None): 
+    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None, save_fig=False):
         assert interaction_feature.endswith("-interaction-shap"), "interaction_feature must end with '-interaction-shap'."
+        assert save_fig in [True, False], "save_fig must be a boolean value."
 
         # Get the two binding features from the interaction feature name
         binding_features = self.get_rbp_position_from_column(interaction_feature, binding_fmt=True)
@@ -3258,6 +3259,30 @@ class SecondOrderShapNetworkAnalyzer:
 
         # Lazy load first order SHAP cache for both cell lines and verify schema
         all_plot_rows = []
+
+        # Define binding modes once (KD categories intentionally excluded/commented out)
+        binding_modes = [
+            {
+                "name": "Both Bound",
+                "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
+            },
+            {
+                "name": f"{feature_1_clean} Only",
+                "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
+            },
+            {
+                "name": f"{feature_2_clean} Only",
+                "filter": (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
+            },
+            # {
+            #     "name": f"{feature_1_clean} RBP KD",
+            #     "filter": (pl.col("RBP_KD_Target") == rbp_1) & (pl.col(f"has_RBP_KD_{pos_1}") == True)
+            # },
+            # {
+            #     "name": f"{feature_2_clean} RBP KD",
+            #     "filter": (pl.col("RBP_KD_Target") == rbp_2) & (pl.col(f"has_RBP_KD_{pos_2}") == True)
+            # },
+        ]
 
         for cell_line in self.CONFIG["CELL_LINES"]:
             first_order_shap_lf = pl.scan_ipc(
@@ -3280,30 +3305,6 @@ class SecondOrderShapNetworkAnalyzer:
             # Collect data once for this cell line
             cell_line_data = first_order_shap_lf.select(list(required_cols)).collect()
             
-            # Define binding modes and their corresponding filter conditions
-            binding_modes = [
-                {
-                    "name": "Both Bound",
-                    "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
-                },
-                {
-                    "name": f"{feature_1_clean} Only",
-                    "filter": (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
-                },
-                {
-                    "name": f"{feature_2_clean} Only",
-                    "filter": (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
-                },
-                {
-                    "name": f"{feature_1_clean} RBP KD",
-                    "filter": (pl.col("RBP_KD_Target") == rbp_1) & (pl.col(f"has_RBP_KD_{pos_1}") == True)
-                },
-                {
-                    "name": f"{feature_2_clean} RBP KD",
-                    "filter": (pl.col("RBP_KD_Target") == rbp_2) & (pl.col(f"has_RBP_KD_{pos_2}") == True)
-                },
-            ]
-            
             # Process each binding mode
             for mode in binding_modes:
                 filtered_data = cell_line_data.filter(mode["filter"])
@@ -3317,86 +3318,17 @@ class SecondOrderShapNetworkAnalyzer:
         # Convert to polars DataFrame first, then to pandas for plotting
         plot_df = pl.DataFrame(all_plot_rows).to_pandas()
 
-        # Define ordering by extracting names from binding_modes
-        cell_line_order = self.CONFIG["CELL_LINES"]
-        binding_mode_order = [mode["name"] for mode in binding_modes]
-        
-        fig = plt.figure(figsize=(8, 5), dpi=200)
-        gs = GridSpec(2, 1, height_ratios=[2, 1])
-
-        axes = []
-        axes.append(fig.add_subplot(gs[0]))
-
-        # Create violinplot
-        ax = sns.violinplot(
-            data=plot_df,
-            x="Binding Mode",
-            y="Target_PSI",
-            hue="Cell Line",
-            hue_order=cell_line_order,
-            order=binding_mode_order,
-            cut=0,
-            density_norm='width', 
-            ax = axes[0]
-        )
-
-        # Add counts and mean values above each violin
-        max_psi = plot_df["Target_PSI"].max()
-        y_text_height = max_psi * 1.03
-
-        n_hues = len(cell_line_order)
-        group_width = 0.8
-        step = group_width / n_hues
-
-        for i, binding_mode in enumerate(binding_mode_order):
-            for j, cell_line in enumerate(cell_line_order):
-                subset = plot_df[
-                    (plot_df["Binding Mode"] == binding_mode) & 
-                    (plot_df["Cell Line"] == cell_line)
-                ]
-                
-                if len(subset) > 0:
-                    n_points = len(subset)
-                    mean_val = subset["Target_PSI"].mean()
-                    
-                    x_pos = i - (group_width / 2) + (step / 2) + j * step
-                    
-                    ax.text(
-                        x_pos,
-                        y_text_height,
-                        f"{n_points:,}\n{mean_val:.2f}",
-                        ha="center",
-                        va="bottom",
-                        fontsize=7.5,
-                    )
-
-        ax.set_ylim(top=max_psi * 1.15)
-        ax.tick_params(axis='x', labelsize=9)
-
-        ax.set_xlabel("Binding Mode", fontsize=10, fontweight='bold')
-        ax.set_ylabel("Target PSI", fontsize=10, fontweight='bold')
-        ax.set_title(
-            f"{interaction_feature.replace('-interaction-shap', '')}\nPSI Distributions by Binding Mode",
-            y=1.02,
-            fontsize=12
-        )
-
-        ax.legend(
-            title="Cell Line",
-            bbox_to_anchor=(1.02, 0.5),
-            loc="center left",
-            borderaxespad=0.0,
-            frameon=True,
-        )
-
-        # Prepare data for bottom bar plot
+        # Prepare data for SHAP bar plots
         metric = "Signed-Local-SHAP-Mean-Bound-Only"
         val_col = f"Value - {metric}"
         latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
         shap_table = self.retrieve_shap_values_for_metric(metric=metric)
         
         cell_lines = self.CONFIG["CELL_LINES"]
-        feature_names = [f"{feature_1_clean} & {feature_2_clean}", feature_1_clean, feature_2_clean,]
+        assert len(cell_lines) == 2, f"Expected exactly 2 cell lines for 2x2 subplot layout, got {len(cell_lines)}."
+        
+        binding_mode_order = [mode["name"] for mode in binding_modes]
+        feature_names = ["Interaction", feature_1_clean, feature_2_clean]
         
         main_shap_col1 = f"{feature_1_clean}-main-shap"
         main_shap_col2 = f"{feature_2_clean}-main-shap"
@@ -3419,34 +3351,108 @@ class SecondOrderShapNetworkAnalyzer:
 
         bar_df_bottom = pd.DataFrame(bar_data)
 
-        axes.append(fig.add_axes([0.08, -0.07, 0.42, 0.3]))
+        # 2x2 layout:
+        # top row -> PSI violin plots (one subplot per cell line)
+        # bottom row -> SHAP averages (one subplot per cell line)
+        
+        colors = {
+            "HepG2": "#f39b7f", 
+            "K562": "#4dbbd5"
+        }
 
-        # Create grouped bar plot
-        cell_line_colors = {'HepG2': 'steelblue', 'K562': 'coral'}
-        sns.barplot(
-            data=bar_df_bottom,
-            x="Feature",
-            y="Value",
-            hue="Cell Line",
-            order=feature_names,
-            hue_order=cell_lines,
-            ax=axes[1],
-            palette=cell_line_colors,
-            edgecolor='black',
-            linewidth=0.8,
-            width=0.6
-        )
+        with plt.style.context("../../../paper.mplstyle"):
+            fig, axes = plt.subplots(2, 2, figsize=(8,7), dpi=100, sharex='row', sharey='row')
 
-        axes[1].axhline(y=0, color='black', linestyle='-', linewidth=1)
-        axes[1].set_ylabel(latex_symbol, fontsize=10)
-        axes[1].set_title("Main & Interaction SHAP Values", fontsize=10)
-        axes[1].set_xlabel("Feature", fontsize=10)
-        axes[1].tick_params(axis='x', labelsize=7)
-        axes[1].legend(loc='upper left', fontsize=9, frameon=True, bbox_to_anchor=(1.02, .6))
-        axes[1].grid(True, alpha=0.3, axis='y')
+            # Create per-cell-line subplots
+            for col_idx, cell_line in enumerate(cell_lines):
+                # --- Top row: violinplot (actual PSI distributions) ---
+                ax_top = axes[0, col_idx]
+                cell_plot_df = plot_df[plot_df["Cell Line"] == cell_line]
 
-        plt.tight_layout()
-        plt.show()
+                sns.violinplot(
+                    data=cell_plot_df,
+                    x="Binding Mode",
+                    y="Target_PSI",
+                    order=binding_mode_order,
+                    cut=0,
+                    density_norm='width',
+                    inner=None,
+                    ax=ax_top,
+                    color= colors[cell_line],
+                )
+
+                # Add counts and mean values above each violin
+                max_psi = cell_plot_df["Target_PSI"].max()
+                y_text_height = max_psi * 1.03 if max_psi != 0 else 0.03
+
+                for i, binding_mode in enumerate(binding_mode_order):
+                    subset = cell_plot_df[cell_plot_df["Binding Mode"] == binding_mode]
+                    if len(subset) > 0:
+                        n_points = len(subset)
+                        mean_val = subset["Target_PSI"].mean()
+                        ax_top.text(
+                            i,
+                            y_text_height,
+                            f"{n_points:,}\n{mean_val:.2f}",
+                            ha="center",
+                            va="bottom",
+                            fontsize=12,
+                        )
+
+                ax_top.set_ylim(top=max_psi * 1.15)
+
+                ax_top.tick_params(axis='x', labelsize=11)
+                ax_top.tick_params(axis='y', labelsize=12)
+
+                ax_top.set_ylabel("Target PSI", fontsize=20, labelpad=10)
+                ax_top.set_xlabel("Binding Scenario", fontsize=14)
+
+                ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)
+                ax_top.spines['top'].set_visible(False)
+                ax_top.spines['right'].set_visible(False)
+
+                # --- Bottom row: barplot (main + interaction SHAP values) ---
+                ax_bottom = axes[1, col_idx]
+                cell_bar_df = bar_df_bottom[bar_df_bottom["Cell Line"] == cell_line]
+
+                sns.barplot(
+                    data=cell_bar_df,
+                    x="Feature",
+                    y="Value",
+                    order=feature_names,
+                    ax=ax_bottom,
+                    color= colors[cell_line],
+                    edgecolor='black',
+                    linewidth=1,
+                    width=0.4
+                )
+
+                ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
+                ax_bottom.set_ylabel(latex_symbol, fontsize=20, labelpad=0)
+                ax_bottom.set_title("")
+                ax_bottom.set_xlabel("SHAP Features", fontsize=14)
+                ax_bottom.tick_params(axis='x', labelsize=11)
+                ax_bottom.tick_params(axis='y', labelsize=12)
+                ax_bottom.grid(True, alpha=0.3, axis='y')
+                ax_bottom.spines['top'].set_visible(False)
+                ax_bottom.spines['right'].set_visible(False)
+
+            fig.suptitle(
+                f"{interaction_feature.replace('-interaction-shap', '')}",
+                fontsize=13,
+                y=0.97, 
+                x=0.54,
+            )
+            plt.tight_layout()
+
+            if save_fig: 
+                plt.savefig(
+                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}{interaction_feature.replace('-interaction-shap', '')}_psi-distribution.pdf", 
+                    dpi=1000, 
+                    bbox_inches='tight'
+                )
+
+            plt.show()
 
 
     def plot_local_main_vs_interaction_val_for_interaction_cobinding(self, interaction=None): 
