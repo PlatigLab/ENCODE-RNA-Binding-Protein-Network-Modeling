@@ -20,7 +20,7 @@ hash_table_path = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Netw
 # Load in the BAT
 # Function to get path for big table
 
-def get_path(cell_line: str, path_file: str = "data_path.txt") -> str:
+def get_path(cell_line: str, path_file: str = "/project/PlatigLab/users/reece/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/07_reece_biological_validations/data_path.txt") -> str:
     """
     Reads a base directory path from a text file and returns the full path
     to the cell line data directory.
