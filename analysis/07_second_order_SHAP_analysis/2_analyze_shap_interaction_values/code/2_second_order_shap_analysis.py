@@ -541,6 +541,29 @@ class SecondOrderShapNetworkAnalyzer:
         return df
 
 
+    def load_binding_and_psi_data(self, mode=None):
+        assert mode in ['load', 'delete'], "Mode must be either 'load' or 'delete'." 
+
+        if mode == 'delete':
+            del self.binding_and_psi_data
+            gc.collect()
+            
+            logger.success("Binding and PSI data deleted from memory.")
+        
+        elif mode == 'load':
+            self.binding_and_psi_data = {}
+
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                first_order_shap_table = pl.scan_ipc(
+                        f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
+                    )
+                cols = [col for col in first_order_shap_table.collect_schema().names() if col.endswith("_binding")] + ["Target_PSI"]
+                
+                self.binding_and_psi_data[cell_line] = first_order_shap_table.select(cols).collect()
+            
+            logger.success("Binding and PSI data loaded into memory.")
+
+
 #########################################################
 ################ ANALYSIS FUNCTIONS #####################
 #########################################################
