@@ -3263,8 +3263,9 @@ class SecondOrderShapNetworkAnalyzer:
         return pivot_table
 
 
-    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None, save_fig=False):
+    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None, cell_lines=None, save_fig=False):
         assert interaction_feature.endswith("-interaction-shap"), "interaction_feature must end with '-interaction-shap'."
+        assert type(cell_lines) is list, "cell_lines must be a list of cell line names."
         assert save_fig in [True, False], "save_fig must be a boolean value."
 
         # Get the two binding features from the interaction feature name
@@ -3307,7 +3308,7 @@ class SecondOrderShapNetworkAnalyzer:
             # },
         ]
 
-        for cell_line in self.CONFIG["CELL_LINES"]:
+        for cell_line in cell_lines:
             first_order_shap_lf = pl.scan_ipc(
                 f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
             )
@@ -3347,9 +3348,6 @@ class SecondOrderShapNetworkAnalyzer:
         latex_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
         shap_table = self.retrieve_shap_values_for_metric(metric=metric)
         
-        cell_lines = self.CONFIG["CELL_LINES"]
-        assert len(cell_lines) == 2, f"Expected exactly 2 cell lines for 2x2 subplot layout, got {len(cell_lines)}."
-        
         binding_mode_order = [mode["name"] for mode in binding_modes]
         feature_names = ["Interaction", feature_1_clean, feature_2_clean]
         
@@ -3384,12 +3382,18 @@ class SecondOrderShapNetworkAnalyzer:
         }
 
         with plt.style.context("../../../paper.mplstyle"):
-            fig, axes = plt.subplots(2, 2, figsize=(8,7), dpi=100, sharex='row', sharey='row')
+            fig, axes = plt.subplots(2, len(cell_lines), figsize=(len(cell_lines) * 4, 7), dpi=100, sharex='row', sharey='row')
 
             # Create per-cell-line subplots
             for col_idx, cell_line in enumerate(cell_lines):
+                if len(cell_lines) == 1:
+                    ax_top = axes[0]
+                    ax_bottom = axes[1]
+                else:
+                    ax_top = axes[0, col_idx]
+                    ax_bottom = axes[1, col_idx]
+
                 # --- Top row: violinplot (actual PSI distributions) ---
-                ax_top = axes[0, col_idx]
                 cell_plot_df = plot_df[plot_df["Cell Line"] == cell_line]
 
                 sns.violinplot(
@@ -3435,7 +3439,6 @@ class SecondOrderShapNetworkAnalyzer:
                 ax_top.spines['right'].set_visible(False)
 
                 # --- Bottom row: barplot (main + interaction SHAP values) ---
-                ax_bottom = axes[1, col_idx]
                 cell_bar_df = bar_df_bottom[bar_df_bottom["Cell Line"] == cell_line]
 
                 sns.barplot(
@@ -3470,7 +3473,7 @@ class SecondOrderShapNetworkAnalyzer:
 
             if save_fig: 
                 plt.savefig(
-                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}{interaction_feature.replace('-interaction-shap', '')}_psi-distribution.pdf", 
+                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}/{interaction_feature.replace('-interaction-shap', '')}_{'-'.join(cell_lines)}_psi-distribution.pdf", 
                     dpi=1000, 
                     bbox_inches='tight'
                 )
