@@ -4210,6 +4210,98 @@ class SecondOrderShapNetworkAnalyzer:
             logger.success(f"Screening complete. Found {len(interaction_df)} interactions where interaction SHAP value is larger than both main effect SHAP values. Results saved to {OUTPUT_FILE}")
 
 
+    def identify_interactions_stronger_than_main_effects_in_both_cell_lines_screening_table(self):
+        # PSEUDOCODE PLAN:
+        # 1) Load interaction_df (interaction stronger than main effects) and psi_screen_df (MWU stats table).
+        # 2) Normalize interaction_df to Polars if it is pandas.
+        # 3) For each row in interaction_df:
+        #    a) Read interaction name and the row-specific cell line from "Cell Line".
+        #    b) Find the single matching row in psi_screen_df for this interaction.
+        #    c) Build MWU column list ONLY for that row-specific cell line.
+        #    d) Validate both MWU p-values exist, are numeric, are not NaN, and are < 0.05.
+        #    e) If both pass, append one output row with:
+        #       - Feature-Feature Interaction
+        #       - Cell Line
+        #       - MWU p-value 1
+        #       - MWU p-value 2
+        # 4) Return an empty typed Polars DataFrame if no rows pass.
+        # 5) Otherwise return selected/sorted final table.
+    
+        interaction_df = self.find_instances_where_interaction_larger_than_main_effects()
+        psi_screen_df = self.create_table_from_systematic_screen_of_interactions_for_psi_changes()
+    
+        if isinstance(interaction_df, pd.DataFrame):
+            interaction_df = pl.from_pandas(interaction_df)
+    
+        results = []
+    
+        for row in interaction_df.iter_rows(named=True):
+            interaction = row["Feature-Feature Interaction"]
+            cell_line = row["Cell Line"]  # <-- only evaluate this row's cell line
+    
+            psi_row_df = psi_screen_df.filter(
+                pl.col("Feature-Feature Interaction") == interaction
+            )
+            if psi_row_df.height == 0:
+                continue
+            assert psi_row_df.height == 1, (
+                f"Expected exactly 1 row for interaction {interaction} in PSI screen table, "
+                f"but got {psi_row_df.height}"
+            )
+            psi_row = psi_row_df.to_dicts()[0]
+    
+            mwu_cols = sorted(
+                [
+                    col
+                    for col in psi_screen_df.columns
+                    if col.startswith(f"{cell_line} - ") and col.endswith("Mann-Whitney U")
+                ]
+            )
+            assert len(mwu_cols) == 2, (
+                f"Expected 2 MWU columns for cell line {cell_line}, but found {len(mwu_cols)}. "
+                f"Columns found: {mwu_cols}"
+            )
+    
+            pvals = []
+            all_mwu_pass = True
+    
+            for mwu_col in mwu_cols:
+                pval = psi_row.get(mwu_col, None)
+    
+                if pval is None or (isinstance(pval, float) and np.isnan(pval)):
+                    all_mwu_pass = False
+                    break
+    
+                pval = float(pval)
+                if pval >= 0.05:
+                    all_mwu_pass = False
+                    break
+    
+                pvals.append(pval)
+    
+            if all_mwu_pass:
+                results.append(
+                    {
+                        "Feature-Feature Interaction": interaction,
+                        "Cell Line": cell_line,
+                        "MWU p-value 1": pvals[0],
+                        "MWU p-value 2": pvals[1],
+                    }
+                )
+    
+        final_set = (
+            pl.DataFrame(results)
+            .sort(["Feature-Feature Interaction", "Cell Line"])
+        )
+        display(final_set)
+
+        for row in final_set.iter_rows(named=True):
+            interaction = row["Feature-Feature Interaction"]
+            cell_line = row["Cell Line"]
+            self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction, cell_lines = [cell_line])
+            
+               
+
 #########################################################
 ############## NON-CLASS FUNCTIONS ######################
 #########################################################
