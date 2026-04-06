@@ -20,7 +20,7 @@ hash_table_path = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Netw
 # Load in the BAT
 # Function to get path for big table
 
-def get_path(cell_line: str, path_file: str = "data_path.txt") -> str:
+def get_path(cell_line: str, path_file: str = "/project/PlatigLab/users/reece/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/07_reece_biological_validations/data_path.txt") -> str:
     """
     Reads a base directory path from a text file and returns the full path
     to the cell line data directory.
@@ -39,7 +39,6 @@ def get_path(cell_line: str, path_file: str = "data_path.txt") -> str:
     full_path = Path(base_path) / f"{cell_line}_all-data.feather"
     
     return str(full_path)
-
 
 MODEL_DIR = "/project/PlatigLab/users/yogi/ENCODE-RNA-Binding-Protein-Network-Modeling/analysis/04_run_final_models_and_SHAP/outputs/pickled_models/XGBRegressor"
 
