@@ -3790,6 +3790,52 @@ class SecondOrderShapNetworkAnalyzer:
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
             self.plot_local_main_vs_interaction_val_for_interaction_cobinding(interaction=interaction)    
 
+
+    def get_distribution_difference_stats_for_interaction(self, interaction, cell_line, testing_direction):
+        assert interaction.endswith("-interaction-shap"), f"Expected interaction to end with '-interaction-shap', but got {interaction}"
+        assert cell_line in self.CONFIG["CELL_LINES"], f"Expected cell_line to be one of {self.CONFIG['CELL_LINES']}, but got {cell_line}"
+        assert testing_direction in ["greater", "less"], f"Expected testing_direction to be 'greater' or 'less', but got {testing_direction}"
+
+        binding_features = self.get_rbp_position_from_column(interaction, binding_fmt=True)
+        feature_1_binding, feature_2_binding = binding_features
+
+        if not hasattr(self, "binding_and_psi_data"): 
+            self.load_binding_and_psi_data(mode='load')
+
+        required_cols = ["Target_PSI"] + [feature_1_binding, feature_2_binding]
+        cell_line_data = self.binding_and_psi_data[cell_line].select(required_cols)
+
+        both_bound = cell_line_data.filter(
+            (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
+        )["Target_PSI"].to_list()
+
+        f1_only = cell_line_data.filter(
+            (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 0)
+        )["Target_PSI"].to_list()
+
+        f2_only = cell_line_data.filter(
+            (pl.col(feature_1_binding) == 0) & (pl.col(feature_2_binding) == 1)
+        )["Target_PSI"].to_list()
+
+        return {
+            "Feature-Feature Interaction": interaction,
+            "Cell Line": cell_line,
+            "F1": feature_1_binding,
+            "F2": feature_2_binding,
+            f"{cell_line} - Both Bound vs F1 Bound Only: Mann-Whitney U": mannwhitneyu(
+                both_bound, f1_only, alternative=testing_direction
+            )[1],
+            f"{cell_line} - Both Bound vs F1 Bound Only: Welch's t-test": ttest_ind(
+                both_bound, f1_only, equal_var=False, alternative=testing_direction
+            )[1],
+            f"{cell_line} - Both Bound vs F2 Bound Only: Mann-Whitney U": mannwhitneyu(
+                both_bound, f2_only, alternative=testing_direction
+            )[1],
+            f"{cell_line} - Both Bound vs F2 Bound Only: Welch's t-test": ttest_ind(
+                both_bound, f2_only, equal_var=False, alternative=testing_direction
+            )[1],
+        }
+
     
     def create_table_from_systematic_screen_of_interactions_for_psi_changes(self): 
 
@@ -3801,6 +3847,9 @@ class SecondOrderShapNetworkAnalyzer:
 
         else: 
             logger.info("No cached table found, creating table for screened interaction PSI changes... ")
+            
+            if not hasattr(self, "binding_and_psi_data"):
+                self.load_binding_and_psi_data(mode='load')
 
             metric = "Signed-Local-SHAP-Mean-Bound-Only"
             val_col = f"Value - {metric}"
@@ -3893,19 +3942,19 @@ class SecondOrderShapNetworkAnalyzer:
             # Convert results to a polars DataFrame
             results_df = pl.DataFrame(results).sort("Feature-Feature Interaction")
 
-            """
-            Get First Order SHAP Cache tables with actual PSI distributions
-            """
-            first_order_shap_data = {}
-            for cell_line in self.CONFIG["CELL_LINES"]:
-                first_order_shap_lf = pl.scan_ipc(
-                    f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
-                )
+            # """
+            # Get First Order SHAP Cache tables with actual PSI distributions
+            # """
+            # first_order_shap_data = {}
+            # for cell_line in self.CONFIG["CELL_LINES"]:
+            #     first_order_shap_lf = pl.scan_ipc(
+            #         f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
+            #     )
                 
-                # Verify that required columns exist in schema
-                cols = first_order_shap_lf.collect_schema().names()
-                required_cols = ["Target_PSI"] + [col for col in cols if col.endswith("_binding")]
-                first_order_shap_data[cell_line] = first_order_shap_lf.select(required_cols).collect()
+            #     # Verify that required columns exist in schema
+            #     cols = first_order_shap_lf.collect_schema().names()
+            #     required_cols = ["Target_PSI"] + [col for col in cols if col.endswith("_binding")]
+            #     first_order_shap_data[cell_line] = first_order_shap_lf.select(required_cols).collect()
 
             """
             For each interaction, get summary statistics and run statistical tests across both cell lines
@@ -3914,6 +3963,10 @@ class SecondOrderShapNetworkAnalyzer:
             interaction_stats = []
             distribution_names = ["Both Bound", "F1 Bound Only", "F2 Bound Only",] # "Either Bound"]
             metric_names = ["# Points", "Average", "Median"]
+            group_pairs = [
+                ("Both Bound", "F1 Bound Only"),
+                ("Both Bound", "F2 Bound Only")
+            ]
             
             for row in tqdm(results_df.iter_rows(named=True), desc="Processing interactions", total=results_df.height):
                 interaction_col = row["Feature-Feature Interaction"]
@@ -3928,9 +3981,8 @@ class SecondOrderShapNetworkAnalyzer:
                 
                 # Process each cell line
                 calculated_stats = {}
-                distributions_by_cell_line = {}
                 for cell_line in self.CONFIG["CELL_LINES"]:
-                    cell_line_data = first_order_shap_data[cell_line]
+                    cell_line_data = self.binding_and_psi_data[cell_line]
                     # Create the three distributions based on binding patterns
                     both_bound = cell_line_data.filter(
                         (pl.col(feature_1_binding) == 1) & (pl.col(feature_2_binding) == 1)
@@ -3956,7 +4008,6 @@ class SecondOrderShapNetworkAnalyzer:
                     }
                     
                     calculated_stats[cell_line] = {}
-                    distributions_by_cell_line[cell_line] = distributions
                     for dist_name, dist_values in distributions.items():
                         n_points = len(dist_values)
                         avg_val = float(np.mean(dist_values))
@@ -3982,12 +4033,6 @@ class SecondOrderShapNetworkAnalyzer:
                 assert (hepg2_interaction_shap > 0 and k562_interaction_shap > 0) or (hepg2_interaction_shap < 0 and k562_interaction_shap < 0), "Expected interaction SHAP values to have the same sign between cell lines due to earlier filtering, but got different signs."
                 
                 # Add statistical test columns: Cell Line, Groups Compared, Statistical Test
-                group_pairs = [
-                    ("Both Bound", "F1 Bound Only"),
-                    ("Both Bound", "F2 Bound Only")
-                ]
-                statistical_tests = ["Mann-Whitney U", "Welch's t-test"]
-
                 for group1, group2 in group_pairs:
                     for cell_line in self.CONFIG["CELL_LINES"]:
                         avg1 = calculated_stats[cell_line][group1]["Average"]
@@ -4001,22 +4046,23 @@ class SecondOrderShapNetworkAnalyzer:
                 # Add testing direction column (assume both have same sign since we filtered earlier)
                 testing_direction = "greater" if hepg2_interaction_shap > 0 else "less"
                 row_dict["Statistical Testing Directionality"] = testing_direction
-                for test_name in statistical_tests:
-                    for group1, group2 in group_pairs:
+                
+                test_results_by_cell_line = {
+                    cell_line: self.get_distribution_difference_stats_for_interaction(
+                        interaction=interaction_col,
+                        cell_line=cell_line,
+                        testing_direction=testing_direction,
+                    )
+                    for cell_line in self.CONFIG["CELL_LINES"]
+                }
+
+                for test_name in ["Mann-Whitney U", "Welch's t-test"]:
+                    for group_name in ["Both Bound vs F1 Bound Only", "Both Bound vs F2 Bound Only"]:
                         for cell_line in self.CONFIG["CELL_LINES"]:
-                            col_name = f"{cell_line} - {group1} vs {group2}: {test_name}"
-                            
-                            # (e.g. if interaction SHAP is positive, then we expect Both Bound to have higher PSI than F1/F2 only, 
-                            # so we should test if Both Bound > F1/F2 only)
-                            dist1 = distributions_by_cell_line[cell_line][group1]
-                            dist2 = distributions_by_cell_line[cell_line][group2]
-                            
-                            if test_name == "Mann-Whitney U":
-                                p_value = mannwhitneyu(dist1, dist2, alternative=testing_direction)[1]
-                            elif test_name == "Welch's t-test":
-                                p_value = ttest_ind(dist1, dist2, equal_var=False, alternative=testing_direction)[1]
-                            
-                            row_dict[col_name] = p_value
+                            test_results = test_results_by_cell_line[cell_line]
+                            row_dict[f"{cell_line} - {group_name}: {test_name}"] = test_results[
+                                f"{cell_line} - {group_name}: {test_name}"
+                            ]
                 
                 interaction_stats.append(row_dict)
 
