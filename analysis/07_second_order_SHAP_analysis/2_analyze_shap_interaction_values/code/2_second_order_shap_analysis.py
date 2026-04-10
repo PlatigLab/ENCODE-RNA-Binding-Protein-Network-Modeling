@@ -3263,10 +3263,10 @@ class SecondOrderShapNetworkAnalyzer:
         return pivot_table
 
 
-    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None, cell_lines=None, save_fig=False):
+    def plot_psi_distributions_for_interaction_feature(self, interaction_feature=None, cell_lines=None, save_fig_folder=None):
         assert interaction_feature.endswith("-interaction-shap"), "interaction_feature must end with '-interaction-shap'."
         assert type(cell_lines) is list, "cell_lines must be a list of cell line names."
-        assert save_fig in [True, False], "save_fig must be a boolean value."
+        assert save_fig_folder is None or type(save_fig_folder) == str
 
         # Get the two binding features from the interaction feature name
         binding_features = self.get_rbp_position_from_column(interaction_feature, binding_fmt=True)
@@ -3381,8 +3381,11 @@ class SecondOrderShapNetworkAnalyzer:
             "K562": "#4dbbd5"
         }
 
+        x_axis_tick_fontsize = 12 if len(cell_lines) == 2 else 10.5
+        x_axis_line_spacing= 0.5 if len(cell_lines) == 2 else 1.5
+
         with plt.style.context("../../../paper.mplstyle"):
-            fig, axes = plt.subplots(2, len(cell_lines), figsize=(len(cell_lines) * 4, 7), dpi=100, sharex='row', sharey='row')
+            fig, axes = plt.subplots(2, len(cell_lines), figsize=(len(cell_lines) * 4, 7.5), dpi=100, sharex='row', sharey='row')
 
             # Create per-cell-line subplots
             for col_idx, cell_line in enumerate(cell_lines):
@@ -3423,16 +3426,23 @@ class SecondOrderShapNetworkAnalyzer:
                             f"{n_points:,}\n{mean_val:.2f}",
                             ha="center",
                             va="bottom",
-                            fontsize=12,
+                            fontsize=13,
                         )
 
                 ax_top.set_ylim(top=max_psi * 1.15)
+                ax_top.tick_params(axis='y', labelsize=13)
 
-                ax_top.tick_params(axis='x', labelsize=11)
-                ax_top.tick_params(axis='y', labelsize=12)
+                ax_top.set_xticklabels(
+                    [
+                        label.get_text().replace("Only", "\nOnly")
+                        for label in ax_top.get_xticklabels()
+                    ], 
+                    linespacing=x_axis_line_spacing
+                )
+                ax_top.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
 
                 ax_top.set_ylabel("Target PSI", fontsize=20, labelpad=10)
-                ax_top.set_xlabel("Binding Scenario", fontsize=14)
+                ax_top.set_xlabel("Binding Category", fontsize=18)
 
                 ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)
                 ax_top.spines['top'].set_visible(False)
@@ -3456,9 +3466,9 @@ class SecondOrderShapNetworkAnalyzer:
                 ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
                 ax_bottom.set_ylabel(latex_symbol, fontsize=20, labelpad=0)
                 ax_bottom.set_title("")
-                ax_bottom.set_xlabel("SHAP Features", fontsize=14)
-                ax_bottom.tick_params(axis='x', labelsize=11)
-                ax_bottom.tick_params(axis='y', labelsize=12)
+                ax_bottom.set_xlabel("SHAP Features", fontsize=18)
+                ax_bottom.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
+                ax_bottom.tick_params(axis='y', labelsize=13)
                 ax_bottom.grid(True, alpha=0.3, axis='y')
                 ax_bottom.spines['top'].set_visible(False)
                 ax_bottom.spines['right'].set_visible(False)
@@ -3469,11 +3479,14 @@ class SecondOrderShapNetworkAnalyzer:
                 y=0.97, 
                 x=0.54,
             )
-            plt.tight_layout()
+            plt.tight_layout(h_pad=3)
 
-            if save_fig: 
+            if save_fig_folder is not None: 
+                fmt_cell_line = '-'.join(cell_lines)
+                fmt_interaction = interaction_feature.replace("-interaction-shap", "")
+
                 plt.savefig(
-                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}/{interaction_feature.replace('-interaction-shap', '')}_{'-'.join(cell_lines)}_psi-distribution.pdf", 
+                    f"{self.CONFIG['FIGURES']['actual_psi_by_binding_dir']}/{save_fig_folder}/{fmt_interaction}.{fmt_cell_line}.actual_psi_and_shap_average.pdf", 
                     dpi=1000, 
                     bbox_inches='tight'
                 )
