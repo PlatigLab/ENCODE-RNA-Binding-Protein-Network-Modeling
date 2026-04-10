@@ -4139,38 +4139,41 @@ class SecondOrderShapNetworkAnalyzer:
 
 
     def plot_actual_psi_distributions_for_top_candidates_from_screened_interactions(self): 
-        # shap_cols = [
-        #     "HepG2 - F1 (1st Individual Feature in Interaction) SHAP",
-        #     "HepG2 - F2 (2nd Individual Feature in Interaction) SHAP",
-        #     "K562 - F1 (1st Individual Feature in Interaction) SHAP",
-        #     "K562 - F2 (2nd Individual Feature in Interaction) SHAP"
-        # ]
-        
-        # # Check if all SHAP values have the same sign (all positive or all negative)
-        # all_positive = None
-        # for col in shap_cols:
-        #     if all_positive is None:
-        #         all_positive = pl.col(col) > 0
-        #     else:
-        #         all_positive = all_positive & (pl.col(col) > 0)
-        
-        # all_negative = None
-        # for col in shap_cols:
-        #     if all_negative is None:
-        #         all_negative = pl.col(col) < 0
-        #     else:
-        #         all_negative = all_negative & (pl.col(col) < 0)
-        
-        # same_sign = all_positive | all_negative
-        
-        interactions = pl.read_csv(self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"], separator="\t").filter(
-            pl.col("All MWU Significant") == True
-        )["Feature-Feature Interaction"].to_list()
+        # interactions chosen based on discussion in this Trello card: 
+        # https://trello.com/c/Ah1id9AM/38-choosing-candidates-for-feature-feature-interactions-w-actual-psi-changes
 
-        logger.info(f"Plotting actual PSI distributions for top candidates from screened interactions...\nFound {len(interactions)} interactions that passed MWU significance and same sign filtering criteria.")
-        for interaction in interactions:
-            self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction)
+        # chosen interactions based on my first pass and refinement from @JohnPlatig
 
+        interaction_list = [
+            "SRSF1_2-KHSRP_5-interaction-shap",
+            "CSTF2T_3-ILF3_3-interaction-shap",
+            "DDX3X_2-PTBP1_3-interaction-shap",
+            "EFTUD2_2-U2AF2_5-interaction-shap",
+            "QKI_3-U2AF2_3-interaction-shap",
+            "GRWD1_5-IGF2BP1_5-interaction-shap",
+            "SRSF1_2-SF3B4_4-interaction-shap",
+            "PRPF8_2-KHSRP_5-interaction-shap",
+        ]
+
+        for interaction in interaction_list:
+            self.plot_psi_distributions_for_interaction_feature(
+                interaction_feature = interaction, 
+                cell_lines = self.CONFIG["CELL_LINES"], 
+                save_fig_folder = "cell_line_concordant"
+            )
+
+
+    def plot_yogis_top_candidates_not_chosen_by_john_from_screened_interactions(self): 
+        interaction_list = [
+            "DDX3X_2-DDX3X_5-interaction-shap",
+            "GTF2F1_4-DDX3X_6-interaction-shap", 
+        ]
+
+        for interaction in interaction_list:
+            self.plot_psi_distributions_for_interaction_feature(
+                interaction_feature = interaction, 
+                cell_lines = self.CONFIG["CELL_LINES"], 
+            )
     
     def find_instances_where_interaction_larger_than_main_effects(self): 
         
