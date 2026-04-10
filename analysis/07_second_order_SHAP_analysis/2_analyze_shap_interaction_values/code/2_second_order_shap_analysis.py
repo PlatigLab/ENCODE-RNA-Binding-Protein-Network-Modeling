@@ -3955,20 +3955,6 @@ class SecondOrderShapNetworkAnalyzer:
             # Convert results to a polars DataFrame
             results_df = pl.DataFrame(results).sort("Feature-Feature Interaction")
 
-            # """
-            # Get First Order SHAP Cache tables with actual PSI distributions
-            # """
-            # first_order_shap_data = {}
-            # for cell_line in self.CONFIG["CELL_LINES"]:
-            #     first_order_shap_lf = pl.scan_ipc(
-            #         f"{self.CONFIG['FIRST_ORDER_SHAP_CACHE_DIR']}/{cell_line}_all-data.feather"
-            #     )
-                
-            #     # Verify that required columns exist in schema
-            #     cols = first_order_shap_lf.collect_schema().names()
-            #     required_cols = ["Target_PSI"] + [col for col in cols if col.endswith("_binding")]
-            #     first_order_shap_data[cell_line] = first_order_shap_lf.select(required_cols).collect()
-
             """
             For each interaction, get summary statistics and run statistical tests across both cell lines
             """
@@ -4103,19 +4089,53 @@ class SecondOrderShapNetworkAnalyzer:
             assert results_df.select(pl.col(pl.Float64).is_nan().sum()).sum_horizontal().item() == 0, "NaN values found in results DataFrame"
             assert results_df.height == original_num_rows, f"Expected {original_num_rows} rows in results DataFrame after join, but got {results_df.height}"
 
+            """
+            Add PPI annotations
+            """ 
+            raw_table = raw_table.rename(
+                {"Column": "Feature-Feature Interaction"}
+            )
+            ppi_cols = [col for col in raw_table.columns if "Street et al" in col or "Rec-Y2H" in col]
+
+            raw_table = raw_table.select(
+                ["Feature-Feature Interaction"] + ppi_cols
+            ).unique("Feature-Feature Interaction")
+
+            original_num_rows = results_df.height 
+            joined = results_df.join(
+                raw_table, 
+                on=["Feature-Feature Interaction"],
+                how="left"
+            )
+
+            assert joined.height == original_num_rows, f"Expected {original_num_rows} rows after join, but got {joined.height}"
+
+            hetero_mask = joined["Feature-Feature Interaction"].map_elements(
+                lambda interaction: (
+                    self.split_rbp_position(interaction.replace("-interaction-shap", "").split("-")[0])[0]
+                    != self.split_rbp_position(interaction.replace("-interaction-shap", "").split("-")[1])[0]
+                ),
+                return_dtype=pl.Boolean,
+            )
+
+            hetero_joined = joined.filter(hetero_mask)
+            assert hetero_joined.null_count().sum_horizontal().item() == 0, (
+                "Null values found in joined DataFrame for interaction rows with different RBPs"
+            )
+
             # Sort by "All MWU Significant" (True first), then by all "Abs(...)" columns in sorted order
-            abs_cols = sorted([col for col in results_df.columns if "Abs(" in col])
+            abs_cols = sorted([col for col in joined.columns if "Abs(" in col])
             sort_cols = ["All MWU Significant"] + abs_cols
 
-            results_df = results_df.sort(
+            joined = joined.sort(
                 sort_cols,
                 descending=True
             )
 
-            results_df.write_csv(OUTPUT_FILE, separator="\t")
+            joined.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"Screened interaction PSI changes table created and saved to {OUTPUT_FILE}")
             
-            return results_df
+            return joined
 
 
     def plot_actual_psi_distributions_for_top_candidates_from_screened_interactions(self): 
