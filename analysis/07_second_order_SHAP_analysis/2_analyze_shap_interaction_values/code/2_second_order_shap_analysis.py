@@ -4182,6 +4182,10 @@ class SecondOrderShapNetworkAnalyzer:
         
         else: 
             logger.info("No cached table found, screening for interactions with larger SHAP values than main effects...")
+
+            if not hasattr(self, "binding_and_psi_data"):
+                self.load_binding_and_psi_data(mode='load')
+
             metric = "Signed-Local-SHAP-Mean-Bound-Only"
             val_col = f"Value - {metric}"
             shap_table = self.retrieve_shap_values_for_metric(metric=metric)
@@ -4226,6 +4230,26 @@ class SecondOrderShapNetworkAnalyzer:
                     abs_diff_main2 = abs(interaction_val) - abs(main2_val)
                     avg_abs_diff = (abs_diff_main1 + abs_diff_main2) / 2
 
+                    # Compute average multiplicative difference (fold-change vs main effects)
+                    mult_diff_main1 = abs(interaction_val) / abs(main1_val) 
+                    mult_diff_main2 = abs(interaction_val) / abs(main2_val) 
+                    avg_mult_diff = np.mean([mult_diff_main1, mult_diff_main2])
+
+                    testing_direction = "greater" if interaction_val > 0 else "less"
+                    dist_stats = self.get_distribution_difference_stats_for_interaction(
+                        interaction=interaction_col,
+                        cell_line=cell_line,
+                        testing_direction=testing_direction,
+                    )
+                    mwu_pval_1 = dist_stats[f"{cell_line} - Both Bound vs F1 Bound Only: Mann-Whitney U"]
+                    mwu_pval_2 = dist_stats[f"{cell_line} - Both Bound vs F2 Bound Only: Mann-Whitney U"]
+                    both_mwu_significant = (
+                        not np.isnan(float(mwu_pval_1))
+                        and not np.isnan(float(mwu_pval_2))
+                        and float(mwu_pval_1) < 0.05
+                        and float(mwu_pval_2) < 0.05
+                    )
+
                     results.append({
                         "Feature-Feature Interaction": interaction_col,
                         "Cell Line": cell_line,
@@ -4235,12 +4259,34 @@ class SecondOrderShapNetworkAnalyzer:
                         "abs_difference_interaction_vs_main1": abs_diff_main1,
                         "abs_difference_interaction_vs_main2": abs_diff_main2,
                         "avg_of_abs_differences": avg_abs_diff,
+                        "avg_multiplicative_difference": avg_mult_diff,
+                        "MWU p-value (Both Bound vs F1 Bound Only)": float(mwu_pval_1),
+                        "MWU p-value (Both Bound vs F2 Bound Only)": float(mwu_pval_2),
+                        "Both MWU Significant": both_mwu_significant,
                     })
 
             # Convert to pandas DataFrame
             interaction_df = pd.DataFrame(results).sort_values(by="avg_of_abs_differences", ascending=False).reset_index(drop=True)
-            interaction_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            interaction_df = pl.from_pandas(interaction_df)
+
+            # Add PPI annotations
+            shap_table = shap_table.rename({"Column": "Feature-Feature Interaction"})
+            ppi_cols = [col for col in shap_table.columns if "Street et al" in col or "Rec-Y2H" in col]
+
+            shap_table = shap_table.select(["Feature-Feature Interaction"] + ppi_cols).unique("Feature-Feature Interaction")
+
+            original_num_rows = interaction_df.height
+            interaction_df = interaction_df.join(
+                shap_table,
+                on=["Feature-Feature Interaction"],
+                how="left"
+            )
+
+            assert interaction_df.height == original_num_rows, f"Expected {original_num_rows} rows after join, but got {interaction_df.height}"
+
+            interaction_df.write_csv(OUTPUT_FILE, separator="\t")
             logger.success(f"Screening complete. Found {len(interaction_df)} interactions where interaction SHAP value is larger than both main effect SHAP values. Results saved to {OUTPUT_FILE}")
+            return interaction_df
 
 
     def identify_interactions_stronger_than_main_effects_in_both_cell_lines_screening_table(self):
@@ -4262,9 +4308,6 @@ class SecondOrderShapNetworkAnalyzer:
     
         interaction_df = self.find_instances_where_interaction_larger_than_main_effects()
         psi_screen_df = self.create_table_from_systematic_screen_of_interactions_for_psi_changes()
-    
-        if isinstance(interaction_df, pd.DataFrame):
-            interaction_df = pl.from_pandas(interaction_df)
     
         results = []
     
