@@ -4292,6 +4292,20 @@ class SecondOrderShapNetworkAnalyzer:
             return interaction_df
 
 
+    def plot_significant_psi_distribution_changes_for_chosen_small_main_effect_examples(self): 
+        examples = [
+            ("HepG2", "HNRNPM_2-SUB1_5-interaction-shap"), 
+            ("K562", "HLTF_2-PRPF8_4-interaction-shap")
+        ]
+
+        for cell_line, interaction in examples: 
+            self.plot_psi_distributions_for_interaction_feature(
+                interaction_feature=interaction,
+                cell_lines=[cell_line],
+                save_fig_folder = "cell_line_specific/small_main_effects"
+            )
+        
+
     def identify_interactions_stronger_than_main_effects_in_both_cell_lines_screening_table(self):
         # PSEUDOCODE PLAN:
         # 1) Load interaction_df (interaction stronger than main effects) and psi_screen_df (MWU stats table).
