@@ -6221,8 +6221,8 @@ class FirstOrderShapInvestigator:
 
         # Set up a single figure with subplots for each cell line
         n = len(dfs)
-        fig = plt.figure(figsize=(7 * n, 7), dpi=100)
-        gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.25)
+        fig = plt.figure(figsize=(7 * n, 7.2), dpi=100)
+        gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.3)
 
         hexbin_objs = []
         for idx, (cell_line, df) in enumerate(dfs.items()):
@@ -6239,18 +6239,17 @@ class FirstOrderShapInvestigator:
                 0.5, 0.97,
                 f"$R^2$: {r2_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
                 transform=ax_joint.transAxes,
-                fontsize=14, color="red",
+                fontsize=16, color="red",
                 ha="center", va="top"
             )
 
-            # ax_joint.set_ylabel("Predicted PSI", fontsize=12)
             ax_joint.set_title(f"{cell_line}", fontsize=18)
-            # ax_joint.legend(fontsize=10, loc="upper left")
+            ax_joint.tick_params(which='both', labelsize=14)
 
             # Marginal histogram for x (top)
             ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
-            ax_histx.hist(df["y_true"], bins=50, color="#4682B4", alpha=0.7, density=True, edgecolor="black")
-            sns.kdeplot(df["y_true"], color="orange", lw=1, ax=ax_histx)
+            ax_histx.hist(df["y_true"], bins=50, color="#A874F7", alpha=0.7, density=True, edgecolor="black")
+            sns.kdeplot(df["y_true"], color="orange", lw=2, ax=ax_histx)
             ax_histx.axis("off")
             # Move the axis slightly down
             pos = ax_histx.get_position()
@@ -6258,15 +6257,15 @@ class FirstOrderShapInvestigator:
 
             # Marginal histogram for y (right)
             ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
-            ax_histy.hist(df["y_pred"], bins=50, color="#4682B4", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
-            sns.kdeplot(df["y_pred"], color="orange", lw=1, ax=ax_histy, vertical=True)
+            ax_histy.hist(df["y_pred"], bins=50, color="#A874F7", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
+            sns.kdeplot(df["y_pred"], color="orange", lw=2, ax=ax_histy, vertical=True)
             ax_histy.axis("off")
 
             if underlying_data != "Delta":
                 ax_histx.set_xlim(0, 1)
                 ax_histy.set_ylim(0, 1)
                 # Add line from (0,1) to (0,1)
-                ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1, label="y=x")
+                ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1.5, label="y=x")
 
         # Add a separate horizontal colorbar below each joint subplot
         for idx in range(n):
@@ -6288,7 +6287,8 @@ class FirstOrderShapInvestigator:
                 cax=cbar_ax,
                 orientation='horizontal'
             )
-            cbar_ax.set_xlabel('Counts (log scale)', fontsize=12)
+            cbar_ax.set_xlabel('Counts (log scale)', fontsize=16)
+            cbar_ax.tick_params(labelsize=14)
 
         if underlying_data != "Delta": 
             actual_label = self.latex_symbols["PSI"]["Actual"]
