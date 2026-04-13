@@ -6221,89 +6221,91 @@ class FirstOrderShapInvestigator:
 
         # Set up a single figure with subplots for each cell line
         n = len(dfs)
-        fig = plt.figure(figsize=(7 * n, 7.2), dpi=100)
-        gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.3)
 
-        hexbin_objs = []
-        for idx, (cell_line, df) in enumerate(dfs.items()):
-            # Main scatter/hexbin plot
-            ax_joint = fig.add_subplot(gs[1, idx])
-            hb = ax_joint.hexbin(
-                df["y_true"], df["y_pred"],
-                gridsize=100, cmap="Blues", norm=LogNorm(), mincnt=1
-            )
-            hexbin_objs.append(hb)
+        with plt.style.context('../../paper.mplstyle'): 
+            fig = plt.figure(figsize=(7 * n, 7.2), dpi=100)
+            gs = gridspec.GridSpec(2, n, height_ratios=[1, 4], hspace=0.25, wspace=0.3)
 
-            # Annotate R2 score and number of points at the center top (Test partition only)
-            ax_joint.text(
-                0.5, 0.97,
-                f"$R^2$: {r2_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
-                transform=ax_joint.transAxes,
-                fontsize=16, color="red",
-                ha="center", va="top"
-            )
+            hexbin_objs = []
+            for idx, (cell_line, df) in enumerate(dfs.items()):
+                # Main scatter/hexbin plot
+                ax_joint = fig.add_subplot(gs[1, idx])
+                hb = ax_joint.hexbin(
+                    df["y_true"], df["y_pred"],
+                    gridsize=100, cmap="Blues", norm=LogNorm(), mincnt=1
+                )
+                hexbin_objs.append(hb)
 
-            ax_joint.set_title(f"{cell_line}", fontsize=18)
-            ax_joint.tick_params(which='both', labelsize=14)
+                # Annotate R2 score and number of points at the center top (Test partition only)
+                ax_joint.text(
+                    0.5, 0.97,
+                    f"$R^2$: {r2_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
+                    transform=ax_joint.transAxes,
+                    fontsize=16, color="red",
+                    ha="center", va="top"
+                )
 
-            # Marginal histogram for x (top)
-            ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
-            ax_histx.hist(df["y_true"], bins=50, color="#A874F7", alpha=0.7, density=True, edgecolor="black")
-            sns.kdeplot(df["y_true"], color="orange", lw=2, ax=ax_histx)
-            ax_histx.axis("off")
-            # Move the axis slightly down
-            pos = ax_histx.get_position()
-            ax_histx.set_position([pos.x0, pos.y0 - 0.03, pos.width, pos.height])
+                ax_joint.set_title(f"{cell_line}", fontsize=18)
+                ax_joint.tick_params(which='both', labelsize=14)
 
-            # Marginal histogram for y (right)
-            ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
-            ax_histy.hist(df["y_pred"], bins=50, color="#A874F7", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
-            sns.kdeplot(df["y_pred"], color="orange", lw=2, ax=ax_histy, vertical=True)
-            ax_histy.axis("off")
+                # Marginal histogram for x (top)
+                ax_histx = fig.add_subplot(gs[0, idx], sharex=ax_joint)
+                ax_histx.hist(df["y_true"], bins=50, color="#A874F7", alpha=0.7, density=True, edgecolor="black")
+                sns.kdeplot(df["y_true"], color="orange", lw=2, ax=ax_histx)
+                ax_histx.axis("off")
+                # Move the axis slightly down
+                pos = ax_histx.get_position()
+                ax_histx.set_position([pos.x0, pos.y0 - 0.03, pos.width, pos.height])
 
-            if underlying_data != "Delta":
-                ax_histx.set_xlim(0, 1)
-                ax_histy.set_ylim(0, 1)
-                # Add line from (0,1) to (0,1)
-                ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1.5, label="y=x")
+                # Marginal histogram for y (right)
+                ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
+                ax_histy.hist(df["y_pred"], bins=50, color="#A874F7", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
+                sns.kdeplot(df["y_pred"], color="orange", lw=2, ax=ax_histy, vertical=True)
+                ax_histy.axis("off")
 
-        # Add a separate horizontal colorbar below each joint subplot
-        for idx in range(n):
-            ax_joint = fig.axes[2 * idx + 1]  # axes are [histx0, joint0, histx1, joint1, ...]
-            # Get the position of the joint axes in figure coordinates
-            pos = ax_joint.get_position()
-            # Manually specify the colorbar axes below the joint plot
-            cbar_height = 0.03
-            cbar_pad = 0.65
-            cbar_ax = fig.add_axes([
-                pos.x0,
-                pos.y0 - cbar_height - cbar_pad,  # ensure it's below the subplot
-                pos.width,
-                cbar_height
-            ])
+                if underlying_data != "Delta":
+                    ax_histx.set_xlim(0, 1)
+                    ax_histy.set_ylim(0, 1)
+                    # Add line from (0,1) to (0,1)
+                    ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1.5, label="y=x")
 
-            fig.colorbar(
-                hexbin_objs[idx],  # Use the PolyCollection from hexbin
-                cax=cbar_ax,
-                orientation='horizontal'
-            )
-            cbar_ax.set_xlabel('Counts (log scale)', fontsize=16)
-            cbar_ax.tick_params(labelsize=14)
+            # Add a separate horizontal colorbar below each joint subplot
+            for idx in range(n):
+                ax_joint = fig.axes[2 * idx + 1]  # axes are [histx0, joint0, histx1, joint1, ...]
+                # Get the position of the joint axes in figure coordinates
+                pos = ax_joint.get_position()
+                # Manually specify the colorbar axes below the joint plot
+                cbar_height = 0.03
+                cbar_pad = 0.65
+                cbar_ax = fig.add_axes([
+                    pos.x0,
+                    pos.y0 - cbar_height - cbar_pad,  # ensure it's below the subplot
+                    pos.width,
+                    cbar_height
+                ])
 
-        if underlying_data != "Delta": 
-            actual_label = self.latex_symbols["PSI"]["Actual"]
-            predicted_label = self.latex_symbols["PSI"]["Predicted"]
-        else: 
-            actual_label = self.latex_symbols["Differential Symbols"]["dPSI"]
-            predicted_label = self.latex_symbols["Differential Symbols"]["dPred"]
+                fig.colorbar(
+                    hexbin_objs[idx],  # Use the PolyCollection from hexbin
+                    cax=cbar_ax,
+                    orientation='horizontal'
+                )
+                cbar_ax.set_xlabel('Counts (log scale)', fontsize=16)
+                cbar_ax.tick_params(labelsize=14)
 
-        fig.suptitle(f"Test Partition: {actual_label} vs {predicted_label}\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
-        fig.supxlabel(actual_label, fontsize=26, y=-0.07)
-        fig.supylabel(predicted_label , fontsize=26, x=0.06, y=0.4)
-        plt.tight_layout()
+            if underlying_data != "Delta": 
+                actual_label = self.latex_symbols["PSI"]["Actual"]
+                predicted_label = self.latex_symbols["PSI"]["Predicted"]
+            else: 
+                actual_label = self.latex_symbols["Differential Symbols"]["dPSI"]
+                predicted_label = self.latex_symbols["Differential Symbols"]["dPred"]
 
-        plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
-        plt.show()
+            fig.suptitle(f"Test Partition: {actual_label} vs {predicted_label}\nNOTE: showing top model per cell line based on outer holdout $R^2$\nNOTE 2: data mode is {underlying_data}", fontsize=22, y=1.03)
+            fig.supxlabel(actual_label, fontsize=26, y=-0.07)
+            fig.supylabel(predicted_label , fontsize=26, x=0.06, y=0.4)
+            plt.tight_layout()
+
+            plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
+            plt.show()
 
         del dfs 
         gc.collect()
