@@ -6171,6 +6171,7 @@ class FirstOrderShapInvestigator:
         # Prepare data for all cell lines
         dfs = {}
         r2_scores = {}
+        pearson_r_scores = {}
         for cell_line, model_hash in self.XGBOOST_BEST_MODEL_HASHES.items():
 
             if underlying_data != "Delta":
@@ -6215,6 +6216,8 @@ class FirstOrderShapInvestigator:
 
             # Calculate R2 score only for the "Test" partition
             r2_scores[cell_line] = r2_score(y_true, y_pred)
+            # calculate pearson r 
+            pearson_r_scores[cell_line] = pearsonr(y_true, y_pred).statistic
 
             del cell_line_df
             gc.collect()
@@ -6236,10 +6239,9 @@ class FirstOrderShapInvestigator:
                 )
                 hexbin_objs.append(hb)
 
-                # Annotate R2 score and number of points at the center top (Test partition only)
                 ax_joint.text(
                     0.5, 0.97,
-                    f"$R^2$: {r2_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
+                    f"$R^2$: {r2_scores[cell_line]:.3f}\n$\\rho$: {pearson_r_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
                     transform=ax_joint.transAxes,
                     fontsize=16, color="red",
                     ha="center", va="top"
