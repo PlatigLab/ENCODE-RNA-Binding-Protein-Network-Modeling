@@ -6127,7 +6127,7 @@ class FirstOrderShapInvestigator:
                 locations=loc.column_labels()
             )
             .tab_spanner(
-                label = great_tables.md("*ElasticNet*"), 
+                label = great_tables.md("*elastic net*"), 
                 columns = [col for col in performance_df.columns if col.startswith("ElasticNet")],  
             )
             .tab_spanner(
