@@ -221,9 +221,9 @@ class FirstOrderShapInvestigator:
 
     FIGURES = {
         "predicted_vs_actual_PSI_plot": {
-            "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data.png",
-            "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding.png",
-            "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data.png",
+            "All-Data": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_all_data",
+            "Unique-Binding": "../outputs/publication_figures/pred_vs_actual/predicted_vs_actual_PSI_plot_unique_binding",
+            "Delta": "../outputs/publication_figures/pred_vs_actual/DPSI_predicted_vs_actual_plot_all_data",
             "KDE": "../outputs/publication_figures/pred_vs_actual/kde_plots_all_data_psi/predicted_vs_actual_PSI_kde_all_data", 
         }, 
         "avg_performance_table": "../outputs/publication_figures/pred_vs_actual/avg_performance_table", 
@@ -6240,11 +6240,11 @@ class FirstOrderShapInvestigator:
                 hexbin_objs.append(hb)
 
                 ax_joint.text(
-                    0.5, 0.97,
+                    0.5, 0.04,
                     f"$R^2$: {r2_scores[cell_line]:.3f}\n$\\rho$: {pearson_r_scores[cell_line]:.3f}\nPoints: {len(df):.2e}",
                     transform=ax_joint.transAxes,
                     fontsize=16, color="red",
-                    ha="center", va="top"
+                    ha="center", va="bottom"
                 )
 
                 ax_joint.set_title(f"{cell_line}", fontsize=18)
@@ -6261,7 +6261,7 @@ class FirstOrderShapInvestigator:
 
                 # Marginal histogram for y (right)
                 ax_histy = ax_joint.inset_axes([1.02, 0, 0.15, 1], sharey=ax_joint)
-                ax_histy.hist(df["y_pred"], bins=50, color="#A874F7", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
+                ax_histy.hist(df["y_pred"], bins=50, color="#BC90FE", alpha=0.7, orientation="horizontal", density=True, edgecolor="black")
                 sns.kdeplot(df["y_pred"], color="orange", lw=2, ax=ax_histy, vertical=True)
                 ax_histy.axis("off")
 
@@ -6269,7 +6269,7 @@ class FirstOrderShapInvestigator:
                     ax_histx.set_xlim(0, 1)
                     ax_histy.set_ylim(0, 1)
                     # Add line from (0,1) to (0,1)
-                    ax_joint.plot([0, 1], [0, 1], color="red", linestyle="--", linewidth=1.5, label="y=x")
+                    ax_joint.plot([0, 1], [0, 1], color="#e64b35", linestyle="--", linewidth=1.5, label="y=x")
 
             # Add a separate horizontal colorbar below each joint subplot
             for idx in range(n):
@@ -6306,7 +6306,7 @@ class FirstOrderShapInvestigator:
             fig.supylabel(predicted_label , fontsize=26, x=0.06, y=0.4)
             plt.tight_layout()
 
-            plt.savefig(self.FIGURES["predicted_vs_actual_PSI_plot"][underlying_data], dpi=600, bbox_inches='tight')
+            plt.savefig(f"{self.FIGURES['predicted_vs_actual_PSI_plot'][underlying_data]}.pdf", dpi=1000, bbox_inches='tight')
             plt.show()
 
         del dfs 
