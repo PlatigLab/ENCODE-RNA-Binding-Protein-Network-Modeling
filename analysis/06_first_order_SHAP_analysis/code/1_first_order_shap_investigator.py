@@ -320,6 +320,7 @@ class FirstOrderShapInvestigator:
             "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
         }, 
         "dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf", 
+        "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf"
     }
 
 
@@ -6830,7 +6831,7 @@ class FirstOrderShapInvestigator:
 
 
     def plot_binding_sum_distribution(self):
-        lf = self.load_final_SHAP_data(underlying_data="Unique-Binding", as_lazyframe=True)
+        lf = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
 
         # Prepare a DataFrame for violinplot (percentage)
         plot_data = []
@@ -6849,21 +6850,43 @@ class FirstOrderShapInvestigator:
 
         plot_df = pd.concat(plot_data, ignore_index=True)
 
-        for col in ["Binding Sum", "Binding Sum (%)"]:
-            plt.figure(figsize=(8, 5), dpi=150)
-            sns.violinplot(
+        palette = {
+            self.cell_lines[0]: "#00bcd4",
+            self.cell_lines[1]: "#e91e63"
+        }
+
+        with plt.style.context("../../paper.mplstyle"):
+            
+            fig = plt.figure(figsize=(5,4), dpi=300)
+            
+            ax = sns.histplot(
                 data=plot_df,
-                x="Cell Line",
-                y=col,
-                inner="box",
-                cut=0,
-                scale="width",
-                palette="pastel"
+                x="Binding Sum (%)",
+                hue="Cell Line",
+                bins=40, 
+                edgecolor='black',
+                multiple="layer",
+                stat="density",
+                common_norm=False,
+                alpha=0.4,
+                palette=palette
             )
-            plt.xlabel("Cell Line", fontsize=14)
-            plt.ylabel(col, fontsize=14)
-            plt.title(f"{col} Across Cell Lines (Unique-Binding)", fontsize=16)
+
+            ax.tick_params(which='both', labelsize=10)
+
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+            plt.xlabel("% Features Bound", fontsize=12)
+            plt.ylabel("Density", fontsize=12)
+            plt.title("NOTE: Using 'All-Data'\n\nDistribution of % Features Bound Across All Graphs", fontsize=10, pad=20)
             plt.tight_layout()
+
+            plt.savefig(
+                self.FIGURES["per_graph_binding_density"], 
+                dpi=600, 
+                bbox_inches='tight'
+            )
             plt.show()
 
 
