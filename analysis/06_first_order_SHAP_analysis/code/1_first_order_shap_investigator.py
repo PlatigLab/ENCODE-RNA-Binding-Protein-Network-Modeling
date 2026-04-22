@@ -2747,7 +2747,7 @@ class FirstOrderShapInvestigator:
 
             ax.set_title("Bound Global SHAP by Cell Line and Position Group\nNOTE 1: Mann-Whitney U test: '3,4' > '1,2,5,6'", fontsize=6, y=1.12)
             ax.set_xlabel("Cell Line", fontsize=9, fontweight="bold")
-            ax.set_ylabel(self.latex_symbols["Unique-Binding"]["Bound-Only"], fontsize=12, fontweight="bold")
+            ax.set_ylabel(self.latex_symbols["Unique-Binding"]["Bound-Only"], fontsize=9, fontweight="bold")
             
             ax.tick_params(axis='x', labelsize=8)
             ax.tick_params(axis='y', labelsize=7)
@@ -8230,8 +8230,8 @@ class FirstOrderShapInvestigator:
         table = pl.read_csv(BOUND_LOCAL_SHAP, separator="\t")
 
         cell_line_palette = {
-            "HepG2": "#ff00ff",  # light red
-            "K562": "#ff9100",   # light blue
+            "HepG2": "#91d1c2",  
+            "K562": "#3c5488",  
         }
 
         avg_data = []
@@ -8280,7 +8280,7 @@ class FirstOrderShapInvestigator:
             ax.set_ylim(ymin - 0.07 * (ymax - ymin), ymax)
 
             plt.xlabel("Position", fontsize=12, fontweight="bold")
-            plt.ylabel("Average Local SHAP (Bound)", fontsize=10, fontweight="bold")
+            plt.ylabel(self.latex_symbols["Unique-Binding"]["Bound-Only"], fontsize=12, fontweight='bold')
             plt.title("Average Directional Position Effect", fontsize=10, y=1.05)
 
             # Custom legend
