@@ -1789,8 +1789,8 @@ class FirstOrderShapInvestigator:
                 ax.tick_params(axis='x', labelsize=12)
                 ax.tick_params(axis='y', labelsize=7)
 
-
-            cbar_ax.set_title(self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"], fontsize=14, pad=10)
+            legend_title = self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"].replace(".", ".\n")
+            cbar_ax.set_title(legend_title, fontsize=10, pad=5)
             cbar_ax.tick_params(labelsize=10)
 
             fig.supylabel("RBP", fontsize=14, x=0.03, y=.51, fontweight="bold")
