@@ -194,7 +194,7 @@ class FirstOrderShapInvestigator:
         "Unique-Binding": {
                 "5_dfs_average": r"$\Phi_{i}$", 
                 # "Bound-Only": r"$\Phi_{i}^b$", 
-                "Bound-Only": r"Avg. SHAP",
+                "Bound-Only": r"Avg. |SHAP|",
                 "NOT-Bound-Only": r"$\Phi_{i}^{nb}$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
                 "local_SHAP_bound": r"$\varphi_{i,j}^b$",
