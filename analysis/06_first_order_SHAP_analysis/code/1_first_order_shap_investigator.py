@@ -326,6 +326,10 @@ class FirstOrderShapInvestigator:
         "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf"
     }
 
+    SUPPLEMENTARY_TABLES = {
+        "Signed Bound Global SHAP Table": "../outputs/publication_tables/unique_binding_avg_shap.tsv"
+    }
+
 
     def __post_init__(self):
 
@@ -4104,6 +4108,40 @@ class FirstOrderShapInvestigator:
             
             logger.success(f"Specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data} saved to {OUTPUT_FILE}")
             return specialized_global_SHAP
+
+    
+    def create_supplementary_table_of_signed_bound_global_shap(self): 
+        mode = "Signed-Local-SHAP-Mean-Bound-Only"
+        condition = None
+        underlying_data = "Unique-Binding"
+
+        raw_pkl_file = self.CACHE_INFO["specialized_global_SHAP"][mode][condition][underlying_data]
+        with open(raw_pkl_file, "rb") as f:
+            specialized_global_SHAP = pickle.load(f)
+
+        long_tables = []
+        for cell_line, cell_line_df in specialized_global_SHAP.items():
+
+            position_col = cell_line_df.index.name 
+            long_df = (
+                cell_line_df
+                .reset_index()
+                .melt(id_vars=position_col, var_name="RBP", value_name="Avg. SHAP")
+                .rename(columns={position_col: "Position"})
+            )
+            long_df["Feature"] = long_df["RBP"].astype(str) + "_" + long_df["Position"].astype(str)
+            long_df["Cell Line"] = cell_line
+            long_df = long_df[["Feature", "Cell Line", "RBP", "Position", "Avg. SHAP"]]
+            long_tables.append(long_df)
+
+        supplementary_df = pd.concat(long_tables, axis=0, ignore_index=True).sort_values(by=["Feature", "Cell Line"])
+        supplementary_df.to_csv(
+            self.SUPPLEMENTARY_TABLES["Signed Bound Global SHAP Table"], 
+            index=False, 
+            sep="\t", 
+        )
+
+        logger.success("Finished creating Supplementary Table of Signed Bound Global SHAP values.")
 
 
     def plot_specialized_vs_regular_global_SHAP(self, underlying_data=None):
