@@ -268,6 +268,7 @@ class FirstOrderShapInvestigator:
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
         },
+        "global_SHAP_summary": "../outputs/publication_figures/global_shap_summary/global_shap_summary.pdf",
         "global_SHAP_paper_vignette_heatmaps": "../outputs/publication_figures/global_shap/paper_vignette_heatmap",
         "position_3_4_global_shap_beta_coeff_violinplot": {
             "grouped_positions": {
@@ -1809,6 +1810,150 @@ class FirstOrderShapInvestigator:
             plt.savefig(OUTPUT_FILE, dpi=1000, bbox_inches='tight')
 
             plt.show()
+
+    
+    def plot_signed_global_SHAP_summary(self, binding_unique=None): 
+        assert binding_unique == "Unique-Binding", "binding_unique should be 'Unique-Binding'"
+
+        global_SHAP = self.calculate_specialized_global_SHAP(
+                mode="Signed-Local-SHAP-Mean-Bound-Only",
+                underlying_data=binding_unique
+            )
+
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(
+                nrows=2,
+                ncols=2,
+                figsize=(8, 6.5),
+                dpi=150,
+                gridspec_kw={"width_ratios": [8,2]},
+                sharex=False,
+                sharey=False
+            )
+
+            palette = {
+                "Activating": "#ef8a62",
+                "Repressing": "#67a9cf",
+                "Zero": "lightgray",
+            }
+
+            for row_idx, cell_line in enumerate(self.cell_lines):
+                heatmap = global_SHAP[cell_line].copy()
+
+                # Long-form values for stripplot: x=position, y=Avg. SHAP
+                long_df = (
+                    heatmap
+                    .stack(dropna=True)
+                    .reset_index()
+                    .rename(columns={0: "Avg. SHAP"})
+                )
+
+                long_df["Position"] = pd.to_numeric(long_df["Position"])
+                long_df["Position"] = long_df["Position"].astype(int)
+
+                long_df["Sign"] = np.where(
+                    long_df["Avg. SHAP"] > 0,
+                    "Activating",
+                    np.where(long_df["Avg. SHAP"] < 0, "Repressing", "Zero")
+                )
+                assert not long_df.isnull().values.any()
+
+                ordered_positions = sorted(long_df["Position"].unique().tolist())
+
+                ax_strip = axes[row_idx, 0]
+                np.random.seed(17)
+
+                sns.stripplot(
+                    data=long_df,
+                    x="Position",
+                    y="Avg. SHAP",
+                    hue="Sign",
+                    order=ordered_positions,
+                    hue_order=["Activating", "Repressing", "Zero"],
+                    palette=palette,
+                    jitter=0.3,
+                    dodge=True,
+                    size=2.5,
+                    edgecolor="black",
+                    linewidth=0.4,
+                    alpha=0.5,
+                    ax=ax_strip,
+                )
+
+                if row_idx==0: 
+                    x_coord_legend =0.88
+                    y_coord_legend = 1.06
+
+                elif row_idx ==1: 
+                    x_coord_legend = 0.13
+                    y_coord_legend = 0.4
+                
+                handles = [
+                    Line2D([0], [0], marker="o", color="w", markerfacecolor=palette[k], markeredgecolor="black", markeredgewidth=0.8, markersize=5.5, label=k)
+                    for k in ["Activating", "Repressing", "Zero"]
+                ]
+                ax_strip.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=11, bbox_to_anchor=(x_coord_legend, y_coord_legend))
+                
+                ax_strip.grid(axis='y', linestyle='--', which='major', alpha=0.4, linewidth=0.5)
+
+                ax_strip.set_title(f"{cell_line}", fontsize=16, pad=15, x= 0.72)
+                ax_strip.set_xlabel("Position", fontsize=14, fontweight='bold')
+                ax_strip.set_ylabel("Avg. SHAP", fontsize=14, fontweight='bold')
+
+                ax_strip.tick_params(axis="x", labelsize=12)
+                ax_strip.tick_params(axis="y", labelsize=9)
+
+                ax_strip.spines['top'].set_visible(False)
+                ax_strip.spines['right'].set_visible(False)
+
+                ax_strip.axhline(0, color="black", linestyle="-", linewidth=1, zorder=0)
+
+                # Build per-position counts used in the stripplot
+                count_df = (
+                    long_df
+                    .groupby(["Position", "Sign"])
+                    .size()
+                    .unstack()
+                    .reindex(columns=["Activating", "Repressing"])
+                    .rename(columns={"Activating": "# Act", "Repressing": "# Rep"})
+                    .reindex(ordered_positions)
+                    .fillna(0)
+                    .astype(int)
+                )
+
+                ax_heat = axes[row_idx, 1]
+                sns.heatmap(
+                    count_df,
+                    cmap=sns.color_palette(["white"], as_cmap=True),
+                    linewidths=0.45,
+                    linecolor="black",
+                    annot=True,
+                    fmt="d",
+                    annot_kws={"color": "black", 'fontsize': 10},
+                    cbar=False,
+                    ax=ax_heat,
+                )
+
+                ax_heat.xaxis.set_ticks_position("top")
+                ax_heat.xaxis.set_label_position("top")
+
+                ax_heat.set_xlabel("")
+                ax_heat.set_ylabel("Position", fontsize=14,fontweight='bold')
+
+                ax_heat.tick_params(axis='y', which='major', labelsize=11)
+                ax_heat.tick_params(axis='x', which='major', labelsize=13, width=1.5)
+
+            fig.suptitle(
+                "Signed Bound Global SHAP Values per Cell Line and Directionality Behavior", 
+                fontsize=10,
+                y=0.99
+            )
+
+            plt.tight_layout()
+            plt.savefig(self.FIGURES["global_SHAP_summary"], dpi=600, bbox_inches="tight")
+            plt.show()
+    
+        np.random.seed(None)
 
 
     def calculate_SHAP_CV(self, binding_unique=None):
