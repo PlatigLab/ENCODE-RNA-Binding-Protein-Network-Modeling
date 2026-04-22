@@ -193,12 +193,14 @@ class FirstOrderShapInvestigator:
     latex_symbols = {
         "Unique-Binding": {
                 "5_dfs_average": r"$\Phi_{i}$", 
-                "Bound-Only": r"$\Phi_{i}^b$", 
+                # "Bound-Only": r"$\Phi_{i}^b$", 
+                "Bound-Only": r"Avg. SHAP",
                 "NOT-Bound-Only": r"$\Phi_{i}^{nb}$",
                 "local_SHAP":  r"$\varphi_{i,j}$",
                 "local_SHAP_bound": r"$\varphi_{i,j}^b$",
                 "local_SHAP_NOT_bound": r"$\varphi_{i,j}^{nb}$",
-                "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i}^b$",
+                # "Signed-Local-SHAP-Mean-Bound-Only": r"$\overline{\varphi}_{i}^b$",
+                "Signed-Local-SHAP-Mean-Bound-Only": r"Avg. SHAP",
                 "Signed-Local-SHAP-Mean-NOT-Bound-Only": r"$\overline{\varphi}_{i}^{nb}$",
                 "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": r"$\overline{\varphi}_{i}^{b,LOG-ODDS}$",
             },
@@ -1819,6 +1821,8 @@ class FirstOrderShapInvestigator:
                 mode="Signed-Local-SHAP-Mean-Bound-Only",
                 underlying_data=binding_unique
             )
+        
+        shap_label = self.latex_symbols[binding_unique]["Signed-Local-SHAP-Mean-Bound-Only"]
 
         with plt.style.context("../../paper.mplstyle"):
             fig, axes = plt.subplots(
@@ -1845,16 +1849,16 @@ class FirstOrderShapInvestigator:
                     heatmap
                     .stack(dropna=True)
                     .reset_index()
-                    .rename(columns={0: "Avg. SHAP"})
+                    .rename(columns={0: shap_label})
                 )
 
                 long_df["Position"] = pd.to_numeric(long_df["Position"])
                 long_df["Position"] = long_df["Position"].astype(int)
 
                 long_df["Sign"] = np.where(
-                    long_df["Avg. SHAP"] > 0,
+                    long_df[shap_label] > 0,
                     "Activating",
-                    np.where(long_df["Avg. SHAP"] < 0, "Repressing", "Zero")
+                    np.where(long_df[shap_label] < 0, "Repressing", "Zero")
                 )
                 assert not long_df.isnull().values.any()
 
@@ -1866,7 +1870,7 @@ class FirstOrderShapInvestigator:
                 sns.stripplot(
                     data=long_df,
                     x="Position",
-                    y="Avg. SHAP",
+                    y=shap_label,
                     hue="Sign",
                     order=ordered_positions,
                     hue_order=["Activating", "Repressing", "Zero"],
@@ -1898,7 +1902,7 @@ class FirstOrderShapInvestigator:
 
                 ax_strip.set_title(f"{cell_line}", fontsize=16, pad=15, x= 0.72)
                 ax_strip.set_xlabel("Position", fontsize=14, fontweight='bold')
-                ax_strip.set_ylabel("Avg. SHAP", fontsize=14, fontweight='bold')
+                ax_strip.set_ylabel(shap_label, fontsize=14, fontweight='bold')
 
                 ax_strip.tick_params(axis="x", labelsize=12)
                 ax_strip.tick_params(axis="y", labelsize=9)
