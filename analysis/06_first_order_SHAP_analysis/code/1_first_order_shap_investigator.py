@@ -258,7 +258,7 @@ class FirstOrderShapInvestigator:
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_alphabetical_glossary_heatmap_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_alphabetical_glossary_heatmap_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_alphabetical_glossary_heatmap_unique_binding.png",
-            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
+            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_alphabetical_glossary_heatmap_unique_binding.pdf",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
             "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_unique_binding.png",
         },
@@ -266,7 +266,7 @@ class FirstOrderShapInvestigator:
             "5_dfs_average": "../outputs/publication_figures/global_shap/global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "Bound-Only": "../outputs/publication_figures/global_shap/bound_only_global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "NOT-Bound-Only": "../outputs/publication_figures/global_shap/NOT_bound_only_global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
-            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
+            "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.pdf",
             "Signed-Local-SHAP-Mean-NOT-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_NOT_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
             "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only": "../outputs/publication_figures/global_shap/signed_local_SHAP_mean_LOG_ODDS_bound_only_alphabetical_glossary_heatmap_top_15_both_directions_unique_binding.png",
         },
@@ -1335,7 +1335,7 @@ class FirstOrderShapInvestigator:
                         'cbar_height': 0.4, 
                         'cbar_bottom': 0.4, 
                         'suptitle_y': 0.92, 
-                        'x_axis_label_y': 0.07, 
+                        'x_axis_label_y': 0.08, 
                         'linewidth': 0.7,
                         'annot_kws': {"size": 14, "rotation": 0},
                         'fmt': ".3f", 
@@ -1354,100 +1354,103 @@ class FirstOrderShapInvestigator:
                     }
                 }
 
-                # Plot both cell lines in one figure with a single shared colorbar axis (side by side)
-                fig, axes = plt.subplots(
-                    1, 2, figsize=(18, plot_config[glossary_heatmap_type]['y_size']), dpi=300, sharex=True, sharey=True,
-                    gridspec_kw={'wspace': 0.1}  # Increase space between columns
-                )
-                # Make colorbar wider and move further right
-                cbar_ax = fig.add_axes([0.93, plot_config[glossary_heatmap_type]['cbar_bottom'], 0.025, plot_config[glossary_heatmap_type]['cbar_height']]) 
-                # Move null type legend further right to avoid overlap
-                legend_ax = fig.add_axes([1.05, 0.23, 0.04, 0.2])  # Further right
+                with plt.style.context("../../paper.mplstyle"):
 
-                for idx, cell_line in enumerate(["HepG2", "K562"]):
-                    heatmap = heatmaps[cell_line]
-                    null_type = null_types[cell_line]
+                    # Plot both cell lines in one figure with a single shared colorbar axis (side by side)
+                    fig, axes = plt.subplots(
+                        1, 2, figsize=(18, plot_config[glossary_heatmap_type]['y_size']), dpi=300, sharex=True, sharey=True,
+                        gridspec_kw={'wspace': 0.1}  # Increase space between columns
+                    )
+                    # Make colorbar wider and move further right
+                    cbar_ax = fig.add_axes([0.93, plot_config[glossary_heatmap_type]['cbar_bottom'], 0.025, plot_config[glossary_heatmap_type]['cbar_height']]) 
+                    # Move null type legend further right to avoid overlap
+                    legend_ax = fig.add_axes([1.05, 0.23, 0.04, 0.2])  # Further right
 
-                    mask = heatmap.isnull()
-                    annot = heatmap.round(3) if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else None
+                    for idx, cell_line in enumerate(["HepG2", "K562"]):
+                        heatmap = heatmaps[cell_line]
+                        null_type = null_types[cell_line]
 
-                    cmap = "seismic" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues"
-                    center = 0 if mode.startswith("Signed-Local-SHAP-Mean") else None
+                        mask = heatmap.isnull()
+                        annot = heatmap.round(3) if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else None
 
-                    sns.heatmap(
-                        heatmap,
-                        ax=axes[idx],
-                        cmap=cmap,
-                        center=center,
-                        linewidths=plot_config[glossary_heatmap_type]['linewidth'],  # Thicker border around each cell
-                        linecolor="black",
-                        annot=annot,
-                        fmt=plot_config[glossary_heatmap_type]['fmt'],
-                        annot_kws=plot_config[glossary_heatmap_type]['annot_kws'],
-                        mask=mask,
-                        cbar=(idx == 0),  # Only add colorbar for the first plot
-                        cbar_ax=(cbar_ax if idx == 0 else None),
-                        cbar_kws={"shrink": 1, "aspect": 30, "pad": 0.02},  # Wider colorbar
-                        vmin=global_min,
-                        vmax=global_max,
+                        cmap = "bwr" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues"
+                        center = 0 if mode.startswith("Signed-Local-SHAP-Mean") else None
+
+                        sns.heatmap(
+                            heatmap,
+                            ax=axes[idx],
+                            cmap=cmap,
+                            center=center,
+                            linewidths=plot_config[glossary_heatmap_type]['linewidth'],  # Thicker border around each cell
+                            linecolor="black",
+                            annot=annot,
+                            fmt=plot_config[glossary_heatmap_type]['fmt'],
+                            annot_kws=plot_config[glossary_heatmap_type]['annot_kws'],
+                            mask=mask,
+                            cbar=(idx == 0),  # Only add colorbar for the first plot
+                            cbar_ax=(cbar_ax if idx == 0 else None),
+                            cbar_kws={"shrink": 1, "aspect": 30, "pad": 0.02},  # Wider colorbar
+                            vmin=global_min,
+                            vmax=global_max,
+                        )
+
+                        if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
+                            # Overlay null markers
+                            for i, rbp in enumerate(union_rbps):
+                                for j, pos in enumerate(positions):
+                                    if mask.at[rbp, pos]:
+                                        null_kind = null_type.at[rbp, pos]
+                                        color = "#FF991C"
+                                        if null_kind == "not-bound":
+                                            # Circle marker for "not bound"
+                                            axes[idx].scatter(j + 0.5, i + 0.5, marker="D", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
+                                        elif null_kind == "not-profiled":
+                                            # Lowercase x marker
+                                            axes[idx].scatter(j + 0.5, i + 0.5, marker="X", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
+
+                        axes[idx].set_title(f"{cell_line}", fontsize=50, pad=20)  # Smaller title font
+                        axes[idx].set_xlabel("")
+                        axes[idx].set_ylabel("")
+                        axes[idx].tick_params(axis='y', labelsize=plot_config[glossary_heatmap_type]['y_tick_label_size'])  # Adjust y-axis tick label size
+                        axes[idx].tick_params(axis='x', labelsize=45)  # Larger x-axis tick labels
+
+                    cbar_title_fmtd = self.latex_symbols[binding_unique][mode].replace(". ", ".\n")
+                    cbar_ax.set_title(cbar_title_fmtd, fontsize=50, pad=20, loc="left")
+                    cbar_ax.tick_params(labelsize=40)
+
+                    fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
+
+                    y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
+
+                    fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
+                    plt.suptitle(
+                        f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
+                        fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
                     )
 
-                    if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
-                        # Overlay null markers
-                        for i, rbp in enumerate(union_rbps):
-                            for j, pos in enumerate(positions):
-                                if mask.at[rbp, pos]:
-                                    null_kind = null_type.at[rbp, pos]
-                                    color = "#FF991C"
-                                    if null_kind == "not-bound":
-                                        # Circle marker for "not bound"
-                                        axes[idx].scatter(j + 0.5, i + 0.5, marker="D", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
-                                    elif null_kind == "not-profiled":
-                                        # Lowercase x marker
-                                        axes[idx].scatter(j + 0.5, i + 0.5, marker="X", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
-
-                    axes[idx].set_title(f"{cell_line}", fontsize=50, pad=20)  # Smaller title font
-                    axes[idx].set_xlabel("")
-                    axes[idx].set_ylabel("")
-                    axes[idx].tick_params(axis='y', labelsize=plot_config[glossary_heatmap_type]['y_tick_label_size'])  # Adjust y-axis tick label size
-                    axes[idx].tick_params(axis='x', labelsize=45)  # Larger x-axis tick labels
-
-                cbar_ax.set_title(self.latex_symbols[binding_unique][mode], fontsize=50, pad=20, loc="left")
-                cbar_ax.tick_params(labelsize=40)
-
-                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
-
-                y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
-
-                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
-                plt.suptitle(
-                    f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
-                    fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
-                )
-
-                # Add legend for null types before tight_layout
-                legend_ax.axis("off")
-                
-                if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
-                    legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
-                    if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
-                        legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
+                    # Add legend for null types before tight_layout
+                    legend_ax.axis("off")
                     
-                    legend_ax = legend_ax.legend(
-                        title="Null Type" if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"] else "",
-                        loc="center",
-                        fontsize=40,
-                        title_fontsize=50,
-                        frameon=True,
-                        markerscale=12,
-                        edgecolor="black",
-                    )
-                    legend_ax.get_frame().set_linewidth(2)  # Thicker border for the legend box
+                    if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
+                        legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
+                        if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
+                            legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
+                        
+                        legend_ax = legend_ax.legend(
+                            title="Null Type" if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"] else "",
+                            loc="center",
+                            fontsize=40,
+                            title_fontsize=50,
+                            frameon=True,
+                            markerscale=12,
+                            edgecolor="black",
+                        )
+                        legend_ax.get_frame().set_linewidth(2)  # Thicker border for the legend box
 
-                plt.tight_layout(rect=[0, 0, 0.89, 1])  # Call after legend, leave space for legend/colorbar
+                    plt.tight_layout(rect=[0, 0, 0.89, 1])  # Call after legend, leave space for legend/colorbar
 
-                plt.savefig(self.FIGURES[glossary_heatmap_type][mode], dpi=600, bbox_inches='tight')
-                plt.show()
+                    plt.savefig(self.FIGURES[glossary_heatmap_type][mode], dpi=600, bbox_inches='tight')
+                    plt.show()
 
     
     def plot_global_SHAP_mean_vs_variance(self, mode=None, binding_unique=None):
