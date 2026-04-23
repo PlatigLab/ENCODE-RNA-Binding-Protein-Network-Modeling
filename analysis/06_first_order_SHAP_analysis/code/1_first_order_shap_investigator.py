@@ -323,7 +323,8 @@ class FirstOrderShapInvestigator:
             "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
         }, 
         "dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf", 
-        "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf"
+        "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf", 
+        "positional_preferences_dir": "../outputs/publication_figures/positional_preferences_and_shap"
     }
 
     SUPPLEMENTARY_TABLES = {
@@ -10088,11 +10089,187 @@ class FirstOrderShapInvestigator:
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
             plt.show()
-            
 
 
+    def plot_RBP_positional_preference_and_signed_bound_global_shap(self, rbps = None, save_fig_suffix=None):
+        assert rbps is not None and isinstance(rbps, list) and len(rbps) > 0, "rbps must be a non-empty list"
+        rbps = sorted(rbps)
 
+        final_shap_lazy = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+        signed_bound_global_shap = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
 
+        palette = {
+            "HepG2": "#91D1C2",
+            "K562": "#3C5488",
+        }
+
+        # Cache schemas once
+        schemas = {
+            cell_line: set(final_shap_lazy[cell_line].collect_schema().names())
+            for cell_line in self.cell_lines
+        }
+
+        preference_rows = []
+        shap_rows = []
+
+        for rbp in rbps:
+            for cell_line in self.cell_lines:
+                schema = schemas[cell_line]
+
+                binding_cols = [f"{rbp}_{pos}_binding" for pos in range(1, 7) if f"{rbp}_{pos}_binding" in schema]
+                shap_cols = [f"{rbp}_{pos}_shap" for pos in range(1, 7) if f"{rbp}_{pos}_shap" in schema]
+
+                assert len(binding_cols) in [0, 6], f"Expected 0 or 6 binding columns for {rbp} in {cell_line}, got {len(binding_cols)}"
+                assert len(shap_cols) in [0, 6], f"Expected 0 or 6 shap columns for {rbp} in {cell_line}, got {len(shap_cols)}"
+                assert len(binding_cols) == len(shap_cols), f"Mismatch between binding and shap columns for {rbp} in {cell_line}"
+
+                if len(binding_cols) == 0:
+                    for pos in range(1, 7):
+                        preference_rows.append({
+                            "RBP": rbp,
+                            "Cell Line": cell_line,
+                            "Position": pos,
+                            "Positional Preference (%)": np.nan,
+                        })
+                        shap_rows.append({
+                            "RBP": rbp,
+                            "Cell Line": cell_line,
+                            "Position": pos,
+                            "Avg. SHAP": np.nan,
+                        })
+                    continue
+
+                lf = final_shap_lazy[cell_line]
+
+                binding_sum_exprs = [
+                    pl.col(f"{rbp}_{pos}_binding").sum().alias(f"bind_{pos}") for pos in range(1, 7)
+                ]
+                summary = lf.select(binding_sum_exprs).collect().to_dicts()[0]
+                total_binding = sum(summary[f"bind_{pos}"] for pos in range(1, 7))
+
+                for pos in range(1, 7):
+                    bind_sum = summary[f"bind_{pos}"]
+                    pct = (bind_sum / total_binding) * 100 if total_binding > 0 else np.nan
+                    
+                    if rbp in signed_bound_global_shap[cell_line].columns and pos in signed_bound_global_shap[cell_line].index:
+                        signed_bound_shap_val = signed_bound_global_shap[cell_line].at[pos, rbp]
+                    else: 
+                        signed_bound_shap_val = np.nan
+
+                    preference_rows.append({
+                        "RBP": rbp,
+                        "Cell Line": cell_line,
+                        "Position": pos,
+                        "Positional Preference (%)": pct,
+                    })
+                    shap_rows.append({
+                        "RBP": rbp,
+                        "Cell Line": cell_line,
+                        "Position": pos,
+                        "Avg. SHAP": signed_bound_shap_val,
+                    })
+
+        preference_df = pd.DataFrame(preference_rows)
+        shap_df = pd.DataFrame(shap_rows)
+
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(
+                nrows=len(rbps),
+                ncols=2,
+                figsize=(9, max(2.2 * len(rbps), 2.8)),
+                dpi=150,
+                sharex=True,
+                sharey=False,
+                squeeze=False,
+            )
+
+            for row_idx, rbp in enumerate(rbps):
+                ax_left = axes[row_idx, 0]
+                ax_right = axes[row_idx, 1]
+
+                left_plot = preference_df[preference_df["RBP"] == rbp].copy()
+                right_plot = shap_df[shap_df["RBP"] == rbp].copy()
+
+                sns.barplot(
+                    data=left_plot,
+                    x="Position",
+                    y="Positional Preference (%)",
+                    hue="Cell Line",
+                    hue_order=self.cell_lines,
+                    palette=palette,
+                    edgecolor="black",
+                    linewidth=1,
+                    ax=ax_left,
+                    width=0.5,
+                )
+
+                sns.barplot(
+                    data=right_plot,
+                    x="Position",
+                    y="Avg. SHAP",
+                    hue="Cell Line",
+                    hue_order=self.cell_lines,
+                    palette=palette,
+                    edgecolor="black",
+                    linewidth=1,
+                    ax=ax_right,
+                    width=0.5,
+                )
+                
+                iterate_axes = [ax_left, ax_right]
+
+                # Decrease alpha for all bar patches
+                for chosen_ax in iterate_axes: 
+                    for patch in chosen_ax.patches:
+                        patch.set_alpha(0.8)
+                
+                ax_right.axhline(0, color="orange", linestyle="-", linewidth=1.2, zorder=0)
+
+                if row_idx == 0:
+                    ax_left.set_title("RBP Positional Preference\n(% RBP Binding at Position)", fontsize=16, fontweight="bold", pad=20)
+                    ax_right.set_title("Avg. SHAP", fontsize=16, fontweight="bold", pad=20)
+                else:
+                    for chosen_ax in iterate_axes: 
+                        chosen_ax.set_title("")
+                        chosen_ax.set_xlabel("")
+
+                ax_left.set_ylabel(f"{rbp}", fontsize=20, fontstyle='italic', labelpad=15)
+                ax_right.set_ylabel("")
+                
+                # Increase x-axis tick label size
+                for chosen_ax in iterate_axes: 
+                    chosen_ax.tick_params(axis='x', labelsize=20)
+                    chosen_ax.tick_params(axis='y', labelsize=12)
+
+                if row_idx == 0:
+                    legend = ax_right.legend(loc="best", title="Cell Line", fontsize=14, title_fontsize=16, frameon=True, edgecolor='crimson')
+                    legend.get_frame().set_linewidth(3)
+
+                    ax_left.get_legend().remove()
+                else:
+                    for chosen_ax in iterate_axes: 
+                        chosen_ax.get_legend().remove()
+                
+                for chosen_ax in iterate_axes: 
+                    for spine in ["top", "right"]: 
+                        chosen_ax.spines[spine].set_visible(False)
+                    chosen_ax.grid(axis='y', linestyle='--', which='major', alpha=0.6, linewidth=0.5)
+
+            fig.text(0.54, -0.01, "Position", fontsize=24, fontweight='bold', ha="center", transform=fig.transFigure)
+            plt.tight_layout()
+
+            if save_fig_suffix is not None: 
+                plt.savefig(
+                    f"{self.FIGURES["positional_preferences_dir"]}/{save_fig_suffix}.pdf", 
+                    dpi=600, 
+                    bbox_inches='tight'
+                )
+
+            plt.show()
 
 
 
