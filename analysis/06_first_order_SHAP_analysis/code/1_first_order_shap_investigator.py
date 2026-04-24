@@ -323,6 +323,7 @@ class FirstOrderShapInvestigator:
             "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
         }, 
         "dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf", 
+        "dpsi_vs_local_SHAP_fishers_exact_test_across_all_thresholds": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_heatmap_across_all_thresholds.pdf",
         "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf", 
         "positional_preferences_dir": "../outputs/publication_figures/positional_preferences_and_shap"
     }
@@ -9867,7 +9868,7 @@ class FirstOrderShapInvestigator:
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
 
         DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
-        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+        DPSI_SYMBOL = r"$\Delta\Psi$"
 
         FISHERS_FDR_CUTOFF = 0.1
 
@@ -9880,115 +9881,119 @@ class FirstOrderShapInvestigator:
         nrows = len(cell_lines)
         ncols = len(delta_shap_thresholds)
 
-        # Compute min and max log10 odds ratio per cell line for later use
-        log10_odds_minmax = {}
-        for cell_line in cell_lines:
-            sub = results_df[results_df["Cell Line"] == cell_line]
-            vals = sub["(A*D / B*C) Odds Ratio"].replace([np.inf, -np.inf], np.nan).dropna()
-            log10_odds_minmax[cell_line] = (vals.min(), vals.max())
+        # Compute global min and max log10 odds ratio across all data
+        vals = results_df["(A*D / B*C) Odds Ratio"]
+        vmin, vmax = vals.min(), vals.max()
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.5 * nrows), dpi=600, squeeze=False, sharex=True, sharey=True)
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.5 * nrows), dpi=150, squeeze=False, sharex=True, sharey=True)
 
-        # Store the mappable objects for each row to use for a single colorbar per row
-        row_mappables = []
+            # Store the mappable objects for each row
+            row_mappables = []
 
-        for row_idx, cell_line in enumerate(cell_lines):
-            vmin, vmax = log10_odds_minmax[cell_line]  # Use min/max for this row (cell line)
-            mappables = []
-            for col_idx, delta_shap_thr in enumerate(delta_shap_thresholds):
-                ax = axes[row_idx, col_idx]
-                # Subset for this cell line and delta_shap_thr
-                sub = results_df[
-                    (results_df["Cell Line"] == cell_line) &
-                    (results_df["Delta SHAP Threshold"] == delta_shap_thr)
-                ].copy(deep=True)
+            for row_idx, cell_line in enumerate(cell_lines):
+                row_hm = None
+                for col_idx, delta_shap_thr in enumerate(delta_shap_thresholds):
+                    ax = axes[row_idx, col_idx]
+                    # Subset for this cell line and delta_shap_thr
+                    sub = results_df[
+                        (results_df["Cell Line"] == cell_line) &
+                        (results_df["Delta SHAP Threshold"] == delta_shap_thr)
+                    ].copy(deep=True)
 
-                # Build matrix using pivot for Log10 Odds Ratio
-                matrix_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="(A*D / B*C) Odds Ratio")
-                # Ensure correct order of rows and columns
-                matrix_df = matrix_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
-                matrix = matrix_df.to_numpy()
+                    # Build matrix using pivot for Log10 Odds Ratio
+                    matrix_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="(A*D / B*C) Odds Ratio")
+                    # Ensure correct order of rows and columns
+                    matrix_df = matrix_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
+                    matrix = matrix_df.to_numpy()
 
-                # Build matrix for FDR < FISHERS_FDR_CUTOFF using pivot
-                fdr_bh_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="FDR")
-                fdr_bh_df = fdr_bh_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
-                fdr_bh_matrix = (fdr_bh_df.to_numpy() < FISHERS_FDR_CUTOFF)
-                
-                # Replace inf with nan in matrix
-                matrix[np.isinf(matrix)] = np.nan
-                mask = np.isnan(matrix)
+                    # Build matrix for FDR < FISHERS_FDR_CUTOFF using pivot
+                    fdr_bh_df = sub.pivot(index="dPSI Threshold", columns="FDR Threshold", values="FDR")
+                    fdr_bh_df = fdr_bh_df.reindex(index=dpsi_thresholds, columns=fdr_thresholds)
+                    fdr_bh_matrix = (fdr_bh_df.to_numpy() < FISHERS_FDR_CUTOFF)
+                    
+                    # Replace inf with nan in matrix
+                    matrix[np.isinf(matrix)] = np.nan
+                    mask = np.isnan(matrix)
 
-                matrix_df = pd.DataFrame(matrix, index=dpsi_thresholds, columns=fdr_thresholds)
+                    matrix_df = pd.DataFrame(matrix, index=dpsi_thresholds, columns=fdr_thresholds)
 
-                cmap = plt.get_cmap("bwr").copy()
-                cmap.set_bad(color='gray')  # Set masked (NaN) cells to gray
-                
-                # Remove colorbar for individual subplots
-                hm = sns.heatmap(
-                    matrix_df,
-                    mask=mask,
-                    cmap=cmap,
-                    vmin=vmin,
-                    vmax=vmax,
-                    ax=ax,
-                    center=1,
-                    cbar=False,
-                    annot=True,
-                    annot_kws={"fontsize": 16, "color": "black",},
-                    linewidths=0.5,
-                    linecolor="#474747",
-                )
-                mappables.append(hm)
+                    cmap = plt.get_cmap("bwr").copy()
+                    cmap.set_bad(color='gray')  # Set masked (NaN) cells to gray
+                    
+                    # Remove colorbar for individual subplots
+                    hm = sns.heatmap(
+                        matrix_df,
+                        mask=mask,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        ax=ax,
+                        center=1,
+                        cbar=False,
+                        annot=True,
+                        annot_kws={"fontsize": 18, "color": "black",},
+                        linewidths=0.5,
+                        linecolor="#474747",
+                    )
+                    row_hm = hm  # Save the last heatmap in each row
 
-                for i in range(matrix.shape[0]):
-                    for j in range(matrix.shape[1]):
-                        if fdr_bh_matrix[i, j] and not np.isnan(matrix[i, j]):
-                            ax.plot(j + 0.5, i + 0.8, marker="*", markersize=18, markeredgewidth=1.5, markeredgecolor="black", markerfacecolor="gold", zorder=3)
-                
-                ax.tick_params(axis='x', labelsize=16)
-                ax.tick_params(axis='y', labelsize=16)
+                    for i in range(matrix.shape[0]):
+                        for j in range(matrix.shape[1]):
+                            if fdr_bh_matrix[i, j] and not np.isnan(matrix[i, j]):
+                                ax.plot(j + 0.5, i + 0.8, marker="*", markersize=18, markeredgewidth=1.5, markeredgecolor="black", markerfacecolor="gold", zorder=3)
+                    
+                    ax.tick_params(axis='x', labelsize=18)
+                    ax.tick_params(axis='y', labelsize=18)
 
-                for label in ax.get_xticklabels() + ax.get_yticklabels():
-                    label.set_fontweight("bold")
-                
-                if row_idx == 0:
-                    ax.set_title(f"|{DELTA_LOCAL_SHAP_SYMBOL}| ≥ {delta_shap_thr}", fontsize=20)
+                    for label in ax.get_xticklabels() + ax.get_yticklabels():
+                        label.set_fontweight("bold")
+                    
+                    if row_idx == 0:
+                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥ {delta_shap_thr}", fontsize=20, pad = 10, fontweight='bold')
 
-                if col_idx == 0:
-                    ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=20)
+                    if col_idx == 0:
+                        ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=30, fontstyle='italic', bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),)
+                    
 
-            # Save the last mappable for the colorbar (all have same vmin/vmax/cmap)
-            row_mappables.append(mappables[-1])
+                # Save the last mappable for the colorbar (all have same vmin/vmax/cmap)
+                row_mappables.append(row_hm)
 
-        # Add a single colorbar to the right of each row
-        fig.subplots_adjust(right=0.88)  # Make space for colorbars
-        for row_idx in range(nrows):
+            # Add a single colorbar for all subplots
+            fig.subplots_adjust(right=0.92)  # Make space for colorbar
             cbar_ax = fig.add_axes([0.90,  # left
-                                    (nrows - row_idx - 1) / nrows + 0.03,  # bottom
+                                    0.12,  # bottom
                                     0.02,  # width
-                                    0.6 / nrows])  # height
-            plt.colorbar(row_mappables[row_idx].collections[0], cax=cbar_ax)
-            cbar_ax.set_title("Odds Ratio", fontsize=12)
+                                    0.5])  # height
+            plt.colorbar(row_mappables[0].collections[0], cax=cbar_ax)
+            cbar_ax.set_title("Fisher's\nExact Test\nOdds Ratio", fontsize=16, pad=10)
+            cbar_ax.tick_params(labelsize=18)
 
-        if data_mode == "test candidate features":
-            note = "TEST (CANDIDATE FEATURES IN-SILICO KD)"
-        
-        elif data_mode == "test":
-            note = "TEST (ALL IN-SILICO KD)"
+            if data_mode == "test candidate features":
+                note = "TEST (CANDIDATE FEATURES IN-SILICO KD)"
+            
+            elif data_mode == "test":
+                note = "TEST (ALL IN-SILICO KD)"
 
-        fig.suptitle(
-            f"NOTE 1: * = Fisher's FDR < {FISHERS_FDR_CUTOFF}\n"
-            f"NOTE 2: Color scale comparable across row (Cell Line)\n"
-            f"NOTE 3: Gray indicates 'NaN' or 'Inf'\n\n" 
-            f"{note}:\nOdds Ratio for Fisher's Exact Test Between {DPSI_SYMBOL} Sign and {DELTA_LOCAL_SHAP_SYMBOL} Sign",
-            fontsize=22, y=1.02, x=0.45
-        )
-        
-        fig.supxlabel("FDR", fontsize=30, y=0.01, x=0.48, fontweight="bold")
-        fig.supylabel(f"|{DPSI_SYMBOL}|", fontsize=30, x=0, fontweight="bold")
-        
-        plt.tight_layout(rect=[0, 0, 0.88, 1])
-        plt.show()
+            fig.suptitle(
+                f"NOTE 1: * = Fisher's FDR < {FISHERS_FDR_CUTOFF}\n"
+                f"NOTE 2: Color scale comparable across row (Cell Line)\n"
+                f"NOTE 3: Gray indicates 'NaN' or 'Inf'\n\n" 
+                f"{note}:\nOdds Ratio for Fisher's Exact Test Between {DPSI_SYMBOL} Sign and {DELTA_LOCAL_SHAP_SYMBOL} Sign",
+                fontsize=22, y=1.02, x=0.45
+            )
+            
+            fig.supxlabel("FDR", fontsize=30, y=0.02, x=0.48, fontweight="bold")
+            fig.supylabel(f"| {DPSI_SYMBOL} |", fontsize=30, x=0, y=0.41, fontweight="bold")
+            
+            plt.tight_layout(rect=[0, 0, 0.88, 1])
+
+            plt.savefig(
+                self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_across_all_thresholds"], 
+                dpi=600, 
+                bbox_inches='tight'
+            )
+            plt.show()
 
 
     def plot_dpsi_vs_local_SHAP_fishers_test_odds_ratios_as_barplot(self): 
