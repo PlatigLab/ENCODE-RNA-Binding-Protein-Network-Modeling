@@ -1568,9 +1568,10 @@ class SecondOrderShapNetworkAnalyzer:
                 fig, axes = plt.subplots(
                     nrows= 1 if cell_line_combined else len(curve_data[plot_type].keys()),
                     ncols=2, 
-                    figsize=(13, 8) if cell_line_combined else (12, 12),
-                    dpi=400,
-                    sharex=True, sharey=True
+                    figsize=(22, 8) if cell_line_combined else (18, 12),
+                    dpi=150,
+                    sharex=True, sharey=True, 
+                    gridspec_kw={'wspace': 0.6}
                 )
 
                 if cell_line_combined:
@@ -1586,7 +1587,7 @@ class SecondOrderShapNetworkAnalyzer:
                             ax = axes[col_idx]
                         
                         if curve_type == "roc":
-                            ax.plot([0, 1], [0, 1], 'k--', lw=1, label="Baseline")
+                            ax.plot([0, 1], [0, 1], 'k--', lw=1.5, label="Baseline")
 
                         if cell_line_combined:
                             iterate_cell_lines = curve_data[plot_type].keys()
@@ -1610,7 +1611,7 @@ class SecondOrderShapNetworkAnalyzer:
                                         ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [Baseline={data['baseline']:.3f}]", alpha=0.8)
                         
                         if row_idx ==0: 
-                            ax.set_title(f"{curve_type.upper()}", fontsize=24, fontweight='bold', pad=10)
+                            ax.set_title(f"{curve_type.upper()}", fontsize=30, fontweight='bold', pad=15)
 
                         if not cell_line_combined:
                             # Add cell line label in top left corner with rounded dashed box
@@ -1626,7 +1627,11 @@ class SecondOrderShapNetworkAnalyzer:
                                 bbox=dict(boxstyle='round,pad=0.5', linestyle='--', linewidth=1.5, edgecolor='black', facecolor='white', alpha=0.7)
                             )
 
-                        ax.tick_params(axis='both', which='major', labelsize=14)
+                        ax.tick_params(axis='both', which='major', labelsize=16)
+
+                        # Remove top and right spines
+                        ax.spines['top'].set_visible(False)
+                        ax.spines['right'].set_visible(False)
 
                         if curve_type == "roc":
 
@@ -1634,13 +1639,13 @@ class SecondOrderShapNetworkAnalyzer:
                                 ax.set_xlabel("False Positive Rate", fontsize=20, fontweight='bold')
 
                             ax.set_ylabel("True Positive Rate", fontsize=20, fontweight='bold')
-                            legend_fontsize = 5.9 if not cell_line_combined else 7.9
-                            ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.99, 0.02), edgecolor='sienna')
+                            legend_fontsize = 9 if not cell_line_combined else 14
+                            ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(1.47, 0.02), edgecolor='sienna')
                         else:
                             if (cell_line_combined ==False and row_idx == len(curve_data[plot_type].keys()) - 1) or (cell_line_combined and col_idx == 1):  # Only add x label to bottom row 
                                 ax.set_xlabel("Recall", fontsize=20, fontweight='bold')
                             ax.set_ylabel("Precision", fontsize=20, fontweight='bold')
-                            legend_fontsize = 7.5 if not cell_line_combined else 8.1
+                            legend_fontsize = 7.5 if not cell_line_combined else 9.5
                             ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.99, 0.7), edgecolor='sienna')
                 
                 if plot_type == "RBP-SPECIFIC_MAX_VALUE":
@@ -1657,7 +1662,7 @@ class SecondOrderShapNetworkAnalyzer:
                     "\nNOTE 6: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
                     note +
                     f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
-                    fontsize=13, y=1.01
+                    fontsize=13, y= 1.2 if cell_line_combined else 1.1
                 )
 
                 plt.tight_layout()
