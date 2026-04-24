@@ -3008,18 +3008,20 @@ class SecondOrderShapNetworkAnalyzer:
             
             # Add colorbar for the # Total values
             cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
-            cbar.set_label("# Interaction Features Considered", fontsize=8, labelpad=10)
+            cbar.set_label("# Interaction Features Considered", fontsize=11, labelpad=10)
             
             # Set log scale for x-axis
             ax.set_xscale('log')
             ax.grid(True, alpha=0.25, zorder=0, linestyle ='-.')
 
             ax.tick_params(axis='both', labelsize=12)
-
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
             ax.set_ylim(0, 105)        
             ax.set_title("% Both-Cell-Line-Learned Interactions with Same Direction as function of Min. SHAP Threshold", fontsize=7, pad=15)
-            ax.set_xlabel(f"|{latex_symbol}| Threshold", fontsize=13, fontweight='bold', labelpad=-1)
-            ax.set_ylabel("% Concordant Interactions", fontsize=12, fontweight='bold')
+            ax.set_xlabel(f"| {latex_symbol} | Threshold", fontsize=13, fontweight='bold', labelpad=2)
+            ax.set_ylabel("% Interactions with Concordant Sign", fontsize=12, fontweight='bold')
 
             fig.suptitle(
                 (

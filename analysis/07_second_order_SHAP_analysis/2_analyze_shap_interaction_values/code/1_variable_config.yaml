@@ -70,8 +70,8 @@ FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL
 
 # Latex symbols for feature metrics
 LATEX_SYMBOLS: 
-    Signed-Local-SHAP-Mean-Bound-Only: $\overline{\varphi}_{f,g}^b$
-    Bound-Only: $\Phi_{f,g}^b$
+    Signed-Local-SHAP-Mean-Bound-Only: Avg. Interaction SHAP
+    Bound-Only: Avg. |Interaction SHAP|
 
 # Importance networks
 IMPORTANCE_NETWORKS: "../outputs/SHAP_cache/importance_networks/Bound-Only_main_and_interaction_importance.pkl"
