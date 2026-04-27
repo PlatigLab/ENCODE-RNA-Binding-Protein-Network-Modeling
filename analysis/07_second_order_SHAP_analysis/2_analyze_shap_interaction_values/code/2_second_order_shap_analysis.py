@@ -3391,6 +3391,7 @@ class SecondOrderShapNetworkAnalyzer:
         x_axis_tick_fontsize = 12 if len(cell_lines) == 2 else 10.5
         x_axis_line_spacing= 0.5 if len(cell_lines) == 2 else 1.5
 
+        plt.close()
         with plt.style.context("../../../paper.mplstyle"):
             fig, axes = plt.subplots(2, len(cell_lines), figsize=(len(cell_lines) * 4, 7.5), dpi=100, sharex='row', sharey='row')
 
@@ -3448,7 +3449,7 @@ class SecondOrderShapNetworkAnalyzer:
                 )
                 ax_top.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
 
-                ax_top.set_ylabel("Target PSI", fontsize=20, labelpad=10)
+                ax_top.set_ylabel("Actual PSI", fontsize=16, labelpad=10)
                 ax_top.set_xlabel("Binding Category", fontsize=18)
 
                 ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)
@@ -3471,7 +3472,7 @@ class SecondOrderShapNetworkAnalyzer:
                 )
 
                 ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
-                ax_bottom.set_ylabel(latex_symbol, fontsize=20, labelpad=0)
+                ax_bottom.set_ylabel("Avg. Interaction/Avg. SHAP", fontsize=16, labelpad=0)
                 ax_bottom.set_title("")
                 ax_bottom.set_xlabel("SHAP Features", fontsize=18)
                 ax_bottom.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
@@ -3480,11 +3481,14 @@ class SecondOrderShapNetworkAnalyzer:
                 ax_bottom.spines['top'].set_visible(False)
                 ax_bottom.spines['right'].set_visible(False)
 
+            rbp_position_strs = [self.split_rbp_position(feature) for feature in interaction_feature.split("-")[0:2]]
+            title_fmt_str = f"{rbp_position_strs[0][0]} Position {str(rbp_position_strs[0][1])} & {rbp_position_strs[1][0]} Position {str(rbp_position_strs[1][1])}"
             fig.suptitle(
-                f"{interaction_feature.replace('-interaction-shap', '')}",
-                fontsize=13,
-                y=0.97, 
+                title_fmt_str, 
+                fontsize=14,
+                y=0.98, 
                 x=0.54,
+                fontstyle='italic'
             )
             plt.tight_layout(h_pad=3)
 
