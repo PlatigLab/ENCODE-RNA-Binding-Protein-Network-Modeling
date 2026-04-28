@@ -1790,8 +1790,17 @@ class FirstOrderShapInvestigator:
 
                 logger.info(f"# nulls in heatmap for {cell_line}: {heatmap.isnull().sum().sum()} out of {heatmap.size} total cells")
                 
-                # Set background color for null cells
-                ax.set_facecolor("gainsboro")
+                # Mark null cells with a small gray dot at the center of each cell
+                null_rows, null_cols = np.where(heatmap.isnull())
+                ax.scatter(
+                    null_cols + 0.5,
+                    null_rows + 0.5,
+                    s=10,
+                    color="lightgray",
+                    marker="o",
+                    linewidths=0,
+                    zorder=10,
+                )
                 
                 ax.set_title(f"{cell_line}", fontsize=16, pad=8)
                 ax.set_ylabel("")
@@ -1809,7 +1818,7 @@ class FirstOrderShapInvestigator:
                 f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
                 f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
                 f"NOTE 2: Values organized from min to max\n"
-                f"NOTE 3: Null values shown in different color\n"
+                f"NOTE 3: Null values shown with a gray dot\n"
                 f"NOTE 4: Using {binding_unique} data\n\n"
                 f"Top {top_n} Max/Min RBPs Per Cell Line",
 
