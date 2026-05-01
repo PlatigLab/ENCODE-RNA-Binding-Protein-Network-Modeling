@@ -9730,6 +9730,11 @@ class FirstOrderShapInvestigator:
 
                             oddsratio, pvalue = fisher_exact(table)
                             log10_odds = np.log10(oddsratio) if oddsratio > 0 else np.nan
+
+                            a, b = table[0][0], table[0][1]
+                            c, d = table[1][0], table[1][1]
+                            mcc_denom = np.sqrt((a + b) * (a + c) * (d + b) * (d + c))
+                            mcc = ((a * d) - (b * c)) / mcc_denom
                             
                             fisher_results.append({
                                 "Cell Line": cell_line,
@@ -9740,11 +9745,12 @@ class FirstOrderShapInvestigator:
                                 "(B) dPSI +, SHAP -": table[0][1],
                                 "(C) dPSI -, SHAP +": table[1][0],
                                 "(D) dPSI -, SHAP -": table[1][1],
-                                "(A*D / B*C) Odds Ratio": oddsratio,
                                 "(A)%": pct_df.loc["+", "+"],
                                 "(B)%": pct_df.loc["+", "—"],
                                 "(C)%": pct_df.loc["—", "+"],
                                 "(D)%": pct_df.loc["—", "—"],
+                                "Matthews Correlation Coefficient": mcc,
+                                "(A*D / B*C) Odds Ratio": oddsratio,
                                 "Log10 Odds Ratio": log10_odds,
                                 "P-Value": pvalue,
                             })
