@@ -470,8 +470,9 @@ class FirstOrderShapInvestigator:
         # ensure all dataframes have the same columns and ordering
         assert all(df.columns == cell_line_shap[0].columns for df in cell_line_shap), "Column names are not consistent across cell_line_shap"
 
-        if len(cell_line_shap[0].columns) < 50: 
-            logger.info("Less than 50 columns in SHAP DataFrames, stacking all columns at once")
+        BATCH_SIZE = 50
+        if len(cell_line_shap[0].columns) < BATCH_SIZE: 
+            logger.info(F"Less than {BATCH_SIZE} columns in SHAP DataFrames, stacking all columns at once")
             # Convert to numpy tensors and stack
             tensors = np.stack([df.to_numpy() for df in cell_line_shap], axis=0)
 
@@ -486,12 +487,11 @@ class FirstOrderShapInvestigator:
 
             # Process columns in batches of 50, save each batch result to a temporary file with random id, then concatenate
             random_id = random.randint(10**8, 10**12)
-            batch_size = 50
             num_cols = len(columns)
             temp_files = []
 
-            for start in tqdm.tqdm(range(0, num_cols, batch_size), desc="Averaging SHAP per batch"):
-                end = min(start + batch_size, num_cols)
+            for start in tqdm.tqdm(range(0, num_cols, BATCH_SIZE), desc="Averaging SHAP per batch"):
+                end = min(start + BATCH_SIZE, num_cols)
                 batch_cols = columns[start:end]
 
                 # Stack only the relevant columns for each DataFrame
