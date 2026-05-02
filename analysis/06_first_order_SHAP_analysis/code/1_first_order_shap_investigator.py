@@ -209,14 +209,14 @@ class FirstOrderShapInvestigator:
             "Signed": r"$\beta_{i}$",
         },
         "Differential Symbols": {
-            "dPSI": r"$\Delta \Psi$ (CTRL-KD)",
+            "dPSI": r"$\Delta \psi$ (CTRL-KD)",
             "CTRL - KD Local SHAP": r"$\Delta$LocalSHAP",
-            "dPred": r"$\Delta \hat{\Psi}$ (CTRL-KD)",
+            "dPred": r"$\Delta \hat{\psi}$ (CTRL-KD)",
         },
 
         "PSI": {
-            "Predicted": r"$\hat{\Psi}$",
-            "Actual": r"$\Psi$",
+            "Predicted": r"$\hat{\psi}$",
+            "Actual": r"$\psi$",
         },     
               
     }
@@ -6590,8 +6590,8 @@ class FirstOrderShapInvestigator:
                     ax.set_xlabel("",)
                     ax.set_ylabel("",)
 
-                fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.54, fontweight='bold')
-                fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.02, y=0.42, fontweight='bold')
+                fig.supxlabel(ACTUAL_PSI, fontsize=18, y=-0.02, x=.535, fontweight='bold')
+                fig.supylabel(PREDICTED_PSI, fontsize=18, x=0.025, y=0.42, fontweight='bold')
 
                 fig.suptitle(
                     f"NOTE 1: Using 'All-Data' for this plot\n"
