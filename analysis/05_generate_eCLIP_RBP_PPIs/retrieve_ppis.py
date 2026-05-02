@@ -144,6 +144,12 @@ def build_street_et_al_table(combos):
             .collect()
         )
 
+        """
+        The paper uses some messy names for RBPs that we have data for, which are U2AF1 and EIF3H. 
+        For example, they use "u2af1l5" as a synonym for U2AF1 and "eif3s3" as a synonym for EIF3H. 
+        We are manually replacing those synonyms back to the eCLIP RBP names here to ensure consistency with our dataset. 
+        We also assert that there are no remaining strings containing those synonyms after replacement, to catch any potential edge cases.
+        """
         partners_dict = {}
         # Clean up bait and prey columns 
         bait_list = [

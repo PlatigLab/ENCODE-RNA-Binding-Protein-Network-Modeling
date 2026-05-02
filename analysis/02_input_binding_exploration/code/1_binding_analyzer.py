@@ -72,6 +72,7 @@ class YogiBindingPatternAnalyzer:
                 binding_data = pl.scan_csv(f"{self.DATA_PATH}/{cell_line}_{self.distance}_{self.event_filter}_num-peaks-no-kd.tsv.gz", separator='\t')
                 binding_cols = [col for col in binding_data.collect_schema().names() if col.endswith("_binding")]
 
+                # Subset to minimum 40 read counts per event
                 binding_data = binding_data \
                     .filter(pl.col("Total Read Counts") >= 40) \
                     .collect() 
@@ -80,6 +81,7 @@ class YogiBindingPatternAnalyzer:
                 assert binding_data["index"].n_unique() == binding_data.shape[0], "The 'index' column contains duplicate values"
                 assert self.binding_mode == "binary"
 
+                # Convert all features from num peaks (0 to infiniti) to binary (0 or 1)
                 binding_data = binding_data.with_columns([
                     pl.when(pl.col(col) > 1).then(1).otherwise(pl.col(col)).alias(col) 
                     for col in binding_cols
@@ -88,6 +90,8 @@ class YogiBindingPatternAnalyzer:
 
                 original_binding_data_shape = binding_data.shape
 
+                # below section is to go through and do in-silico KD for all positions for an RBP 
+                # that comes from an RNA-Seq sample where that RBP was knocked down
                 unique_rbp_kd_targets = sorted(binding_data["RBP_KD_Target"].unique().to_list())
                 modified_dfs = []
                 for rbp_kd_target in unique_rbp_kd_targets:
@@ -110,6 +114,7 @@ class YogiBindingPatternAnalyzer:
                 assert binding_data.shape == original_binding_data_shape, "Dataframe shape changed after modification"
                 binding_data = binding_data.sort("index")
                 
+                # cache to feather files
                 self._cache_to_featherv2(binding_data, f"{self.CACHE_DIR}/{cell_line}_{self.distance}.feather")
                 logger.success(f"{cell_line} data created and cached. Shape -- {binding_data.shape}")
                 

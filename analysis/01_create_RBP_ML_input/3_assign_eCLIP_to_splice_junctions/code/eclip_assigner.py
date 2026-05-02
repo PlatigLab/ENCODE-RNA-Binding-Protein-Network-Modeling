@@ -378,8 +378,13 @@ class EclipToSpliceJunctionAssigner:
                     columns=[0, 1, 2, 3, 4, 5]
                 )     
                 
-                # since we are concatenating all peaks together downstream
-                # make sure to identify peaks by their rbp_cell-line_filtering methods
+                """
+                Since we are concatenating all peaks together downstream,
+                make sure to identify peaks by their rbp_cell-line_filtering methods.
+
+                NOTE: the 6 columns here correspond exactly to the definition of the first 6 columns of a narrowPeak BED file
+                except that we have chosen to modify column_4 to be the rbp and cell line and reminding us that these are IDR peaks
+                """
                 tmp_peaks = tmp_peaks.with_columns(
                     pl.lit(rbp + "_" + cell_line + "_IDR").alias("column_4")
                 ).select(
