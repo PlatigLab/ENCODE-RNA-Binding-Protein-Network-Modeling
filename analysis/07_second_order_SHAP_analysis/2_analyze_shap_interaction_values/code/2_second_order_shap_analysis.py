@@ -3556,7 +3556,7 @@ class SecondOrderShapNetworkAnalyzer:
                 )
                 ax_top.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
 
-                ax_top.set_ylabel("Actual PSI", fontsize=16, labelpad=10)
+                ax_top.set_ylabel(self.CONFIG["LATEX_SYMBOLS"]["PSI"], fontsize=20, labelpad=10)
                 ax_top.set_xlabel("Binding Category", fontsize=18)
 
                 ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)

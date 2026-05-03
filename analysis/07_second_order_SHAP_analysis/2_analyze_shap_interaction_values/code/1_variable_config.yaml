@@ -72,6 +72,7 @@ FIRST_ORDER_SHAP_CACHE_DIR: "../../../06_first_order_SHAP_analysis/outputs/FINAL
 LATEX_SYMBOLS: 
     Signed-Local-SHAP-Mean-Bound-Only: Avg. Interaction SHAP
     Bound-Only: Avg. |Interaction SHAP|
+    PSI: $\psi$
 
 # Importance networks
 IMPORTANCE_NETWORKS: "../outputs/SHAP_cache/importance_networks/Bound-Only_main_and_interaction_importance.pkl"
