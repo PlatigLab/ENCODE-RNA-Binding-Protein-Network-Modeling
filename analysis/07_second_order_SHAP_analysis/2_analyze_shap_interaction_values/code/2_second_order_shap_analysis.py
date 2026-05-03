@@ -3098,7 +3098,7 @@ class SecondOrderShapNetworkAnalyzer:
                 data=results_df,
                 x="SHAP Threshold",
                 y="% Direction Concordance",
-                color="#E63030",
+                color='black',
                 linewidth=1.5,
                 ax=ax,
                 legend=False, 
@@ -3109,18 +3109,18 @@ class SecondOrderShapNetworkAnalyzer:
             scatter = ax.scatter(
                 results_df["SHAP Threshold"],
                 results_df["% Direction Concordance"],
-                c=results_df["# Total"],
+                c='black',
                 cmap="YlGnBu",
-                s=70,
+                s=60,
                 alpha=1.0,
                 edgecolor="black",
                 linewidth=1.2, 
                 zorder=9
             )
             
-            # Add colorbar for the # Total values
-            cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
-            cbar.set_label("# Interaction Features Considered", fontsize=11, labelpad=10)
+            # # Add colorbar for the # Total values
+            # cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
+            # cbar.set_label("# Interaction Features Considered", fontsize=11, labelpad=10)
             
             # Set log scale for x-axis
             ax.set_xscale('log')
