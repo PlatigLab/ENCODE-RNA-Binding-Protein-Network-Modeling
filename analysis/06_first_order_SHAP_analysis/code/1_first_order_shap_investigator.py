@@ -9555,7 +9555,7 @@ class FirstOrderShapInvestigator:
         assert type(data) == pd.DataFrame, "Data must be a pandas DataFrame"
         
         dpsi = data["dPSI"]
-        shap_delta = data["CTRL - KD Local SHAP"]
+        shap_delta = data["Bound Local SHAP"]
 
         # Exclude zeros (neutral) from both metrics
         mask = (dpsi != 0) & (shap_delta != 0)
@@ -9676,7 +9676,7 @@ class FirstOrderShapInvestigator:
                                 (df["Cell Line"] == cell_line) &
                                 (df["rMATS FDR"] <= fdr_thr) &
                                 (df["dPSI"].abs() >= dpsi_thr) &
-                                (df["CTRL - KD Local SHAP"].abs() >= delta_shap_thr)
+                                (df["Bound Local SHAP"].abs() >= delta_shap_thr)
                             ].copy(deep=True)
 
                             # Skip if no rows after filtering
@@ -9739,7 +9739,7 @@ class FirstOrderShapInvestigator:
                             fisher_results.append({
                                 "Cell Line": cell_line,
                                 "dPSI Threshold": dpsi_thr,
-                                "Delta SHAP Threshold": delta_shap_thr,
+                                "CTRL Bound Local SHAP Threshold": delta_shap_thr,
                                 "FDR Threshold": fdr_thr,
                                 "(A) dPSI +, SHAP +": table[0][0],
                                 "(B) dPSI +, SHAP -": table[0][1],
@@ -9766,7 +9766,7 @@ class FirstOrderShapInvestigator:
             results_df["FDR"] = pvals_corrected
 
             results_df.sort_values(
-                by=["dPSI Threshold", "Delta SHAP Threshold", "FDR Threshold"],
+                by=["dPSI Threshold", "CTRL Bound Local SHAP Threshold", "FDR Threshold"],
                 ascending=[True, True, False]
             ).to_csv(self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode], sep="\t", index=False)
 
@@ -9882,14 +9882,14 @@ class FirstOrderShapInvestigator:
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"][data_mode]
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
 
-        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
-        DPSI_SYMBOL = r"$\Delta\Psi$"
+        DELTA_LOCAL_SHAP_SYMBOL = "CTRL Bound Local SHAP"
+        DPSI_SYMBOL = r"$\Delta\psi$"
 
         FISHERS_FDR_CUTOFF = 0.1
 
         # Prepare unique values for axes
         cell_lines = results_df["Cell Line"].unique()
-        delta_shap_thresholds = sorted(results_df["Delta SHAP Threshold"].unique())
+        delta_shap_thresholds = sorted(results_df["CTRL Bound Local SHAP Threshold"].unique())
         dpsi_thresholds = sorted(results_df["dPSI Threshold"].unique())
         fdr_thresholds = sorted(results_df["FDR Threshold"].unique(), reverse=True)  # highest FDR leftmost
 
@@ -9913,7 +9913,7 @@ class FirstOrderShapInvestigator:
                     # Subset for this cell line and delta_shap_thr
                     sub = results_df[
                         (results_df["Cell Line"] == cell_line) &
-                        (results_df["Delta SHAP Threshold"] == delta_shap_thr)
+                        (results_df["CTRL Bound Local SHAP Threshold"] == delta_shap_thr)
                     ].copy(deep=True)
 
                     # Build matrix using pivot for Log10 Odds Ratio
@@ -9965,7 +9965,7 @@ class FirstOrderShapInvestigator:
                         label.set_fontweight("bold")
                     
                     if row_idx == 0:
-                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥ {delta_shap_thr}", fontsize=20, pad = 10, fontweight='bold')
+                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥ {delta_shap_thr}", fontsize=14, pad = 10, fontweight='bold')
 
                     if col_idx == 0:
                         ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=30, fontstyle='italic', bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),)
@@ -10018,23 +10018,23 @@ class FirstOrderShapInvestigator:
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
 
-        DELTA_LOCAL_SHAP_SYMBOL = self.latex_symbols["Differential Symbols"]["CTRL - KD Local SHAP"]
+        DELTA_LOCAL_SHAP_SYMBOL = "CTRL Bound Local SHAP"
         DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
 
         cell_lines = sorted(results_df["Cell Line"].unique(), reverse=True)  
         chosen_thresholds = [
             {
-                "Delta SHAP Threshold": 0.05, 
+                "CTRL Bound Local SHAP Threshold": 0.05, 
                 "dPSI Threshold": 0, 
                 "FDR Threshold": 0.05
             }, 
             {
-                "Delta SHAP Threshold": 0.1, 
+                "CTRL Bound Local SHAP Threshold": 0.1, 
                 "dPSI Threshold": 0,   
                 "FDR Threshold": 0.05
             }, 
             {
-                "Delta SHAP Threshold": 0.2, 
+                "CTRL Bound Local SHAP Threshold": 0.2, 
                 "dPSI Threshold": 0,   
                 "FDR Threshold": 0.05
             }
@@ -10062,7 +10062,7 @@ class FirstOrderShapInvestigator:
                     # Filter results_df for this cell line and all threshold values
                     filtered = results_df[
                         (results_df["Cell Line"] == cell_line) &
-                        (results_df["Delta SHAP Threshold"] == threshold_set["Delta SHAP Threshold"]) &
+                        (results_df["CTRL Bound Local SHAP Threshold"] == threshold_set["CTRL Bound Local SHAP Threshold"]) &
                         (results_df["dPSI Threshold"] == threshold_set["dPSI Threshold"]) &
                         (results_df["FDR Threshold"] == threshold_set["FDR Threshold"])
                     ]
@@ -10073,7 +10073,7 @@ class FirstOrderShapInvestigator:
                     fdr_values.append(filtered["FDR"].values[0])
                     total_counts.append(filtered["(A) dPSI +, SHAP +"].values[0] + filtered["(B) dPSI +, SHAP -"].values[0] + filtered["(C) dPSI -, SHAP +"].values[0] + filtered["(D) dPSI -, SHAP -"].values[0])
 
-                    delta_shap_labels.append(f"{threshold_set['Delta SHAP Threshold']}")
+                    delta_shap_labels.append(f"{threshold_set['CTRL Bound Local SHAP Threshold']}")
                 
                 # Create horizontal bar plot
                 ax.barh(delta_shap_labels, odds_ratios, 
@@ -10105,11 +10105,11 @@ class FirstOrderShapInvestigator:
                 )
 
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby Delta SHAP Threshold", 
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
                         fontsize=4, y=0.97)
 
             fig.supxlabel("Odds Ratio", fontsize=12, y=0.065, x=0.53, fontweight='bold')
-            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.53, fontweight='bold')
+            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.52, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
