@@ -8337,7 +8337,7 @@ class FirstOrderShapInvestigator:
             ax.set_ylim(ymin - 0.07 * (ymax - ymin), ymax)
 
             plt.xlabel("Position", fontsize=12, fontweight="bold")
-            plt.ylabel(self.latex_symbols["Unique-Binding"]["Bound-Only"], fontsize=12, fontweight='bold')
+            plt.ylabel("Mean(Bound Local SHAP Values)", fontsize=8, fontweight='bold')
             plt.title("Average Directional Position Effect", fontsize=10, y=1.05)
 
             # Custom legend
