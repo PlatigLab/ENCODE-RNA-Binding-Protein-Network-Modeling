@@ -997,6 +997,97 @@ class SecondOrderShapNetworkAnalyzer:
             rbps.update(parts)
         
         return rbps
+
+    
+    def compare_importance_vs_directionality(self): 
+        metric_importance = "Bound-Only"
+        metric_directionality = "Signed-Local-SHAP-Mean-Bound-Only"
+
+        val_importance = f"Value - {metric_importance}"
+        val_directionality = f"Value - {metric_directionality}"
+
+        table_importance = self.retrieve_shap_values_for_metric(metric=metric_importance).select(
+            ["Cell Line", "Column", val_importance]
+        )
+        table_directionality = self.retrieve_shap_values_for_metric(metric=metric_directionality).select(
+            ["Cell Line", "Column", val_directionality]
+        )
+
+        merged = table_importance.join(
+            table_directionality,
+            on=["Cell Line", "Column"],
+            how="inner",
+            validate="1:1",
+            maintain_order="left"
+        )
+
+        merged = merged.filter(
+            (~pl.col(val_importance).is_nan()) &
+            (~pl.col(val_directionality).is_nan())
+        ).with_columns([
+            pl.col(val_importance).abs().alias(f"Absolute {val_importance}"),
+            pl.col(val_directionality).abs().alias(f"Absolute {val_directionality}"),
+        ]).with_columns(
+            (
+                pl.col(f"Absolute {val_directionality}") -
+                pl.col(f"Absolute {val_importance}")
+            ).abs().alias("Absolute Magnitude Difference (||Signed|-|Bound-Only||)")
+        )
+
+        diff_col = "Absolute Magnitude Difference (||Signed|-|Bound-Only||)"
+        n_rows = merged.height
+
+        summary = merged.select([
+            pl.len().alias("n"),
+            pl.col(diff_col).mean().alias("mean"),
+            pl.col(diff_col).median().alias("median"),
+            pl.col(diff_col).std().alias("std"),
+            pl.col(diff_col).min().alias("min"),
+            pl.col(diff_col).quantile(0.25).alias("q25"),
+            pl.col(diff_col).quantile(0.75).alias("q75"),
+            pl.col(diff_col).quantile(0.90).alias("q90"),
+            pl.col(diff_col).quantile(0.95).alias("q95"),
+            pl.col(diff_col).max().alias("max"),
+            (pl.col(diff_col) == 0).sum().alias("n_zero"),
+            (pl.col(diff_col) > 0).sum().alias("n_nonzero"),
+        ])
+
+        logger.info("\n=== Absolute Magnitude Difference Summary: ||Signed-Local-SHAP-Mean-Bound-Only| - |Bound-Only|| ===")
+        display(summary)
+
+        top_50 = merged.sort(diff_col, descending=True).select([
+            "Cell Line",
+            "Column",
+            val_importance,
+            val_directionality,
+            diff_col,
+        ]).head(50)
+
+        logger.info("\n=== Top 50 Most Different Features by Absolute Magnitude Difference ===")
+        display(top_50)
+
+        for cell_line in self.CONFIG["CELL_LINES"]:
+            cell_df = merged.filter(pl.col("Cell Line") == cell_line)
+
+            cell_summary = cell_df.select([
+                pl.lit(cell_line).alias("Cell Line"),
+                pl.len().alias("n"),
+                pl.col(diff_col).mean().alias("mean"),
+                pl.col(diff_col).median().alias("median"),
+                pl.col(diff_col).std().alias("std"),
+                pl.col(diff_col).min().alias("min"),
+                pl.col(diff_col).quantile(0.25).alias("q25"),
+                pl.col(diff_col).quantile(0.75).alias("q75"),
+                pl.col(diff_col).quantile(0.90).alias("q90"),
+                pl.col(diff_col).quantile(0.95).alias("q95"),
+                pl.col(diff_col).max().alias("max"),
+                (pl.col(diff_col) == 0).sum().alias("n_zero"),
+                (pl.col(diff_col) > 0).sum().alias("n_nonzero"),
+            ])
+
+            logger.info(f"\n=== {cell_line} Absolute Magnitude Difference Summary ===")
+            display(cell_summary)
+            
     
     # NOTE: this is a DRAFT function and should not be trusted yet
     def plot_double_triangular_heatmaps(self, matrices = None):
@@ -1383,10 +1474,10 @@ class SecondOrderShapNetworkAnalyzer:
         )
         plt.show()
 
-  
-    def calculate_roc_and_prc_curve_data_for_metric(self, metric=None):
+
+    def calculate_roc_and_pr_curve_data_for_metric(self, metric=None):
         """
-        Calculate ROC and PRC curve data and AUC metrics for a given metric.
+        Calculate ROC and PR curve data and AUC metrics for a given metric.
         
         Returns a dictionary containing curve data and summary statistics.
         """
@@ -1401,13 +1492,14 @@ class SecondOrderShapNetworkAnalyzer:
         assert table.null_count().sum_horizontal().item() == 0, "Null values found in SHAP table after filtering for interaction rows."
 
         ppi_sources = [col for col in table.columns if "rec-y2h" in col.lower() or "street et al" in col.lower()]
-        ppi_types = self.CONFIG["PPI_TYPES"]
+        position_subset_types = self.CONFIG["PPI_TYPES"]
         cell_lines = self.CONFIG["CELL_LINES"]
+        shap_col_name_for_curves = "Abs. SHAP Value"
         
         summary = []
         curve_data = {} 
         
-        for plot_type in ["FEATURE-SPECIFIC", "RBP-SPECIFIC_MAX_VALUE"]:
+        for plot_type in ["FEATURE-SPECIFIC", "RBP-SPECIFIC_MAX_VALUE", "RBP-SPECIFIC_SUM_VALUE"]: 
             curve_data[plot_type] = {}
             
             for cell_line in cell_lines:
@@ -1416,7 +1508,8 @@ class SecondOrderShapNetworkAnalyzer:
                 for ppi_source in ppi_sources:
                     curve_data[plot_type][cell_line][ppi_source] = {}
                     
-                    for ppi_type in ppi_types:
+                    for position_subset_type in position_subset_types:
+                        shap_col_name_for_curves = "Abs. SHAP Value"
                         # Filter table to only rows where the value of ppi_source column is not "None" string
                         curve_input = table.filter(
                             (pl.col(ppi_source) != "None") & 
@@ -1425,86 +1518,101 @@ class SecondOrderShapNetworkAnalyzer:
                         assert curve_input[ppi_source].n_unique() == 3, f"Expected 3 unique values in column '{ppi_source}' after filtering, found {curve_input[ppi_source].n_unique()}."
 
                         # if same or different position only, then you need to subset to only those interaction columns 
-                        # or else IT WOULD BE OVERLY HARSH to call QKI_3-RBFOX2_4 as "False PPI" when looking at "Same-Position" only
-                        if ppi_type == "Same-Position":
+                        # or else if you did not subset to those positions, IT WOULD BE OVERLY HARSH to call QKI_3-RBFOX2_4 
+                        # as "False PPI" when looking at "Same-Position" only because it is a PPI but you only want to consider 'Same-Position'
+                        if position_subset_type == "Same-Position":
                             curve_input = curve_input.filter(
                                 (pl.col("Position 1") == pl.col("Position 2"))
                             )
-                        elif ppi_type == "Different-Position":
+                        elif position_subset_type == "Different-Position":
                             curve_input = curve_input.filter(
                                 (pl.col("Position 1") != pl.col("Position 2"))
                             )
                         
                         # Same and different positions allowed
-                        if ppi_type == "All-Positions":
+                        if position_subset_type == "All-Positions":
                             ppi_bool = (curve_input[ppi_source].str.ends_with("-Position"))
                         # Must match specific PPI type
                         else:
-                            ppi_bool = (curve_input[ppi_source] == ppi_type)
+                            ppi_bool = (curve_input[ppi_source] == position_subset_type)
 
                         # Add PPI column and Abs. SHAP Value column
                         curve_input = curve_input.with_columns([
                             pl.lit(ppi_bool).alias("PPI"),
-                            pl.col(f"Value - {metric}").abs().alias("Abs. SHAP Value")
+                            pl.col(f"Value - {metric}").abs().alias(shap_col_name_for_curves)
                         ])
                         
                         # Remove rows where "Abs. SHAP Value" is NaN
                         # This occurs for "Bound-Only" metrics when there was no binding observed
-                        curve_input = curve_input.filter(~pl.col("Abs. SHAP Value").is_nan())  
+                        curve_input = curve_input.filter(~pl.col(shap_col_name_for_curves).is_nan())  
                         # Drop all columns in ppi_sources from curve_input
                         curve_input = curve_input.drop(ppi_sources)
 
                         if plot_type == "RBP-SPECIFIC_MAX_VALUE":
                             # Sort by Abs. SHAP Value descending and keep only the first occurrence per RBP_PAIR (max value)
-                            curve_input = curve_input.sort("Abs. SHAP Value", descending=True).unique(
+                            curve_input = curve_input.sort(shap_col_name_for_curves, descending=True).unique(
                                 subset=["Sorted RBP Pair"],
                                 keep="first", 
                                 maintain_order=True    
                             )
+                        
+                        elif plot_type == "RBP-SPECIFIC_SUM_VALUE": 
+                            # rename as the table is now in the dimension of rbp-rbp instead of rbp_position-rbp_position
+                            shap_col_name_for_curves = "Abs. SHAP Sum Value"
                             
-                        # Sort by "Abs. SHAP Value" descending, then by "PPI" descending
-                        curve_input = curve_input.sort(["Abs. SHAP Value"], descending=True)
+                            # collapse from rbp_position-rbp_position rows to rbp-rbp rows by summing Abs. SHAP across positions
+                            curve_input = curve_input.group_by(["Cell Line", "Sorted RBP Pair"]).agg([
+                                pl.col("PPI").n_unique().alias("PPI_n_unique"),
+                                pl.col("PPI").first().alias("PPI"),
+                                pl.col("Abs. SHAP Value").sum().alias(shap_col_name_for_curves)
+                            ])
+                            # For a given (Cell Line, Sorted RBP Pair), PPI should be consistent across summed rows
+                            assert (curve_input["PPI_n_unique"] == 1).all(), "Inconsistent PPI labels found within a (Cell Line, Sorted RBP Pair) group."
+                            curve_input = curve_input.drop("PPI_n_unique")
+                            
+                        # Sort by shap_col_name_for_curves descending
+                        curve_input = curve_input.sort([shap_col_name_for_curves], descending=True)
                         
                         # Validation assertions
                         assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
                         
-                        zero_abs_shap_rows = (curve_input["Abs. SHAP Value"] == 0).sum()
-                        assert zero_abs_shap_rows > 0, f"Expected rows with 0 'Abs. SHAP Value', found none for {ppi_source} & {ppi_type}."
+                        zero_abs_shap_rows = (curve_input[shap_col_name_for_curves] == 0).sum()
+                        assert zero_abs_shap_rows > 0, f"Expected rows with 0 'Abs. SHAP Value', found none for {ppi_source} & {position_subset_type}."
                         
-                        assert (curve_input["Abs. SHAP Value"] >= 0).all(), "'Abs. SHAP Value' contains negative values."
-                        assert (curve_input["Abs. SHAP Value"] > 0).sum() > 0, "No values above 0 found in 'Abs. SHAP Value' column."
+                        assert (curve_input[shap_col_name_for_curves] >= 0).all(), "'Abs. SHAP Value' contains negative values."
+                        assert (curve_input[shap_col_name_for_curves] > 0).sum() > 0, "No values above 0 found in 'Abs. SHAP Value' column."
                         
                         assert all(val == True or val == False for val in curve_input["PPI"].to_list()), "Non-boolean values found in 'PPI' column."
-                        assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {ppi_type}."
+                        assert curve_input["PPI"].sum() > 0, f"No True values found in 'PPI' column for {ppi_source} & {position_subset_type}."
 
                         # Save curve input data
                         ppi_source_str_conversion = ppi_source.translate(str.maketrans(" |/()", "_____"))
                         curve_input.write_csv(
-                            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/curve_inputs/{metric}_{plot_type}_{cell_line}_{ppi_source_str_conversion}_{ppi_type}_curve_input_data.tsv",
+                            f"{self.CONFIG['FIGURES']['pr_roc_curves_dir']}/curve_inputs/{metric}_{plot_type}_{cell_line}_{ppi_source_str_conversion}_{position_subset_type}_curve_input_data.tsv",
                             separator="\t"
                         )
-                        logger.info(f"# points: {curve_input.shape[0]}, Plot Type: {plot_type}, Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {ppi_type}")
+                        logger.info(f"# points: {curve_input.shape[0]}, Plot Type: {plot_type}, Cell line: {cell_line}, PPI source: {ppi_source}, PPI type: {position_subset_type}")
 
                         y_true = curve_input["PPI"].to_numpy()
-                        y_score = curve_input["Abs. SHAP Value"].to_numpy()
+                        y_score = curve_input[shap_col_name_for_curves].to_numpy()
                         
                         # Calculate ROC metrics
                         fpr, tpr, _ = roc_curve(y_true, y_score)
                         roc_auc = roc_auc_score(y_true, y_score)
                         
-                        # Calculate PRC metrics
+                        # Calculate PR metrics
                         precision, recall, _ = precision_recall_curve(y_true, y_score)
-                        prc_auc = auc(recall, precision)
+                        pr_auc = auc(recall, precision)
                         baseline = (curve_input["PPI"].sum() / curve_input.shape[0])
                         
                         # Store curve data
-                        curve_data[plot_type][cell_line][ppi_source][ppi_type] = {
+                        curve_data[plot_type][cell_line][ppi_source][position_subset_type] = {
                             "fpr": fpr,
                             "tpr": tpr,
                             "roc_auc": roc_auc,
                             "precision": precision,
                             "recall": recall,
-                            "prc_auc": prc_auc,
+                            "pr_auc": pr_auc,
                             "baseline": baseline,
                             "y_true": y_true,
                             "y_score": y_score
@@ -1515,7 +1623,7 @@ class SecondOrderShapNetworkAnalyzer:
                             "Plot Type": plot_type,
                             "Cell Line": cell_line,
                             "PPI Source": ppi_source,
-                            "PPI Type": ppi_type,
+                            "PPI Type": position_subset_type,
                             "Curve": "roc",
                             "AUC": roc_auc, 
                             "ROC Input Table: # INTER-RBP Interaction Features (Rows)": curve_input.shape[0], 
@@ -1526,11 +1634,11 @@ class SecondOrderShapNetworkAnalyzer:
                             "% Rows w/ 0 Abs. SHAP Value": (zero_abs_shap_rows / curve_input.shape[0]) * 100
                         }
                         
-                        row_dict["Abs. SHAP - Min Val"] = curve_input["Abs. SHAP Value"].min()
+                        row_dict["Abs. SHAP - Min Val"] = curve_input[shap_col_name_for_curves].min()
                         for thresh in self.CONFIG["SHAP_PERCENTILE_THRESHOLDS"]:
-                            shap_value_at_thresh = np.percentile(curve_input["Abs. SHAP Value"].to_numpy(), thresh)
+                            shap_value_at_thresh = np.percentile(curve_input[shap_col_name_for_curves].to_numpy(), thresh)
                             row_dict[f"Abs. SHAP - {thresh}th Percentile"] = shap_value_at_thresh
-                        row_dict["Abs. SHAP - Max Val"] = curve_input["Abs. SHAP Value"].max()
+                        row_dict["Abs. SHAP - Max Val"] = curve_input[shap_col_name_for_curves].max()
 
                         for thresh in self.CONFIG["PARTIAL_AUC_THRESHOLDS"]:
                             partial_auc = roc_auc_score(y_true, y_score, max_fpr=thresh)
@@ -1540,16 +1648,16 @@ class SecondOrderShapNetworkAnalyzer:
         
         summary_df = pl.DataFrame(summary).sort("AUC", descending=True)
         summary_df.write_csv(
-            f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/{metric}_roc_prc_summary_partial_auc_and_value_percentiles.tsv",
+            f"{self.CONFIG['FIGURES']['pr_roc_curves_dir']}/{metric}_roc_pr_summary_partial_auc_and_value_percentiles.tsv",
             separator="\t"
         )
         
         return curve_data
     
     
-    def plot_roc_and_prc_curves_for_metric(self, metric=None, curve_data=None, figure_file_name_suffix=None, cell_line_combined=False): 
+    def plot_roc_and_pr_curves_for_metric(self, metric=None, curve_data=None, figure_file_name_suffix=None, cell_line_combined=False): 
         """
-        For a given metric, plot ROC and PRC curves using output from calculate_roc_and_prc_curve_data_for_metric()
+        For a given metric, plot ROC and PR curves using output from calculate_roc_and_pr_curve_data_for_metric()
         """
 
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
@@ -1580,7 +1688,7 @@ class SecondOrderShapNetworkAnalyzer:
                     cell_lines_list = curve_data[plot_type].keys()
 
                 for row_idx, cell_line in enumerate(cell_lines_list):
-                    for col_idx, curve_type in enumerate(["roc", "prc"]):
+                    for col_idx, curve_type in enumerate(["roc", "pr"]):
                         if not cell_line_combined:
                             ax = axes[row_idx, col_idx]
                         else: 
@@ -1608,7 +1716,7 @@ class SecondOrderShapNetworkAnalyzer:
                                     if curve_type == "roc":
                                         ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.8)
                                     else:
-                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['prc_auc']:.3f}) [Baseline={data['baseline']:.3f}]", alpha=0.8)
+                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]", alpha=0.8)
                         
                         if row_idx ==0: 
                             ax.set_title(f"{curve_type.upper()}", fontsize=30, fontweight='bold', pad=15)
@@ -1661,39 +1769,38 @@ class SecondOrderShapNetworkAnalyzer:
                     "\nNOTE 5: Curve creation does not include INTRA-RBP interactions (e.g. RBFOX2_3-RBFOX2_4)" +
                     "\nNOTE 6: Union PPI is: True (either resource) --> True, then False --> if either resource is False, else None (and hence, removed)" +
                     note +
-                    f"\n\n{plot_type}: ROC and PRC Curves by Cell Line and PPI Source & PPI Type", 
+                    f"\n\n{plot_type}: ROC and PR Curves by Cell Line and PPI Source & PPI Type", 
                     fontsize=13, y= 1.2 if cell_line_combined else 1.1
                 )
 
                 plt.tight_layout()
                 plt.savefig(
-                    f"{self.CONFIG['FIGURES']['prc_roc_curves_dir']}/plots/{plot_type}-{metric}_{figure_file_name_suffix}.pdf", 
+                    f"{self.CONFIG['FIGURES']['pr_roc_curves_dir']}/plots/{plot_type}-{metric}_{figure_file_name_suffix}.pdf", 
                     dpi=1000, 
                     bbox_inches='tight'
                 )
                 plt.show()  
     
 
-    def plot_all_roc_and_prc_curve_combinations_for_rbp_specific_max_value(self, metric = None):
+    def plot_all_roc_and_pr_curve_combinations_for_rbp_specific_max_value(self, metric = None):
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
 
         # Only plot RBP-Specific
-        curve_data = self.calculate_roc_and_prc_curve_data_for_metric(metric=metric)
+        curve_data = self.calculate_roc_and_pr_curve_data_for_metric(metric=metric)
         del curve_data["FEATURE-SPECIFIC"]
 
-        plot = self.plot_roc_and_prc_curves_for_metric(
+        plot = self.plot_roc_and_pr_curves_for_metric(
             metric=metric, 
             curve_data=curve_data, 
-            figure_file_name_suffix="roc_prc_curves-SUPPLEMENTARY_ALL_COMBINATIONS"
+            figure_file_name_suffix="roc_pr_curves-SUPPLEMENTARY_ALL_COMBINATIONS"
         )
 
     
-    def plot_selected_roc_and_prc_curves_for_main_figure(self, metric=None): 
-        assert metric == "Signed-Local-SHAP-Mean-Bound-Only", "This function is specifically designed for the main figure and only supports 'Signed-Local-SHAP-Mean-Bound-Only' metric."
+    def plot_selected_roc_and_pr_curves_for_main_figure(self, metric=None): 
         
-        curve_data = self.calculate_roc_and_prc_curve_data_for_metric(metric=metric)
+        curve_data = self.calculate_roc_and_pr_curve_data_for_metric(metric=metric)
         
-        selected_plot_type = "RBP-SPECIFIC_MAX_VALUE"
+        selected_plot_type = "RBP-SPECIFIC_SUM_VALUE"
         selected_ppi_type = "All-Positions"
         selected_ppi_sources = [
             "Rec-Y2H",
@@ -1712,10 +1819,10 @@ class SecondOrderShapNetworkAnalyzer:
                     selected_ppi_type: curve_data[selected_plot_type][cell_line][ppi_source][selected_ppi_type]
                 }
 
-        self.plot_roc_and_prc_curves_for_metric(
+        self.plot_roc_and_pr_curves_for_metric(
             metric=metric, 
             curve_data=filtered_curve_data, 
-            figure_file_name_suffix="roc_prc_curves-MAIN_FIGURE_SELECTED_CURVES",
+            figure_file_name_suffix="pr_roc_curves-MAIN_FIGURE_SELECTED_CURVES",
             cell_line_combined=True
         )
 

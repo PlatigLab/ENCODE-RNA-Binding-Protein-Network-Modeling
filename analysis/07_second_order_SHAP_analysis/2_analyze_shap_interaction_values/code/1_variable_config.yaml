@@ -13,7 +13,7 @@ RBP_FEATURE_INFO_FILE: "../outputs/feature_info/rbp_feature_info.json"
 # FIGURES
 FIGURES: 
     side_by_side_heatmap_dir: "../outputs/figures/side_by_side_heatmaps/"
-    prc_roc_curves_dir: '../outputs/figures/roc_prc_curves/'
+    pr_roc_curves_dir: '../outputs/figures/roc_pr_curves/'
     actual_psi_by_binding_dir: "../outputs/figures/actual_PSI_by_binding/"
     cell_line_interaction_sign_similarity: "../outputs/figures/learned_interaction_cell_line_sign_similarity/learned_interaction_cell_line_sign_similarity.pdf"
 
