@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=rbp_pipeline
-#SBATCH --output=logs/rbp_%A_%a.out
-#SBATCH --error=logs/rbp_%A_%a.err
+#SBATCH --output=K562_logs/rbp_%A_%a.out
+#SBATCH --error=K562_logs/rbp_%A_%a.err
 #SBATCH --account=PlatigLab
 #SBATCH --partition=standard
 #SBATCH --time=04:00:00
@@ -16,4 +16,4 @@ RBPS=(NIPBL SAFB NOLC1 ZC3H11A EXOSC5 FXR2 RPS3 ZNF800
     RNF187 SF3B1 GARS YWHAG DGCR8)
 
 RBP=${RBPS[$SLURM_ARRAY_TASK_ID]}
-python3.11 K562_Crispr_KD.py $RBP
+python3.11 K562_Crispr_KD_paid.py $RBP
