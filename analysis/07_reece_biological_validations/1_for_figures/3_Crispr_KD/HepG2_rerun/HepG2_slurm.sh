@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=rbp_pipeline
-#SBATCH --output=logs/rbp_%A_%a.out
-#SBATCH --error=logs/rbp_%A_%a.err
+#SBATCH --output=HepG2_logs/rbp_%A_%a.out
+#SBATCH --error=HepG2_logs/rbp_%A_%a.err
 #SBATCH --account=PlatigLab
 #SBATCH --partition=standard
 #SBATCH --time=00:60:00
