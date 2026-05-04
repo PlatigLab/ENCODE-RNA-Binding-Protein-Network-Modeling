@@ -372,6 +372,8 @@ def make_IS_KD_table(custom_crispr_bat: pl.DataFrame, rbp: str):
                 "cell_line",
                 "index",
                 "dPSI",
+                "CTRL_SHAP",
+                "KD_SHAP",
                 "CTRL - KD Local SHAP",
                 "FDR",
             ])
