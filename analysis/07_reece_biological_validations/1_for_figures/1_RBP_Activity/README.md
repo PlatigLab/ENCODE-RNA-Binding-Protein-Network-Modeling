@@ -1,5 +1,4 @@
-# SHAP vs dPSI Analysis
-
+# RBP Activity Score and related analyses
 
 # Code
 
@@ -11,9 +10,6 @@ Old one-off plots -> ignore
 ## 2_heatmap_scatterplots
 
 All code to make Figure 3
-
-### activity_heatmap_and_scatterplot
-- Makes heatmap of RBP Activity Score and scatterplot of sign concordance
 
 
 ## 3_comparing_event_cutoffs
