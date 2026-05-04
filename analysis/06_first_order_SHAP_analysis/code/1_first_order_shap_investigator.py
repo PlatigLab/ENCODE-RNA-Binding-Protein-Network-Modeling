@@ -322,7 +322,10 @@ class FirstOrderShapInvestigator:
             "All": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_all_features.png",
             "Only Matching": "../outputs/publication_figures/elasticnet/elasticnet_coefficients_heatmap_only_matching.png",
         }, 
-        "dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf", 
+        "dpsi_vs_local_SHAP_summary": {
+                "odds_ratios": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf",
+                "mcc":  "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_mcc_summary.pdf"
+            }, 
         "dpsi_vs_local_SHAP_fishers_exact_test_across_all_thresholds": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_heatmap_across_all_thresholds.pdf",
         "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf", 
         "positional_preferences_dir": "../outputs/publication_figures/positional_preferences_and_shap"
@@ -10112,7 +10115,93 @@ class FirstOrderShapInvestigator:
             fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.52, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
-            plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary"], dpi=1000, bbox_inches='tight')
+            plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_summary"]["odds_ratios"], dpi=1000, bbox_inches='tight')
+            plt.show()
+
+
+    def plot_dpsi_vs_local_SHAP_mcc_as_barplot(self): 
+        logger.warning('"Test Candidate Features" are ignored and instead all features (i.e. "Test") are used\n\n')
+
+        INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
+        results_df = pd.read_csv(INPUT_FILE, sep="\t")
+
+        DELTA_LOCAL_SHAP_SYMBOL = "CTRL Bound Local SHAP"
+        DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
+
+        cell_lines = sorted(results_df["Cell Line"].unique(), reverse=True)  
+        chosen_thresholds = [
+            {
+                "CTRL Bound Local SHAP Threshold": 0.05, 
+                "dPSI Threshold": 0, 
+                "FDR Threshold": 0.05
+            }, 
+            {
+                "CTRL Bound Local SHAP Threshold": 0.1, 
+                "dPSI Threshold": 0,   
+                "FDR Threshold": 0.05
+            }, 
+            {
+                "CTRL Bound Local SHAP Threshold": 0.2, 
+                "dPSI Threshold": 0,   
+                "FDR Threshold": 0.05
+            }
+        ]
+        
+        with plt.style.context("../../paper.mplstyle"):
+            # Create figure with 2 rows (one per cell line)
+            fig, axes = plt.subplots(2, 1, figsize=(4,3.8), dpi=300, sharex=True, sharey=True)
+
+            colors = {
+                "K562": "#1B95DC", 
+                "HepG2": "#E8AB26"
+            }
+
+            for row_idx, cell_line in enumerate(reversed(self.cell_lines)):
+                ax = axes[row_idx]
+                
+                mcc = []
+                delta_shap_labels = []
+                
+                # Iterate through thresholds in order (so first threshold appears at bottom)
+                for threshold_set in chosen_thresholds:
+                    # Filter results_df for this cell line and all threshold values
+                    filtered = results_df[
+                        (results_df["Cell Line"] == cell_line) &
+                        (results_df["CTRL Bound Local SHAP Threshold"] == threshold_set["CTRL Bound Local SHAP Threshold"]) &
+                        (results_df["dPSI Threshold"] == threshold_set["dPSI Threshold"]) &
+                        (results_df["FDR Threshold"] == threshold_set["FDR Threshold"])
+                    ]
+
+                    assert filtered.shape[0] == 1, f"Expected exactly one row for Cell Line: {cell_line} with thresholds {threshold_set}, but got {filtered.shape[0]}"
+                    
+                    mcc.append(filtered["Matthews Correlation Coefficient"].values[0])
+                    delta_shap_labels.append(f"{threshold_set['CTRL Bound Local SHAP Threshold']}")
+                
+                # Create horizontal bar plot
+                ax.barh(delta_shap_labels, mcc, 
+                    color=colors[cell_line], edgecolor='black', alpha = 1,
+                    linewidth=1.5, height=0.55
+                    )
+
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                ax.set_ylabel(
+                    cell_line,
+                    fontsize=10,
+                    fontstyle='italic',
+                    bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),
+                    labelpad=5
+                )
+
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
+                        fontsize=4, y=0.97)
+
+            fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
+            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.52, fontweight='bold')
+
+            plt.tight_layout(h_pad=1)
+            plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_summary"]["mcc"], dpi=1000, bbox_inches='tight')
             plt.show()
 
 
