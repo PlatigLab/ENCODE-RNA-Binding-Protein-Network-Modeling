@@ -325,9 +325,13 @@ class FirstOrderShapInvestigator:
         "dpsi_vs_local_SHAP_summary": {
                 "odds_ratios": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_barplot_summary.pdf",
                 "mcc":  "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_mcc_summary.pdf"
-            }, 
+        }, 
         "dpsi_vs_local_SHAP_fishers_exact_test_across_all_thresholds": "../outputs/publication_figures/dpsi_vs_local_shap_fishers_exact_test/dpsi_vs_local_SHAP_fishers_exact_test_heatmap_across_all_thresholds.pdf",
-        "per_graph_binding_density": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf", 
+        "per_graph_binding_density": {
+            "percent_bound": "../outputs/publication_figures/per_graph_binding_density/distribution_of_per_row_binding_density.pdf", 
+            "quantile_table": "../outputs/publication_figures/per_graph_binding_density/num_bound_quantile_table.pdf"
+
+        },
         "positional_preferences_dir": "../outputs/publication_figures/positional_preferences_and_shap"
     }
 
@@ -6373,6 +6377,7 @@ class FirstOrderShapInvestigator:
             ).write_pdf(
                 PDF_FILE,
             )
+            
 
     def plot_actual_vs_predicted_for_best_models(self, underlying_data = None): 
 
@@ -7092,11 +7097,62 @@ class FirstOrderShapInvestigator:
             plt.tight_layout()
 
             plt.savefig(
-                self.FIGURES["per_graph_binding_density"], 
+                self.FIGURES["per_graph_binding_density"]["percent_bound"], 
                 dpi=600, 
                 bbox_inches='tight'
             )
             plt.show()
+
+
+    def plot_binding_sum_quantiles(self):
+        lf = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+
+        quantile_specs = [
+            ("Min", lambda s: s.min()),
+            ("25th", lambda s: s.quantile(0.25)),
+            ("50th", lambda s: s.quantile(0.50)),
+            ("75th", lambda s: s.quantile(0.75)),
+            ("Max", lambda s: s.max()),
+        ]
+
+        quantile_data = {"Quantile": [label for label, _ in quantile_specs]}
+        for cell_line in self.cell_lines:
+            binding_sum = lf[cell_line].select("Binding Sum").collect().to_pandas()["Binding Sum"]
+            quantile_data[cell_line] = [int(func(binding_sum)) for _, func in quantile_specs]
+
+        quantile_df = pd.DataFrame(quantile_data)
+
+        gt_table = (
+            great_tables.GT(quantile_df)
+            # .tab_header(title="Binding Sum Quantiles by Cell Line")
+            .cols_label(
+                Quantile=great_tables.md("**Quantile**"), 
+                HepG2=great_tables.md("**HepG2**"), 
+                K562=great_tables.md("**K562**")
+            )
+            .cols_align(align='center')
+            .opt_horizontal_padding(scale=2.5)
+            
+        )
+
+        PDF_FILE = self.FIGURES["per_graph_binding_density"]["quantile_table"]
+        HTML_FILE = PDF_FILE.replace(".pdf", ".html")
+        
+        gt_table.write_raw_html(
+                HTML_FILE,
+                inline_css=True, 
+                make_page=True, 
+            )
+        
+        display(gt_table)
+
+        weasyprint.HTML(
+                filename=HTML_FILE
+            ).write_pdf(
+                PDF_FILE,
+            )
+        
+        os.remove(HTML_FILE)
 
 
     def calculate_num_and_percent_bound_local_shap_greater_than_cutoff(self): 
