@@ -1571,7 +1571,7 @@ class SecondOrderShapNetworkAnalyzer:
                             curve_input = curve_input.drop("PPI_n_unique")
                             
                         # Sort by shap_col_name_for_curves descending
-                        curve_input = curve_input.sort([shap_col_name_for_curves], descending=True)
+                        curve_input = curve_input.sort([shap_col_name_for_curves, "Sorted RBP Pair"], descending=True)
                         
                         # Validation assertions
                         assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
@@ -1714,9 +1714,14 @@ class SecondOrderShapNetworkAnalyzer:
                                         prefix_label = ""
 
                                     if curve_type == "roc":
-                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})", alpha=0.8)
+                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})".replace(" | ", " "), alpha=0.8)
                                     else:
-                                        ax.plot(data["recall"], data["precision"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]", alpha=0.8)
+                                        ax.plot(
+                                            data["recall"],
+                                            data["precision"],
+                                            label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]".replace(" | ", " "),
+                                            alpha=0.8
+                                        )
                         
                         if row_idx ==0: 
                             ax.set_title(f"{curve_type.upper()}", fontsize=30, fontweight='bold', pad=15)
@@ -1747,13 +1752,13 @@ class SecondOrderShapNetworkAnalyzer:
                                 ax.set_xlabel("False Positive Rate", fontsize=20, fontweight='bold')
 
                             ax.set_ylabel("True Positive Rate", fontsize=20, fontweight='bold')
-                            legend_fontsize = 9 if not cell_line_combined else 14
+                            legend_fontsize = 9 if not cell_line_combined else 14.8
                             ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(1.47, 0.02), edgecolor='sienna')
                         else:
                             if (cell_line_combined ==False and row_idx == len(curve_data[plot_type].keys()) - 1) or (cell_line_combined and col_idx == 1):  # Only add x label to bottom row 
                                 ax.set_xlabel("Recall", fontsize=20, fontweight='bold')
                             ax.set_ylabel("Precision", fontsize=20, fontweight='bold')
-                            legend_fontsize = 7.5 if not cell_line_combined else 9.5
+                            legend_fontsize = 7.5 if not cell_line_combined else 10
                             ax.legend(loc="upper right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(0.99, 0.7), edgecolor='sienna')
                 
                 if plot_type == "RBP-SPECIFIC_MAX_VALUE":
