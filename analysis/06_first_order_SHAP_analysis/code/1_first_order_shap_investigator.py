@@ -2779,7 +2779,7 @@ class FirstOrderShapInvestigator:
             ax.tick_params(axis='y', labelsize=7)
 
             # Move legend outside right and remove top/right spines
-            ax.legend(title="Positions", fontsize=6, title_fontsize=7, loc="upper center", bbox_to_anchor=(0.18, 1.08))
+            ax.legend(title="Positions", fontsize=6.5, title_fontsize=6.5, loc="upper center", bbox_to_anchor=(0.49, 1.0))
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
 
@@ -7127,11 +7127,11 @@ class FirstOrderShapInvestigator:
             # .tab_header(title="Binding Sum Quantiles by Cell Line")
             .cols_label(
                 Quantile=great_tables.md("**Quantile**"), 
-                HepG2=great_tables.md("**HepG2**"), 
-                K562=great_tables.md("**K562**")
+                HepG2=great_tables.md("**HepG2**<br>**# Features Bound**"), 
+                K562=great_tables.md("**K562**<br>**# Features Bound**")
             )
             .cols_align(align='center')
-            .opt_horizontal_padding(scale=2.5)
+            .opt_horizontal_padding(scale=2)
             
         )
 
@@ -8396,7 +8396,7 @@ class FirstOrderShapInvestigator:
             ax.set_ylim(ymin - 0.07 * (ymax - ymin), ymax)
 
             plt.xlabel("Position", fontsize=12, fontweight="bold")
-            plt.ylabel("Mean(Bound Local SHAP Values)", fontsize=8, fontweight='bold')
+            plt.ylabel("Mean(All Local SHAP Values)", fontsize=9, fontweight='bold')
             plt.title("Average Directional Position Effect", fontsize=10, y=1.05)
 
             # Custom legend
@@ -9733,9 +9733,9 @@ class FirstOrderShapInvestigator:
                         for ax, cell_line in zip(axes, self.cell_lines):
                             sub = df[
                                 (df["Cell Line"] == cell_line) &
-                                (df["rMATS FDR"] < fdr_thr) &
-                                (df["dPSI"].abs() > dpsi_thr) &
-                                (df["Bound Local SHAP"].abs() > delta_shap_thr)
+                                (df["rMATS FDR"] <= fdr_thr) &
+                                (df["dPSI"].abs() >= dpsi_thr) &
+                                (df["Bound Local SHAP"].abs() >= delta_shap_thr)
                             ].copy(deep=True)
 
                             # Skip if no rows after filtering
@@ -9753,12 +9753,12 @@ class FirstOrderShapInvestigator:
                                 "percentages": pct_df
                             }
 
-                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>{dpsi_thr}, |ΔSHAP|>{delta_shap_thr}, FDR<{fdr_thr}")
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>={dpsi_thr}, |ΔSHAP|>={delta_shap_thr}, FDR<={fdr_thr}")
                             display(pct_df)
 
                         fig.suptitle(
                             f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
-                            f"|{DPSI_SYMBOL}|>{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>{delta_shap_thr}, rMATS FDR<{fdr_thr}",
+                            f"|{DPSI_SYMBOL}|>={dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>={delta_shap_thr}, rMATS FDR<={fdr_thr}",
                             fontsize=10,
                             y=0.94
                         )
@@ -9867,9 +9867,9 @@ class FirstOrderShapInvestigator:
                                 # Filter data for this cell line and thresholds
                                 sub = df[
                                         (df["Cell Line"] == cell_line) &
-                                        (df["rMATS FDR"] < fdr_thr) &
-                                        (df["dPSI"].abs() > dpsi_thr) &
-                                        (df["CTRL - KD Model Prediction (Probability)"].abs() > delta_thr)
+                                        (df["rMATS FDR"] <= fdr_thr) &
+                                        (df["dPSI"].abs() >= dpsi_thr) &
+                                        (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
                                     ].copy(deep=True)
                                 
                                 # Get confusion matrix
@@ -9889,7 +9889,7 @@ class FirstOrderShapInvestigator:
                                 y_vals.append(val)
 
                             # Plot line and points with reduced thickness/size and black borders
-                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f">{delta_thr}", linewidth=0.6)
+                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f">={delta_thr}", linewidth=0.6)
                             ax.scatter(fdr_labels, y_vals, color=delta_shap_colors[delta_idx], s=18, edgecolor='black', linewidths=0.5, zorder=3)
 
                         # Axis labels and title
@@ -10024,7 +10024,7 @@ class FirstOrderShapInvestigator:
                         label.set_fontweight("bold")
                     
                     if row_idx == 0:
-                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | > {delta_shap_thr}", fontsize=14, pad = 10, fontweight='bold')
+                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | >= {delta_shap_thr}", fontsize=14, pad = 10, fontweight='bold')
 
                     if col_idx == 0:
                         ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=30, fontstyle='italic', bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),)
@@ -10080,22 +10080,22 @@ class FirstOrderShapInvestigator:
         DELTA_LOCAL_SHAP_SYMBOL = "CTRL Bound Local SHAP"
         DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
 
-        cell_lines = sorted(results_df["Cell Line"].unique(), reverse=True)  
+        FDR_THRESHOLD = 0.1 
         chosen_thresholds = [
             {
                 "CTRL Bound Local SHAP Threshold": 0.05, 
                 "dPSI Threshold": 0, 
-                "FDR Threshold": 0.05
+                "FDR Threshold": FDR_THRESHOLD
             }, 
             {
                 "CTRL Bound Local SHAP Threshold": 0.1, 
                 "dPSI Threshold": 0,   
-                "FDR Threshold": 0.05
+                "FDR Threshold": FDR_THRESHOLD
             }, 
             {
                 "CTRL Bound Local SHAP Threshold": 0.2, 
                 "dPSI Threshold": 0,   
-                "FDR Threshold": 0.05
+                "FDR Threshold": FDR_THRESHOLD
             }
         ]
         
@@ -10164,7 +10164,7 @@ class FirstOrderShapInvestigator:
                 )
 
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > 0 and rMATS FDR < 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > 0 and rMATS FDR <= {FDR_THRESHOLD} used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
                         fontsize=4, y=0.97)
 
             fig.supxlabel("Odds Ratio", fontsize=12, y=0.065, x=0.53, fontweight='bold')
@@ -10181,35 +10181,37 @@ class FirstOrderShapInvestigator:
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
 
-        DELTA_LOCAL_SHAP_SYMBOL = "CTRL Bound Local SHAP"
+        DELTA_LOCAL_SHAP_SYMBOL = "Local SHAP"
         DPSI_SYMBOL = self.latex_symbols["Differential Symbols"]["dPSI"]
 
-        cell_lines = sorted(results_df["Cell Line"].unique(), reverse=True)  
+        CHOSEN_DPSI_THRESHOLD = 0
+        CHOSEN_FDR_THRESHOLD = 0.1
+
         chosen_thresholds = [
             {
                 "CTRL Bound Local SHAP Threshold": 0.05, 
-                "dPSI Threshold": 0, 
-                "FDR Threshold": 0.05
+                "dPSI Threshold": CHOSEN_DPSI_THRESHOLD, 
+                "FDR Threshold": CHOSEN_FDR_THRESHOLD
             }, 
             {
                 "CTRL Bound Local SHAP Threshold": 0.1, 
-                "dPSI Threshold": 0,   
-                "FDR Threshold": 0.05
+                "dPSI Threshold": CHOSEN_DPSI_THRESHOLD,
+                "FDR Threshold": CHOSEN_FDR_THRESHOLD
             }, 
             {
                 "CTRL Bound Local SHAP Threshold": 0.2, 
-                "dPSI Threshold": 0,   
-                "FDR Threshold": 0.05
+                "dPSI Threshold": CHOSEN_DPSI_THRESHOLD,
+                "FDR Threshold": CHOSEN_FDR_THRESHOLD
             }
         ]
         
         with plt.style.context("../../paper.mplstyle"):
             # Create figure with 2 rows (one per cell line)
-            fig, axes = plt.subplots(2, 1, figsize=(4,3.8), dpi=300, sharex=True, sharey=True)
+            fig, axes = plt.subplots(2, 1, figsize=(4,3.8), dpi=150, sharex=True, sharey=True)
 
             colors = {
-                "K562": "#1B95DC", 
-                "HepG2": "#E8AB26"
+                "K562": "#91d1c2", 
+                "HepG2": "#8491b4"
             }
 
             for row_idx, cell_line in enumerate(reversed(self.cell_lines)):
@@ -10250,11 +10252,13 @@ class FirstOrderShapInvestigator:
                     labelpad=5
                 )
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > 0 and rMATS FDR < 0.05 used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
-                        fontsize=4, y=0.97)
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
+                        fontsize=4, y=0.98)
+            
+            fig.text(0.27, .83, '"Test" Data', ha='left', fontsize=11)
 
             fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
-            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | >", fontsize=12, x=0.04, y=0.52, fontweight='bold')
+            fig.supylabel(f"{DELTA_LOCAL_SHAP_SYMBOL} Threshold", fontsize=12, x=0.04, y=0.51, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_summary"]["mcc"], dpi=1000, bbox_inches='tight')
