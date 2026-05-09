@@ -10217,7 +10217,7 @@ class FirstOrderShapInvestigator:
                 "HepG2": "#8491b4"
             }
 
-            for row_idx, cell_line in enumerate(reversed(self.cell_lines)):
+            for row_idx, cell_line in enumerate(self.cell_lines):
                 ax = axes[row_idx]
                 
                 mcc = []
