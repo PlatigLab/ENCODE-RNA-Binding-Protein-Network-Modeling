@@ -3497,7 +3497,7 @@ class SecondOrderShapNetworkAnalyzer:
         
         colors = {
             "HepG2": "#f39b7f", 
-            "K562": "#4dbbd5"
+            "K562": "#f39b7f"
         }
 
         x_axis_tick_fontsize = 12 if len(cell_lines) == 2 else 10.5
@@ -3584,7 +3584,7 @@ class SecondOrderShapNetworkAnalyzer:
                 )
 
                 ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
-                ax_bottom.set_ylabel("Avg. Interaction/Avg. SHAP", fontsize=16, labelpad=0)
+                ax_bottom.set_ylabel("Avg. SHAP (indiv./inter.)", fontsize=16, labelpad=0)
                 ax_bottom.set_title("")
                 ax_bottom.set_xlabel("SHAP Features", fontsize=18)
                 ax_bottom.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
