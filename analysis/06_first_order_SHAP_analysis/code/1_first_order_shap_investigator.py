@@ -1258,211 +1258,214 @@ class FirstOrderShapInvestigator:
             plt.savefig(self.FIGURES["global_shap_matching_features_scatter"][mode], dpi=600, bbox_inches='tight')
             plt.show()
 
-            # Alphabetical Glossary Global SHAP Heatmap (transposed: RBPs as rows, positions as columns)
-            hepg2_df = global_SHAP["HepG2"].copy()
-            k562_df = global_SHAP["K562"].copy()
 
-            # Get union of RBPs profiled in both cell lines and sort alphabetically
-            hepg2_rbps = set(hepg2_df.columns)
-            k562_rbps = set(k562_df.columns)
-            union_rbps = sorted(hepg2_rbps.union(k562_rbps))
+    def plot_alphabetical_glossary_heatmaps_for_signed_bound_mean_shap(self,):
+        mode = "Signed-Local-SHAP-Mean-Bound-Only"
+        prefix = mode.replace('-', ' ')
+        binding_unique = "Unique-Binding"
+        
+        global_SHAP = self.calculate_specialized_global_SHAP(mode=mode, condition=None, underlying_data = binding_unique)
+        
+        # Alphabetical Glossary Global SHAP Heatmap (transposed: RBPs as rows, positions as columns)
+        hepg2_df = global_SHAP["HepG2"].copy()
+        k562_df = global_SHAP["K562"].copy()
 
-            positions = sorted(set(hepg2_df.index).union(set(k562_df.index)))
+        # Get union of RBPs profiled in both cell lines and sort alphabetically
+        hepg2_rbps = set(hepg2_df.columns)
+        k562_rbps = set(k562_df.columns)
 
-            # Prepare heatmap data and null type for each cell line using iteration
-            heatmaps = {}
-            null_types = {}
-            dfs = {"HepG2": hepg2_df, "K562": k562_df}
+        union_rbps = sorted(hepg2_rbps.union(k562_rbps))
+        positions = sorted(set(hepg2_df.index).union(set(k562_df.index)))
 
-            for cell_line, df in dfs.items():
-                # Transpose: RBPs as rows, positions as columns
-                heatmap = pd.DataFrame(np.nan, index=union_rbps, columns=positions)
-                null_type = pd.DataFrame("not-profiled", index=union_rbps, columns=positions)
+        # Prepare heatmap data and null type for each cell line using iteration
+        heatmaps = {}
+        null_types = {}
+        dfs = {"HepG2": hepg2_df, "K562": k562_df}
 
-                for pos in df.index:
-                    for rbp in df.columns:
-                        val = df.at[pos, rbp]
-                        heatmap.at[rbp, pos] = val
-                        null_type.at[rbp, pos] = "not-bound" if pd.isnull(val) else "value"
+        for cell_line, df in dfs.items():
+            # Transpose: RBPs as rows, positions as columns
+            heatmap = pd.DataFrame(np.nan, index=union_rbps, columns=positions)
+            null_type = pd.DataFrame("not-profiled", index=union_rbps, columns=positions)
 
-                heatmaps[cell_line] = heatmap
-                null_types[cell_line] = null_type
+            for pos in df.index:
+                for rbp in df.columns:
+                    val = df.at[pos, rbp]
+                    heatmap.at[rbp, pos] = val
+                    null_type.at[rbp, pos] = "not-bound" if pd.isnull(val) else "value"
 
-            # Predefine color scale for both cell lines
-            global_min = min(h.min().min() for h in heatmaps.values())
-            global_max = max(h.max().max() for h in heatmaps.values())
+            heatmaps[cell_line] = heatmap
+            null_types[cell_line] = null_type
 
-            for glossary_heatmap_type in ["global_SHAP_alphabetical_glossary_heatmap", "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions"]:
-                
-                if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions" and not mode.startswith("Signed-Local-SHAP-Mean"):
-                    logger.warning(f"Skipping {glossary_heatmap_type} for mode {mode} as it is only applicable for Signed-Local-SHAP-Mean modes")
-                    continue
-                
-                if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
-                    # For each cell line, keep only the top 15 highest and lowest RBPs (no nulls across all positions in both cell lines)
-                    # First, get RBPs with no nulls across all 6 positions in both cell lines
-                    rbps_no_null = []                    
-                    for rbp in heatmaps["HepG2"].index:
-                        has_null = False
+        # Predefine color scale for both cell lines
+        global_min = min(h.min().min() for h in heatmaps.values())
+        global_max = max(h.max().max() for h in heatmaps.values())
 
-                        for cell_line in heatmaps:
-                            heatmap = heatmaps[cell_line]
-                            if heatmap.loc[rbp].isnull().any():
-                                has_null = True
-                                break
+        for glossary_heatmap_type in ["global_SHAP_alphabetical_glossary_heatmap", "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions"]:
+            
+            if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
+                # For each cell line, keep only the top 15 highest and lowest RBPs (no nulls across all positions in both cell lines)
+                # First, get RBPs with no nulls across all 6 positions in both cell lines
+                rbps_no_null = []                    
+                for rbp in heatmaps["HepG2"].index:
+                    has_null = False
 
-                        if not has_null:
-                            rbps_no_null.append(rbp)
-
-                    # Calculate average value for each RBP across all 12 positions (2 cell lines x 6 positions)
-                    rbp_avg = {}
-                    for rbp in rbps_no_null:
-                        vals = []
-                        for cell_line in heatmaps:
-                            vals.extend(heatmaps[cell_line].loc[rbp].values)
-
-                        assert len(vals) == 12, f"Expected 12 values for RBP {rbp}, got {len(vals)}"
-                        rbp_avg[rbp] = np.mean(vals)
-
-                    # Get top 15 highest and lowest RBPs by average value
-                    sorted_rbps = sorted(rbp_avg.items(), key=lambda x: x[1])
-                    lowest_15_rbps = [rbp for rbp, _ in sorted_rbps[:15]]
-                    highest_15_rbps = [rbp for rbp, _ in sorted_rbps[-15:]]
-                    
-                    selected_rbps = lowest_15_rbps + highest_15_rbps
-                    # For each cell line, keep only these RBPs in the heatmap and drop any rows with NaN values
                     for cell_line in heatmaps:
                         heatmap = heatmaps[cell_line]
-                        # Subset to selected RBPs and ensure the order matches selected_rbps
-                        new_heatmap = heatmap.loc[[rbp for rbp in selected_rbps]]
-                        assert not new_heatmap.isnull().any().any(), f"NaN values found in filtered heatmap for {cell_line}"
+                        if heatmap.loc[rbp].isnull().any():
+                            has_null = True
+                            break
 
-                        heatmaps[cell_line] = new_heatmap
+                    if not has_null:
+                        rbps_no_null.append(rbp)
 
-                plot_config = {
-                    "global_SHAP_alphabetical_glossary_heatmap": {
-                        "y_size": 45, 
-                        'cbar_height': 0.4, 
-                        'cbar_bottom': 0.4, 
-                        'suptitle_y': 0.92, 
-                        'x_axis_label_y': 0.08, 
-                        'linewidth': 0.7,
-                        'annot_kws': {"size": 14, "rotation": 0},
-                        'fmt': ".3f", 
-                        'y_tick_label_size': 14,
-                    },
-                    "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions": {
-                        "y_size": 12, 
-                        'cbar_height': 0.5, 
-                        'cbar_bottom': 0.25, 
-                        'suptitle_y': 1.02, 
-                        'x_axis_label_y': -0.02, 
-                        'linewidth': 1.5,
-                        'annot_kws': None, 
-                        'fmt': None,
-                        'y_tick_label_size': 18,
-                    }
+                # Calculate average value for each RBP across all 12 positions (2 cell lines x 6 positions)
+                rbp_avg = {}
+                for rbp in rbps_no_null:
+                    vals = []
+                    for cell_line in heatmaps:
+                        vals.extend(heatmaps[cell_line].loc[rbp].values)
+
+                    assert len(vals) == 12, f"Expected 12 values for RBP {rbp}, got {len(vals)}"
+                    rbp_avg[rbp] = np.mean(vals)
+
+                # Get top 15 highest and lowest RBPs by average value
+                sorted_rbps = sorted(rbp_avg.items(), key=lambda x: x[1])
+                lowest_15_rbps = [rbp for rbp, _ in sorted_rbps[:15]]
+                highest_15_rbps = [rbp for rbp, _ in sorted_rbps[-15:]]
+                
+                selected_rbps = lowest_15_rbps + highest_15_rbps
+                # For each cell line, keep only these RBPs in the heatmap and drop any rows with NaN values
+                for cell_line in heatmaps:
+                    heatmap = heatmaps[cell_line]
+                    # Subset to selected RBPs and ensure the order matches selected_rbps
+                    new_heatmap = heatmap.loc[[rbp for rbp in selected_rbps]]
+                    assert not new_heatmap.isnull().any().any(), f"NaN values found in filtered heatmap for {cell_line}"
+
+                    heatmaps[cell_line] = new_heatmap
+
+            plot_config = {
+                "global_SHAP_alphabetical_glossary_heatmap": {
+                    "y_size": 45, 
+                    'cbar_height': 0.4, 
+                    'cbar_bottom': 0.4, 
+                    'suptitle_y': 0.92, 
+                    'x_axis_label_y': 0.08, 
+                    'linewidth': 0.7,
+                    'annot_kws': {"size": 14, "rotation": 0},
+                    'fmt': ".3f", 
+                    'y_tick_label_size': 14,
+                },
+                "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions": {
+                    "y_size": 12, 
+                    'cbar_height': 0.5, 
+                    'cbar_bottom': 0.25, 
+                    'suptitle_y': 1.02, 
+                    'x_axis_label_y': -0.02, 
+                    'linewidth': 1.5,
+                    'annot_kws': None, 
+                    'fmt': None,
+                    'y_tick_label_size': 18,
                 }
+            }
 
-                with plt.style.context("../../paper.mplstyle"):
+            with plt.style.context("../../paper.mplstyle"):
 
-                    # Plot both cell lines in one figure with a single shared colorbar axis (side by side)
-                    fig, axes = plt.subplots(
-                        1, 2, figsize=(18, plot_config[glossary_heatmap_type]['y_size']), dpi=300, sharex=True, sharey=True,
-                        gridspec_kw={'wspace': 0.1}  # Increase space between columns
-                    )
-                    # Make colorbar wider and move further right
-                    cbar_ax = fig.add_axes([0.93, plot_config[glossary_heatmap_type]['cbar_bottom'], 0.025, plot_config[glossary_heatmap_type]['cbar_height']]) 
-                    # Move null type legend further right to avoid overlap
-                    legend_ax = fig.add_axes([1.05, 0.23, 0.04, 0.2])  # Further right
+                # Plot both cell lines in one figure with a single shared colorbar axis (side by side)
+                fig, axes = plt.subplots(
+                    1, 2, figsize=(18, plot_config[glossary_heatmap_type]['y_size']), dpi=100, sharex=True, sharey=True,
+                    gridspec_kw={'wspace': 0.1}  # Increase space between columns
+                )
+                # Make colorbar wider and move further right
+                cbar_ax = fig.add_axes([0.97, plot_config[glossary_heatmap_type]['cbar_bottom'], 0.025, plot_config[glossary_heatmap_type]['cbar_height']]) 
+                # Move null type legend further right to avoid overlap
+                legend_ax = fig.add_axes([1.0, 0.23, 0.04, 0.2])  # Further right
 
-                    for idx, cell_line in enumerate(["HepG2", "K562"]):
-                        heatmap = heatmaps[cell_line]
-                        null_type = null_types[cell_line]
+                for idx, cell_line in enumerate(["HepG2", "K562"]):
+                    heatmap = heatmaps[cell_line]
+                    null_type = null_types[cell_line]
 
-                        mask = heatmap.isnull()
-                        annot = heatmap.round(3) if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else None
+                    mask = heatmap.isnull() | (heatmap == 0)
+                    annot = heatmap.round(3) if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else None
 
-                        cmap = "bwr" if mode.startswith("Signed-Local-SHAP-Mean") else "Blues"
-                        center = 0 if mode.startswith("Signed-Local-SHAP-Mean") else None
+                    cmap = "bwr"  
+                    center = 0 
 
-                        sns.heatmap(
-                            heatmap,
-                            ax=axes[idx],
-                            cmap=cmap,
-                            center=center,
-                            linewidths=plot_config[glossary_heatmap_type]['linewidth'],  # Thicker border around each cell
-                            linecolor="black",
-                            annot=annot,
-                            fmt=plot_config[glossary_heatmap_type]['fmt'],
-                            annot_kws=plot_config[glossary_heatmap_type]['annot_kws'],
-                            mask=mask,
-                            cbar=(idx == 0),  # Only add colorbar for the first plot
-                            cbar_ax=(cbar_ax if idx == 0 else None),
-                            cbar_kws={"shrink": 1, "aspect": 30, "pad": 0.02},  # Wider colorbar
-                            vmin=global_min,
-                            vmax=global_max,
-                        )
-
-                        if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
-                            # Overlay null markers
-                            for i, rbp in enumerate(union_rbps):
-                                for j, pos in enumerate(positions):
-                                    if mask.at[rbp, pos]:
-                                        null_kind = null_type.at[rbp, pos]
-                                        color = "#FF991C"
-                                        if null_kind == "not-bound":
-                                            # Circle marker for "not bound"
-                                            axes[idx].scatter(j + 0.5, i + 0.5, marker="D", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
-                                        elif null_kind == "not-profiled":
-                                            # Lowercase x marker
-                                            axes[idx].scatter(j + 0.5, i + 0.5, marker="X", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
-
-                        axes[idx].set_title(f"{cell_line}", fontsize=50, pad=20)  # Smaller title font
-                        axes[idx].set_xlabel("")
-                        axes[idx].set_ylabel("")
-                        axes[idx].tick_params(axis='y', labelsize=plot_config[glossary_heatmap_type]['y_tick_label_size'])  # Adjust y-axis tick label size
-                        axes[idx].tick_params(axis='x', labelsize=45)  # Larger x-axis tick labels
-
-                    cbar_title_fmtd = self.latex_symbols[binding_unique][mode].replace(". ", ".\n")
-                    cbar_ax.set_title(cbar_title_fmtd, fontsize=50, pad=20, loc="left")
-                    cbar_ax.tick_params(labelsize=40)
-
-                    fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
-
-                    y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
-
-                    fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
-                    plt.suptitle(
-                        f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
-                        fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
+                    sns.heatmap(
+                        heatmap,
+                        ax=axes[idx],
+                        cmap=cmap,
+                        center=center,
+                        linewidths=plot_config[glossary_heatmap_type]['linewidth'],  # Thicker border around each cell
+                        linecolor="black",
+                        annot=annot,
+                        fmt=plot_config[glossary_heatmap_type]['fmt'],
+                        annot_kws=plot_config[glossary_heatmap_type]['annot_kws'],
+                        mask=mask,
+                        cbar=(idx == 0),  # Only add colorbar for the first plot
+                        cbar_ax=(cbar_ax if idx == 0 else None),
+                        cbar_kws={"shrink": 1, "aspect": 30, "pad": 0.02},  # Wider colorbar
+                        vmin=global_min,
+                        vmax=global_max,
                     )
 
-                    # Add legend for null types before tight_layout
-                    legend_ax.axis("off")
-                    
                     if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
-                        legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
-                        if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only", "Signed-Local-SHAP-Mean-LOG_ODDS-Bound-Only"]:
-                            legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
-                        
-                        legend_ax = legend_ax.legend(
-                            title="Null Type" if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"] else "",
-                            loc="center",
-                            fontsize=40,
-                            title_fontsize=50,
-                            frameon=True,
-                            markerscale=12,
-                            edgecolor="black",
-                        )
-                        legend_ax.get_frame().set_linewidth(2)  # Thicker border for the legend box
+                        # Overlay null markers
+                        for i, rbp in enumerate(union_rbps):
+                            for j, pos in enumerate(positions):
+                                if mask.at[rbp, pos]:
+                                    null_kind = null_type.at[rbp, pos]
+                                    color = "#FF991C"
+                                    if null_kind == "not-bound":
+                                        # Circle marker for "not bound"
+                                        axes[idx].scatter(j + 0.5, i + 0.5, marker="D", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
+                                    elif null_kind == "not-profiled":
+                                        # Lowercase x marker
+                                        axes[idx].scatter(j + 0.5, i + 0.5, marker="X", s=60, color=color, edgecolor="black", linewidths=0.75, zorder=10)
 
-                    plt.tight_layout(rect=[0, 0, 0.89, 1])  # Call after legend, leave space for legend/colorbar
+                    axes[idx].set_title(f"{cell_line}", fontsize=50, pad=20)  # Smaller title font
+                    axes[idx].set_xlabel("")
+                    axes[idx].set_ylabel("")
+                    axes[idx].tick_params(axis='y', labelsize=plot_config[glossary_heatmap_type]['y_tick_label_size'])  # Adjust y-axis tick label size
+                    axes[idx].tick_params(axis='x', labelsize=45)  # Larger x-axis tick labels
 
-                    plt.savefig(self.FIGURES[glossary_heatmap_type][mode], dpi=600, bbox_inches='tight')
-                    plt.show()
+                cbar_title_fmtd = self.latex_symbols[binding_unique][mode].replace(". ", ".\n")
+                cbar_ax.set_title(cbar_title_fmtd, fontsize=50, pad=20, loc="center")
+                cbar_ax.tick_params(labelsize=45)
 
-    
+                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
+
+                y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
+
+                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
+                plt.suptitle(
+                    f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
+                    fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
+                )
+
+                # Add legend for null types before tight_layout
+                legend_ax.axis("off")
+                
+                if glossary_heatmap_type != "global_SHAP_alphabetical_glossary_heatmap_top_15_both_directions":
+                    legend_ax.scatter([], [], marker="X", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Profiled")
+                    legend_ax.scatter([], [], marker="D", s=10, color="#FF991C", edgecolor="black", linewidths=1, label="Not Bound")
+                    
+                    legend_ax = legend_ax.legend(
+                        title="Null Type" if mode in ["Bound-Only", "Signed-Local-SHAP-Mean-Bound-Only"] else "",
+                        loc="center",
+                        fontsize=30,
+                        title_fontsize=40,
+                        frameon=True,
+                        markerscale=8,
+                        edgecolor="black",
+                    )
+                    legend_ax.get_frame().set_linewidth(2)  # Thicker border for the legend box
+
+                plt.tight_layout(rect=[0, 0, 0.89, 1])  # Call after legend, leave space for legend/colorbar
+
+                plt.savefig(self.FIGURES[glossary_heatmap_type][mode], dpi=600, bbox_inches='tight')
+                plt.show()
+
+
     def plot_global_SHAP_mean_vs_variance(self, mode=None, binding_unique=None):
         assert mode =="5_dfs", "mode should be '5_dfs'"
         assert binding_unique in ["All-Data", "Unique-Binding"], "binding_unique should be either 'All-Data' or 'Unique-Binding'"
