@@ -8867,7 +8867,7 @@ class FirstOrderShapInvestigator:
             INPUT_FILE,
             separator="\t",
         ).filter(
-            pl.col("rMATS FDR") <= FDR_threshold
+            pl.col("rMATS FDR") < FDR_threshold
         ).unique(
             subset=["Cell Line", "rMATS Event ID", "RBP_KD_Target"],
             maintain_order=True,
@@ -8897,7 +8897,7 @@ class FirstOrderShapInvestigator:
         assert not y.isnull().any(), "Null values found in y"
 
         if color_significant: 
-            is_significant = df["rMATS FDR"] <= FDR_CUTOFF
+            is_significant = df["rMATS FDR"] < FDR_CUTOFF
             colors = []
 
             for sig in is_significant:
@@ -8976,7 +8976,7 @@ class FirstOrderShapInvestigator:
         elif color_significant: 
             # Create a legend object for significant vs non-significant points
             legend_elements = [
-                Line2D([0], [0], marker='o', color='w', label=f'Significant\n(rMATS FDR ≤ {FDR_CUTOFF})',
+                Line2D([0], [0], marker='o', color='w', label=f'Significant\n(rMATS FDR < {FDR_CUTOFF})',
                     markerfacecolor=SIGNIFICANT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7),
                 Line2D([0], [0], marker='o', color='w', label='Not Significant',
                     markerfacecolor=DEFAULT_COLOR, markeredgecolor='black', markersize=8, alpha=0.7)
@@ -8993,13 +8993,13 @@ class FirstOrderShapInvestigator:
             assert plot_metric in ["CTRL - KD Local SHAP", "CTRL - KD Model Prediction (Probability)"], "plot_metric must be either 'CTRL - KD Local SHAP' or 'CTRL - KD Model Prediction (Probability)'"
             
             logger.info(f"FROM CACHE: Loading dPSI vs Local SHAP scatterplot data for test partition from {OUTPUT_FILE} ...")
-            logger.info(f"Plotting for test partition (FDR <= {FDR_threshold} and metric: {plot_metric})...")         
+            logger.info(f"Plotting for test partition (FDR < {FDR_threshold} and metric: {plot_metric})...")         
             
             if plot_metric == "CTRL - KD Local SHAP":
                 combined_df = pd.read_csv(OUTPUT_FILE, sep="\t", compression="gzip")
 
                 if FDR_threshold is not None:
-                    combined_df = combined_df[combined_df["rMATS FDR"] <= FDR_threshold]
+                    combined_df = combined_df[combined_df["rMATS FDR"] < FDR_threshold]
             
             elif plot_metric == "CTRL - KD Model Prediction (Probability)":
                 # Load pre-filtered data
@@ -9019,7 +9019,7 @@ class FirstOrderShapInvestigator:
                     title=cell_line
                 )
 
-            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold})", fontsize=20, y=1.02)
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR < {FDR_threshold})", fontsize=20, y=1.02)
             plt.tight_layout()
             plt.show()
 
@@ -9039,7 +9039,7 @@ class FirstOrderShapInvestigator:
                         color=colors[pos-1]
                     )
 
-            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR <= {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
+            fig.suptitle("dPSI (CTRL - KD) vs " + plot_metric + f" for\n'Test' Partition (FDR < {FDR_threshold}; Split by Position)", fontsize=20, y=1.02)
             plt.tight_layout()
             plt.show()
 
@@ -9109,7 +9109,7 @@ class FirstOrderShapInvestigator:
             for row_index, cell_line in enumerate(self.cell_lines):
                 df_cell = correlation_table[correlation_table["Cell Line"] == cell_line]
 
-                for column_index, threshold_col in enumerate(["All Data", "FDR <= 0.1", "FDR <= 0.05"]): 
+                for column_index, threshold_col in enumerate(["All Data", "FDR < 0.1", "FDR < 0.05"]): 
 
                     ax = axes[row_index, column_index]
                 
@@ -9144,8 +9144,8 @@ class FirstOrderShapInvestigator:
                     texts = []
                     for _, row in df_cell.iterrows():
                         if (
-                            (row["# rMATS Events - " + threshold_col] >= MIN_EVENTS_THRESHOLD) and
-                            (abs(row["Spearman - " + threshold_col]) >= SPEARMAN_THRESHOLD)
+                            (row["# rMATS Events - " + threshold_col] > MIN_EVENTS_THRESHOLD) and
+                            (abs(row["Spearman - " + threshold_col]) > SPEARMAN_THRESHOLD)
                         ):
                             texts.append(
                                 ax.text(
@@ -9188,8 +9188,8 @@ class FirstOrderShapInvestigator:
 
                     thresholds = [
                         (1.0, "All Data"),
-                        (0.1, "FDR <= 0.1"),
-                        (0.05, "FDR <= 0.05"),
+                        (0.1, "FDR < 0.1"),
+                        (0.05, "FDR < 0.05"),
                     ]
 
                     for thr, label in thresholds:
@@ -9197,7 +9197,7 @@ class FirstOrderShapInvestigator:
                         if thr == 1.0:
                             df_thr = df_feat
                         else:
-                            df_thr = df_feat[df_feat["rMATS FDR"] <= thr]
+                            df_thr = df_feat[df_feat["rMATS FDR"] < thr]
 
                         # Model delta-prediction rows for this threshold
                         dpred_thr = self.get_delta_prediction_data(FDR_threshold=thr).to_pandas()
@@ -9317,14 +9317,14 @@ class FirstOrderShapInvestigator:
                     
                     # Assign significance status
                     df_cell["Significance"] = np.where(
-                        df_cell["rMATS FDR"] <= cutoff, f"Significant (rMATS FDR≤{cutoff})", "Not Significant"
+                        df_cell["rMATS FDR"] < cutoff, f"Significant (rMATS FDR<{cutoff})", "Not Significant"
                     )
 
                     # Only keep rows with |dPSI| > dpsi_threshold and drop NaN dPSI Sign
                     df_cell = df_cell[~df_cell["dPSI Sign"].isna()]
 
-                    hue_order = [f"Significant (rMATS FDR≤{cutoff})", "Not Significant"]  # switched order
-                    palette = {f"Significant (rMATS FDR≤{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
+                    hue_order = [f"Significant (rMATS FDR<{cutoff})", "Not Significant"]  # switched order
+                    palette = {f"Significant (rMATS FDR<{cutoff})": violin_colors["Significant"], "Not Significant": violin_colors["Not Significant"]}
 
                     sns.violinplot(
                         data=df_cell,
@@ -9354,7 +9354,7 @@ class FirstOrderShapInvestigator:
                         subset = df_cell[df_cell["dPSI Sign"] == dpsi_sign]
 
                         group1 = subset[subset["Significance"] == "Not Significant"]["CTRL - KD Local SHAP"]
-                        group2 = subset[subset["Significance"] == f"Significant (rMATS FDR≤{cutoff})"]["CTRL - KD Local SHAP"]
+                        group2 = subset[subset["Significance"] == f"Significant (rMATS FDR<{cutoff})"]["CTRL - KD Local SHAP"]
 
                         xpos = dpsi_sign_order.index(dpsi_sign)
                         ymax = subset["CTRL - KD Local SHAP"].max()
@@ -9420,7 +9420,7 @@ class FirstOrderShapInvestigator:
                 fig.supylabel(DELTA_LOCAL_SHAP_SYMBOL, fontsize=20, x=0.01)
                 # Custom legend for hue and y=0 line
                 handles = [
-                    Patch(facecolor=palette[f"Significant (rMATS FDR≤{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR ≤ {cutoff})"),
+                    Patch(facecolor=palette[f"Significant (rMATS FDR<{cutoff})"], edgecolor="black", label=f"Significant (rMATS FDR < {cutoff})"),
                     Patch(facecolor=palette["Not Significant"], edgecolor="black", label="Not Significant"),
                     Line2D([0], [0], color=line_color, linestyle="--", linewidth=2, label=f"{DELTA_LOCAL_SHAP_SYMBOL} = 0"),
                 ]
@@ -9438,7 +9438,7 @@ class FirstOrderShapInvestigator:
                 suffix = "(CANDIDATE FEATURES)" if only_candidate_features else ""
 
                 fig.suptitle(
-                    f"NOTE 1: rMATS FDR <= {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
+                    f"NOTE 1: rMATS FDR < {cutoff}; dPSI Thresh. for Pos./Neg. = {dpsi_threshold}\n{additional_note}\n\n{DELTA_LOCAL_SHAP_SYMBOL} by dPSI Significance/Direction {suffix}",
                     fontsize=18, y=1.01
                 )
 
@@ -9466,7 +9466,7 @@ class FirstOrderShapInvestigator:
         for label, cell_line_candidates in final_candidate_sets.items():
         
             if label == "'Test' Correlations":
-                prefix = f"NOTE 1: Candidates from 'Test' w/ (Spearman - All Data >= {SPEARMAN_THRESHOLD} &\n# Events >= {MIN_EVENTS_THRESHOLD})"
+                prefix = f"NOTE 1: Candidates from 'Test' w/ (Spearman - All Data > {SPEARMAN_THRESHOLD} &\n# Events > {MIN_EVENTS_THRESHOLD})"
             elif "Fisher's Exact Test" in label:
                 prefix = f"NOTE 1: Candidates from Fisher's (Test, Train, Val)\nw/ Fisher's FDR < {FISHERS_FDR} & Odds Ratio > 1"
             else: 
@@ -9733,9 +9733,9 @@ class FirstOrderShapInvestigator:
                         for ax, cell_line in zip(axes, self.cell_lines):
                             sub = df[
                                 (df["Cell Line"] == cell_line) &
-                                (df["rMATS FDR"] <= fdr_thr) &
-                                (df["dPSI"].abs() >= dpsi_thr) &
-                                (df["Bound Local SHAP"].abs() >= delta_shap_thr)
+                                (df["rMATS FDR"] < fdr_thr) &
+                                (df["dPSI"].abs() > dpsi_thr) &
+                                (df["Bound Local SHAP"].abs() > delta_shap_thr)
                             ].copy(deep=True)
 
                             # Skip if no rows after filtering
@@ -9753,12 +9753,12 @@ class FirstOrderShapInvestigator:
                                 "percentages": pct_df
                             }
 
-                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|≥{dpsi_thr}, |ΔSHAP|≥{delta_shap_thr}, FDR≤{fdr_thr}")
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>{dpsi_thr}, |ΔSHAP|>{delta_shap_thr}, FDR<{fdr_thr}")
                             display(pct_df)
 
                         fig.suptitle(
                             f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
-                            f"|{DPSI_SYMBOL}|≥{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|≥{delta_shap_thr}, rMATS FDR≤{fdr_thr}",
+                            f"|{DPSI_SYMBOL}|>{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>{delta_shap_thr}, rMATS FDR<{fdr_thr}",
                             fontsize=10,
                             y=0.94
                         )
@@ -9867,9 +9867,9 @@ class FirstOrderShapInvestigator:
                                 # Filter data for this cell line and thresholds
                                 sub = df[
                                         (df["Cell Line"] == cell_line) &
-                                        (df["rMATS FDR"] <= fdr_thr) &
-                                        (df["dPSI"].abs() >= dpsi_thr) &
-                                        (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
+                                        (df["rMATS FDR"] < fdr_thr) &
+                                        (df["dPSI"].abs() > dpsi_thr) &
+                                        (df["CTRL - KD Model Prediction (Probability)"].abs() > delta_thr)
                                     ].copy(deep=True)
                                 
                                 # Get confusion matrix
@@ -9889,14 +9889,14 @@ class FirstOrderShapInvestigator:
                                 y_vals.append(val)
 
                             # Plot line and points with reduced thickness/size and black borders
-                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f"≥{delta_thr}", linewidth=0.6)
+                            ax.plot(fdr_labels, y_vals, marker='o', color=delta_shap_colors[delta_idx], label=f">{delta_thr}", linewidth=0.6)
                             ax.scatter(fdr_labels, y_vals, color=delta_shap_colors[delta_idx], s=18, edgecolor='black', linewidths=0.5, zorder=3)
 
                         # Axis labels and title
                         if row_idx == 0:
                             ax.set_title(element_labels[element], fontsize=13)
                         if col_idx == 0:
-                            ax.set_ylabel(f"≥ {dpsi_thr}", fontsize=16, color = "#FF8C00")
+                            ax.set_ylabel(f"> {dpsi_thr}", fontsize=16, color = "#FF8C00")
 
                         ax.set_xticks(fdr_labels)
                         ax.set_xticklabels(fdr_labels)
@@ -10024,7 +10024,7 @@ class FirstOrderShapInvestigator:
                         label.set_fontweight("bold")
                     
                     if row_idx == 0:
-                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥ {delta_shap_thr}", fontsize=14, pad = 10, fontweight='bold')
+                        ax.set_title(f"| {DELTA_LOCAL_SHAP_SYMBOL} | > {delta_shap_thr}", fontsize=14, pad = 10, fontweight='bold')
 
                     if col_idx == 0:
                         ax.set_ylabel(f"{cell_line}", fontsize=24, color="green", labelpad=30, fontstyle='italic', bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="black", linewidth=1),)
@@ -10164,11 +10164,11 @@ class FirstOrderShapInvestigator:
                 )
 
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > 0 and rMATS FDR < 0.05 used for these bars\n\nOdds Ratios for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
                         fontsize=4, y=0.97)
 
             fig.supxlabel("Odds Ratio", fontsize=12, y=0.065, x=0.53, fontweight='bold')
-            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.52, fontweight='bold')
+            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | >", fontsize=12, x=0.04, y=0.52, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_summary"]["odds_ratios"], dpi=1000, bbox_inches='tight')
@@ -10250,11 +10250,11 @@ class FirstOrderShapInvestigator:
                     labelpad=5
                 )
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= 0 and rMATS FDR <= 0.05 used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold", 
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > 0 and rMATS FDR < 0.05 used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
                         fontsize=4, y=0.97)
 
             fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
-            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | ≥", fontsize=12, x=0.04, y=0.52, fontweight='bold')
+            fig.supylabel(f"| {DELTA_LOCAL_SHAP_SYMBOL} | >", fontsize=12, x=0.04, y=0.52, fontweight='bold')
 
             plt.tight_layout(h_pad=1)
             plt.savefig(self.FIGURES["dpsi_vs_local_SHAP_summary"]["mcc"], dpi=1000, bbox_inches='tight')
