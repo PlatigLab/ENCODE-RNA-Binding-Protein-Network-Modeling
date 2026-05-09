@@ -10381,7 +10381,7 @@ class FirstOrderShapInvestigator:
                     edgecolor="black",
                     linewidth=1,
                     ax=ax_left,
-                    width=0.5,
+                    width=0.4,
                 )
 
                 sns.barplot(
@@ -10394,7 +10394,7 @@ class FirstOrderShapInvestigator:
                     edgecolor="black",
                     linewidth=1,
                     ax=ax_right,
-                    width=0.5,
+                    width=0.4,
                 )
                 
                 iterate_axes = [ax_left, ax_right]
