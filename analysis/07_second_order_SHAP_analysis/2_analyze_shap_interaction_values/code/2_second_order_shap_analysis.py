@@ -1676,10 +1676,10 @@ class SecondOrderShapNetworkAnalyzer:
                 fig, axes = plt.subplots(
                     nrows= 1 if cell_line_combined else len(curve_data[plot_type].keys()),
                     ncols=2, 
-                    figsize=(22, 8) if cell_line_combined else (18, 12),
+                    figsize=(22, 8) if cell_line_combined else (18.5, 12),
                     dpi=150,
-                    sharex=True, sharey=True, 
-                    gridspec_kw={'wspace': 0.6}
+                    sharex=True, sharey=False, 
+                    gridspec_kw={'wspace': 0.65}
                 )
 
                 if cell_line_combined:
@@ -1752,7 +1752,7 @@ class SecondOrderShapNetworkAnalyzer:
                                 ax.set_xlabel("False Positive Rate", fontsize=20, fontweight='bold')
 
                             ax.set_ylabel("True Positive Rate", fontsize=20, fontweight='bold')
-                            legend_fontsize = 9 if not cell_line_combined else 14.8
+                            legend_fontsize = 9 if not cell_line_combined else 14.5
                             ax.legend(loc="lower right", fontsize=legend_fontsize, frameon=True, bbox_to_anchor=(1.47, 0.02), edgecolor='sienna')
                         else:
                             if (cell_line_combined ==False and row_idx == len(curve_data[plot_type].keys()) - 1) or (cell_line_combined and col_idx == 1):  # Only add x label to bottom row 
