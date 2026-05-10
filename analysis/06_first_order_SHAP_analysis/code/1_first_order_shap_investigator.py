@@ -7130,8 +7130,8 @@ class FirstOrderShapInvestigator:
             # .tab_header(title="Binding Sum Quantiles by Cell Line")
             .cols_label(
                 Quantile=great_tables.md("**Quantile**"), 
-                HepG2=great_tables.md("**HepG2**<br>**# Features Bound**"), 
-                K562=great_tables.md("**K562**<br>**# Features Bound**")
+                HepG2=great_tables.md("**HepG2**<br>**# Features**<br>**Bound**"), 
+                K562=great_tables.md("**K562**<br>**# Features**<br>**Bound**")
             )
             .cols_align(align='center')
             .opt_horizontal_padding(scale=2)
