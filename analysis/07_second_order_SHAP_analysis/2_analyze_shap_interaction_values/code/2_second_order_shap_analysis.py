@@ -2492,104 +2492,87 @@ class SecondOrderShapNetworkAnalyzer:
 
         # 1) Load the importance network
         graphs_by_cell_line = self.retrieve_importance_network()
+        importance_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
 
-        for cell_line in self.CONFIG["CELL_LINES"]:
-            G = graphs_by_cell_line[cell_line]['graph']
+        with plt.style.context("../../../paper.mplstyle"): 
+            fig, axes = plt.subplots(1, len(self.CONFIG["CELL_LINES"]), figsize=(10, 5.5), dpi=150)
+            axes = np.atleast_1d(axes)
 
-            # Build matrices: iterate through each pair of positions
-            avg_matrix = pd.DataFrame(
-                np.nan,
-                index=self.CONFIG["POSITIONS"],
-                columns=self.CONFIG["POSITIONS"],
-                dtype=float
-            )
-            count_matrix = pd.DataFrame(
-                0,
-                index=self.CONFIG["POSITIONS"],
-                columns=self.CONFIG["POSITIONS"],
-                dtype=int
-            )
+            for idx, cell_line in enumerate(self.CONFIG["CELL_LINES"]):
+                G = graphs_by_cell_line[cell_line]['graph']
+                ax = axes[idx]
 
-            # For each position pair, collect edge weights
-            for pos1 in self.CONFIG["POSITIONS"]:
-                for pos2 in self.CONFIG["POSITIONS"]:
-                    weights = []
-                    
-                    # Check each edge in the graph
-                    for u, v, edge_data in G.edges(data=True):
-                        _, pos_u = self.split_rbp_position(u)
-                        _, pos_v = self.split_rbp_position(v)
+                # Build matrices: iterate through each pair of positions
+                avg_matrix = pd.DataFrame(
+                    np.nan,
+                    index=self.CONFIG["POSITIONS"],
+                    columns=self.CONFIG["POSITIONS"],
+                    dtype=float
+                )
+                count_matrix = pd.DataFrame(
+                    0,
+                    index=self.CONFIG["POSITIONS"],
+                    columns=self.CONFIG["POSITIONS"],
+                    dtype=int
+                )
+
+                # For each position pair, collect edge weights
+                for pos1 in self.CONFIG["POSITIONS"]:
+                    for pos2 in self.CONFIG["POSITIONS"]:
+                        weights = []
                         
-                        # Include edge if it connects pos1 and pos2
-                        if (pos_u == pos1 and pos_v == pos2) or (pos_u == pos2 and pos_v == pos1):
-                            weights.append(float(edge_data['weight']))
-                    
-                    avg_matrix.loc[pos1, pos2] = float(np.mean(weights))
-                    count_matrix.loc[pos1, pos2] = len(weights)
-
-            # Assert no nulls in avg_matrix and no 0 values in count_matrix
-            assert not pd.isnull(avg_matrix.values).any(), "Null values found in avg_matrix"
-            assert not (count_matrix.values == 0).any(), "Zero values found in count_matrix"
-            # Assert that both matrices are symmetric
-            assert np.allclose(avg_matrix.values, avg_matrix.values.T, equal_nan=True), "avg_matrix is not symmetric"
-            assert np.allclose(count_matrix.values, count_matrix.values.T, equal_nan=True), "count_matrix is not symmetric"
-
-            # --- Plotting: 2 subplots side by side ---
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5.5), dpi=300)
-            importance_symbol = self.CONFIG["LATEX_SYMBOLS"][metric]
-            
-            # Mask for lower triangle + diagonal
-            mask = np.triu(np.ones_like(avg_matrix, dtype=bool), k=1)
-            
-            # --- Plot 1: avg_matrix (lower triangle + diagonal) ---
-            sns.heatmap(
-                avg_matrix,
-                ax=ax1,
-                mask=mask,
-                cmap="Blues",
-                cbar_kws={"label": f"Mean({importance_symbol})", "shrink": 0.9},
-                square=True, 
-                annot=True,
-                annot_kws={"fontsize":6},
-                fmt = ".4f", 
-            )
-            cbar1 = ax1.collections[0].colorbar
-            cbar1.ax.set_ylabel(f"Mean({importance_symbol})", rotation=0, labelpad=20, fontsize=13)
-            cbar1.ax.yaxis.set_label_coords(0.5, 1.07)
-            ax1.set_title(f"Mean(Importance Scores)", fontsize=14, y=1.01)
-        
-            # --- Plot 2: count_matrix (lower triangle + diagonal) ---
-            sns.heatmap(
-                count_matrix,
-                ax=ax2,
-                mask=mask,
-                cmap="Oranges",
-                cbar_kws={"label": "Count", "shrink": 0.9},
-                square=True, 
-                annot=True,
-                annot_kws={"fontsize":6},
-                fmt = ","
-            )
-            cbar2 = ax2.collections[0].colorbar
-            cbar2.ax.set_ylabel("#", rotation=0, labelpad=20, fontsize=13)
-            cbar2.ax.yaxis.set_label_coords(0.5, 1.07)
-            ax2.set_title("# Non-Null Interactions\n(Divisor for Average)", fontsize=14, y=.97,)
-            
-            n = avg_matrix.shape[0]
-            # Add transparent black boxes around unmasked cells
-            for row in range(n):
-                for col in range(n):
-                    if not mask[row, col]:
-                        rect = plt.Rectangle((col, row), 1, 1, fill=False, edgecolor='black', linewidth=1)
-                        rect2 = copy.deepcopy(rect)
+                        # Check each edge in the graph
+                        for u, v, edge_data in G.edges(data=True):
+                            _, pos_u = self.split_rbp_position(u)
+                            _, pos_v = self.split_rbp_position(v)
+                            
+                            # Include edge if it connects pos1 and pos2
+                            if (pos_u == pos1 and pos_v == pos2) or (pos_u == pos2 and pos_v == pos1):
+                                weights.append(float(edge_data['weight']))
                         
-                        ax1.add_patch(rect)
-                        ax2.add_patch(rect2)
+                        avg_matrix.loc[pos1, pos2] = float(np.mean(weights))
+                        count_matrix.loc[pos1, pos2] = len(weights)
 
-            for current_ax in [ax1, ax2]:
-                current_ax.set_xlabel("")
-                current_ax.set_ylabel("")
-                current_ax.tick_params(which='both', labelsize=14) 
+                # Assert no nulls in avg_matrix and no 0 values in count_matrix
+                assert not pd.isnull(avg_matrix.values).any(), "Null values found in avg_matrix"
+                assert not (count_matrix.values == 0).any(), "Zero values found in count_matrix"
+                # Assert that both matrices are symmetric
+                assert np.allclose(avg_matrix.values, avg_matrix.values.T, equal_nan=True), "avg_matrix is not symmetric"
+                assert np.allclose(count_matrix.values, count_matrix.values.T, equal_nan=True), "count_matrix is not symmetric"
+
+                # Mask for lower triangle + diagonal
+                mask = np.triu(np.ones_like(avg_matrix, dtype=bool), k=1)
+                
+                # --- Plot: avg_matrix (lower triangle + diagonal) ---
+                sns.heatmap(
+                    avg_matrix,
+                    ax=ax,
+                    mask=mask,
+                    cmap="Blues",
+                    cbar_kws={"shrink": 0.75},
+                    square=True, 
+                    annot=True,
+                    annot_kws={"fontsize":9},
+                    fmt = ".3f", 
+                )
+                cbar = ax.collections[0].colorbar
+                cbar.ax.set_ylabel(f"Mean\n({importance_symbol})", rotation=0, fontsize=11)
+                cbar.ax.yaxis.set_label_coords(0.5, 1.13)
+                cbar.ax.tick_params(labelsize=10)
+
+                ax.set_title(f"{cell_line}", fontsize=16, y=1.01, fontweight='bold')
+                
+                n = avg_matrix.shape[0]
+                # Add transparent black boxes around unmasked cells
+                for row in range(n):
+                    for col in range(n):
+                        if not mask[row, col]:
+                            rect = plt.Rectangle((col, row), 1, 1, fill=False, edgecolor='black', linewidth=1)
+                            ax.add_patch(rect)
+
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(which='both', labelsize=14) 
 
             plot_notes = (
                 "NOTE 1: Main effects excluded; INTER-RBP && INTRA-RBP interactions included\n"
@@ -2599,15 +2582,20 @@ class SecondOrderShapNetworkAnalyzer:
             )
 
             fig.suptitle(
-                f"{plot_notes}{cell_line}: Average of {importance_symbol} (Importance Scores) Between Positions\n",
+                f"{plot_notes}Average of {importance_symbol} (Importance Scores) Between Positions\n",
                 fontsize=10,
-                y=1, 
+                y=.94,
                 color='darkgreen'
             )
-            fig.supxlabel("Position", fontsize=16, fontweight='bold', x=0.5, y=-0.03, ha='center')
-            fig.supylabel("Position", fontsize=16, fontweight='bold', x=0.03)
+            fig.supxlabel("Position", fontsize=16, fontweight='bold', x=0.49, y=0.06, ha='center')
+            fig.supylabel("Position", fontsize=16, fontweight='bold', x=0.03, y=0.45, ha='center', )
 
             plt.tight_layout()
+            plt.savefig(
+                self.CONFIG["FIGURES"]["interaction_importance_between_all_positions"], 
+                dpi=600, 
+                bbox_inches='tight'
+            )
             plt.show()
 
 

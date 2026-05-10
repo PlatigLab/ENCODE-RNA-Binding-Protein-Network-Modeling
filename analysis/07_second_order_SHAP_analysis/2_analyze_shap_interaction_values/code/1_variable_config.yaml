@@ -16,6 +16,7 @@ FIGURES:
     pr_roc_curves_dir: '../outputs/figures/roc_pr_curves/'
     actual_psi_by_binding_dir: "../outputs/figures/actual_PSI_by_binding/"
     cell_line_interaction_sign_similarity: "../outputs/figures/learned_interaction_cell_line_sign_similarity/learned_interaction_cell_line_sign_similarity.pdf"
+    interaction_importance_between_all_positions: "../outputs/figures/importance_between_positions/importance_between_all_positions.pdf"
 
 # PPI Info 
 PPI_SOURCES: ["Rec-Y2H", "Street et al | IP-MS", "Street et al | IP/SEC-MS (Both)"]
