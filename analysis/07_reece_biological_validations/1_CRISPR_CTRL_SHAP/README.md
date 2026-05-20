@@ -18,13 +18,13 @@ Code to generate figure 2B
 
 ## Results
 ### HepG2_individual_results
-Each Crispr RBPs' individual results after retreiving SHAP and dPSI
+Each CRISPR RBPs' individual results after retreiving SHAP and dPSI
 
 ### K562_individual_results
-Each Crispr RBPs' individual results after retreiving SHAP and dPSI
+Each CRISPR RBPs' individual results after retreiving SHAP and dPSI
 
 ## HepG2 & K562
-All code to do the Crispr RBP analysis and the precomputed rMATS files
+All code to do the CRISPR RBP analysis and the precomputed rMATS files
 
 
 ### how to use pipeline
@@ -32,8 +32,8 @@ All code to do the Crispr RBP analysis and the precomputed rMATS files
 1. Pre-process the BATs
 
 - Use the preprocess_.sh to run the .py file that preprocesses the BAT
-- Edit the script to include all RBPs of interest (those with Crispr KD, eCLIP, NO sHRNA)
+- Edit the script to include all RBPs of interest (those with CRISPR KD, eCLIP, NO sHRNA)
 
 2. Use the CL_Slurm script to actually run the pipeline
 
-- It calls the Crispr_KD script and actually performs the analysis
+- It calls the CRISPR_KD script and actually performs the analysis

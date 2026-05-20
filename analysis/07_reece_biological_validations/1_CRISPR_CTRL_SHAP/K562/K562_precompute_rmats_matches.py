@@ -3,8 +3,8 @@ from pathlib import Path
 import polars as pl
 import polars.selectors as cs
 
-# --- copy helpers from K562_Crispr_KD_2.py ---
-from K562_Crispr_KD import get_path, load_rmats
+# --- copy helpers from K562_CRISPR_KD_2.py ---
+from K562_CRISPR_KD import get_path, load_rmats
 
 RBPS = ["NIPBL","SAFB","NOLC1","ZC3H11A","EXOSC5","FXR2","RPS3","ZNF800",
     "SDAD1","SRSF7","IGF2BP1","DDX42","MORC2","RYBP","DDX21","APEX1",

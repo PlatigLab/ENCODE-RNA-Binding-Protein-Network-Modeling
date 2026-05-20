@@ -143,11 +143,11 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
     # rename column
     RBP_KD_matches_BAT = RBP_KD_matches_BAT.rename(
-        {"IncLevelDifference": "Crispr rMATS dPSI"}
+        {"IncLevelDifference": "CRISPR rMATS dPSI"}
     )
 
     RBP_KD_matches_BAT = RBP_KD_matches_BAT.rename(
-        {"FDR": "Crispr rMATS FDR"}
+        {"FDR": "CRISPR rMATS FDR"}
     )
 
 
@@ -174,18 +174,18 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
     print(unique_ctrl_rows.shape)
 
     # Keep only binding cols, index, and row type, and dPSI, SHAP
-    ctrl_crispr_bat = unique_ctrl_rows.select(
+    ctrl_CRISPR_bat = unique_ctrl_rows.select(
         "index",
-        "Crispr rMATS dPSI",
-        "Crispr rMATS FDR",
+        "CRISPR rMATS dPSI",
+        "CRISPR rMATS FDR",
         cs.ends_with("_binding"),
         cs.ends_with("_shap")
     )
 
     final = (
-        ctrl_crispr_bat
+        ctrl_CRISPR_bat
         .with_columns([
-            (pl.col("Crispr rMATS dPSI") * -1).alias("Crispr rMATS dPSI"),
+            (pl.col("CRISPR rMATS dPSI") * -1).alias("CRISPR rMATS dPSI"),
             pl.lit(cell_line).alias("cell_line"),
             pl.lit(rbp).alias("rMATS RBP")
         ])
@@ -204,10 +204,10 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
 # Function to make table with CTRL SHAP, along with dPSI and FDR from rMATS
 
-def make_table(custom_crispr_bat: pl.DataFrame, rbp: str):
+def make_table(custom_CRISPR_bat: pl.DataFrame, rbp: str):
 
-    cell_line = custom_crispr_bat.select(pl.col("cell_line").first()).item()
-    bp_for = custom_crispr_bat.select(pl.col("rMATS RBP").first()).item()
+    cell_line = custom_CRISPR_bat.select(pl.col("cell_line").first()).item()
+    bp_for = custom_CRISPR_bat.select(pl.col("rMATS RBP").first()).item()
     print(f"DF for {bp_for} {cell_line}")
 
     dfs = []
@@ -218,18 +218,18 @@ def make_table(custom_crispr_bat: pl.DataFrame, rbp: str):
         shap_col = f"{rbp}_{position}_shap"
     
         out = (
-            custom_crispr_bat
+            custom_CRISPR_bat
             .filter(pl.col(binding_col) == 1)
             .select([
                 "index",
                 shap_col,
-                "Crispr rMATS dPSI",
-                "Crispr rMATS FDR"
+                "CRISPR rMATS dPSI",
+                "CRISPR rMATS FDR"
             ])
             .rename({
                 shap_col: "CTRL_SHAP",
-                "Crispr rMATS dPSI": "dPSI",
-                "Crispr rMATS FDR": "FDR"
+                "CRISPR rMATS dPSI": "dPSI",
+                "CRISPR rMATS FDR": "FDR"
             })
             .with_columns([
                 pl.lit(binding_col).alias("Feature"),
