@@ -15,9 +15,6 @@ _=pl.Config.set_fmt_str_lengths(10000)
 # Load data
 # -----------------------
 
-# Load in the BAT
-# Function to get path for big table
-
 def get_path(cell_line: str) -> str:
     """
     Returns the full path to the cell line data directory,
@@ -38,19 +35,15 @@ def get_path(cell_line: str) -> str:
 # Functions
 # -----------------------
 
-# Function to load rMATS, filter for read counts, and join with BAT
-
 def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
     print(f"This is for {rbp} in {cell_line} with read counts = {read_counts_threshold}")
 
-    # Read in rMATS
     rMATS_data = pl.read_csv(
         f'/project/PlatigLab/data/ENCORE2026/XGB_SHAP_CRISPR/rMATS_run/CRISPR_KD_rMATS/{rbp}-CRISPR-{cell_line}/SE.MATS.JC.txt',
         separator='\t'
     )
 
-    # Keep select columns
     rMATS_filtered = rMATS_data[
         ["FDR", "geneSymbol", "strand", "chr",
          "exonStart_0base", "exonEnd",
@@ -63,7 +56,6 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
     print(f"The shape of the rMATS file for {rbp} in {cell_line} is {rMATS_filtered.shape}")
 
-    # Filter for read counts
     rMATS_filtered = rMATS_filtered.with_columns([
         (
             pl.col("IJC_SAMPLE_1").str.split(",").list.get(0).cast(pl.Int64) + pl.col("SJC_SAMPLE_1").str.split(",").list.get(0).cast(pl.Int64)).alias("Counts_KD-1"),
@@ -75,8 +67,6 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
             pl.col("IJC_SAMPLE_2").str.split(",").list.get(1).cast(pl.Int64) + pl.col("SJC_SAMPLE_2").str.split(",").list.get(1).cast(pl.Int64)).alias("Counts_CTRL-2"),
     ])
 
-
-    # Filter for read counts according to what is specified in the function call
     rMATS_filtered = rMATS_filtered.filter(
         (
             (pl.col("Counts_KD-1") > read_counts_threshold) |
@@ -90,11 +80,10 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
     print(f"The shape of the read-counts filtered rMATS file for {rbp} in {cell_line} is {rMATS_filtered.shape}")
 
-    # Build exon string AND keep IncLevelDifference and FDR
     rMATS_events = rMATS_filtered.select([
         pl.col("ID"),
         pl.col("IncLevelDifference"),
-        pl.col("FDR"), # <-- carry these through
+        pl.col("FDR"),
         pl.when(pl.col("strand") == "+")
         .then(
             pl.concat_str([
@@ -134,30 +123,23 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
         .alias("string")
     )
 
-    # JOIN — IncLevelDifference stays matched to string
     RBP_KD_matches_BAT = BAT_extracted.join(
         rMATS_events,
         on="string",
         how="inner"
     ).drop("string")
 
-    # rename column
     RBP_KD_matches_BAT = RBP_KD_matches_BAT.rename(
         {"IncLevelDifference": "CRISPR rMATS dPSI"}
     )
-
     RBP_KD_matches_BAT = RBP_KD_matches_BAT.rename(
         {"FDR": "CRISPR rMATS FDR"}
     )
 
-
     print(f"Here is the shape of matches between {rbp} KD events and the BAT for {cell_line}:")
     print(RBP_KD_matches_BAT.shape)
 
-    # Get just control rows
     CTRL_rows = RBP_KD_matches_BAT.filter(pl.col("index").str.contains("CTRL"))
-
-    # Get only unique locations to get the binding pattern for that location
 
     unique_ctrl_rows = (
         CTRL_rows.with_columns(
@@ -173,7 +155,6 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
     print("Shape of unique ctrl rows")
     print(unique_ctrl_rows.shape)
 
-    # Keep only binding cols, index, and row type, and dPSI, SHAP
     ctrl_CRISPR_bat = unique_ctrl_rows.select(
         "index",
         "CRISPR rMATS dPSI",
@@ -195,14 +176,11 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
             pl.exclude("cell_line", "rMATS RBP")
         )
     )
-    
+
     print(f"The shape of final df for {rbp} in {cell_line} is {final.shape}")
-    
+
     return final
 
-
-
-# Function to make table with CTRL SHAP, along with dPSI and FDR from rMATS
 
 def make_table(custom_CRISPR_bat: pl.DataFrame, rbp: str):
 
@@ -213,10 +191,10 @@ def make_table(custom_CRISPR_bat: pl.DataFrame, rbp: str):
     dfs = []
 
     for position in range(1, 7):
-        
+
         binding_col = f"{rbp}_{position}_binding"
         shap_col = f"{rbp}_{position}_shap"
-    
+
         out = (
             custom_CRISPR_bat
             .filter(pl.col(binding_col) == 1)
@@ -252,7 +230,6 @@ def make_table(custom_CRISPR_bat: pl.DataFrame, rbp: str):
 
     return pl.concat(dfs)
 
-# Function to append results to a csv (or create if it doesn't exist)
 
 def write_result(df, path):
     """
@@ -260,29 +237,25 @@ def write_result(df, path):
     This makes the pipeline idempotent (safe to rerun).
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
-
     df.write_csv(path)
+
+
 # -----------------------
 # pipeline (ONE RBP)
 # -----------------------
 
-def run_pipeline_single(
-    rbp,
-    BAT,
-    cell_line,
-    read_counts_threshold,
-):
+def run_pipeline_single(rbp, BAT, cell_line, read_counts_threshold):
 
     binding_pattern = load_rmats(rbp, BAT, cell_line, read_counts_threshold)
-
     print("one", flush=True)
-    
-    final_table = make_table(binding_pattern, rbp)
 
+    final_table = make_table(binding_pattern, rbp)
     print("two", flush=True)
 
-    write_result(final_table, path=f"./HepG2_results_{rbp}.csv")
-
+    write_result(
+        final_table,
+        path=f"../Results/{cell_line}_results_{rbp}.csv"
+    )
     print(f"Finished run for {rbp} in {cell_line}")
 
 
@@ -292,18 +265,21 @@ def run_pipeline_single(
 
 if __name__ == "__main__":
 
-    rbp = sys.argv[1]
+    if len(sys.argv) < 3:
+        print("Usage: python3.11 CRISPR_KD.py <RBP> <cell_line>")
+        sys.exit(1)
 
-    precomputed_path = f"precomputed_rmats_HepG2/{rbp}_HepG2.feather"
+    rbp       = sys.argv[1]
+    cell_line = sys.argv[2]
 
-    binding_pattern = pl.read_ipc(precomputed_path)   # tiny — only the matched rows
+    precomputed_path = f"precomputed_rmats_{cell_line}/{rbp}_{cell_line}.feather"
 
-    cell_line = "HepG2"
+    binding_pattern = pl.read_ipc(precomputed_path)
 
     final_table = make_table(binding_pattern, rbp)
-    
+
     write_result(
         final_table,
-        path=f"./HepG2_results_{rbp}.csv"
+        path=f"../Results/{cell_line}_results_{rbp}.csv"
     )
-    print(f"Finished run for {rbp} in HepG2")
+    print(f"Finished run for {rbp} in {cell_line}")
