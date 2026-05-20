@@ -3,8 +3,8 @@ from pathlib import Path
 import polars as pl
 import polars.selectors as cs
 
-# --- copy your helpers from HepG2_Crispr_KD.py ---
-from HepG2_Crispr_KD import get_path, load_rmats
+# --- copy your helpers from HepG2_CRISPR_KD.py ---
+from HepG2_CRISPR_KD import get_path, load_rmats
 
 RBPS = ['SAFB', 'NOLC1', 'ZC3H11A', 'EXOSC5', 'WDR43',
         'RBM5', 'FXR2', 'DROSHA', 'STAU2', 
