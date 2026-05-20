@@ -17,6 +17,8 @@ class YogiRbpMlDataValidatorAndExonAdder:
         logger.add(sys.stderr, level="ERROR")
         logger.info(f"Creating YogiRbpMlDataValidatorAndExonAdder object for {self.cell_line}, {self.distance}, {self.data_mode}")
 
+        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
+
         self.read_gtf()
         self.read_data()
         self.check_coordinate_ordering()
@@ -144,16 +146,14 @@ class YogiRbpMlDataValidatorAndExonAdder:
 
         logger.info("Outputting data to CSV file and GZIP compressing")
 
-        OUTPUT_DIR="/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
-
         # Check that there are the same number of rows and 3 more columns compared to the original shape
         assert self.df.shape[0] == self.original_shape[0], "Number of rows has changed"
         assert self.df.shape[1] == self.original_shape[1] + 3, "Number of columns is not as expected"
         # Output the DataFrame to a CSV file
-        self.df.write_csv(f"{OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv", separator="\t", include_header=True)
+        self.df.write_csv(f"{self.OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv", separator="\t", include_header=True)
 
         # Compress the CSV file
-        os.system(f"gzip {OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv")
+        os.system(f"gzip {self.OUTPUT_DIR}/{self.cell_line}_{self.distance}_{self.data_mode}_num-peaks-no-kd.tsv")
 
         logger.success("Data outputted and compressed successfully")
 

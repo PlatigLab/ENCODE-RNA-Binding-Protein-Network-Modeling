@@ -2,7 +2,7 @@ import polars as pl
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 
-DATA_PATH = "../../../../../../../data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons/"
+DATA_PATH = "/project/PlatigLab/data/RBP_ML/5_yogi_dataset_feb_2026_GENCODE_v24_v29_matching_exons"
 OUTPUT_PATH = "../corrected_has_RBP_KD_output/"
 CELL_LINES = ["K562", "HepG2",]
 

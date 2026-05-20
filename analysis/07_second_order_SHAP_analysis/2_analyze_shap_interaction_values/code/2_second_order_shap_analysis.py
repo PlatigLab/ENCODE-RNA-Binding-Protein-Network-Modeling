@@ -4285,6 +4285,7 @@ class SecondOrderShapNetworkAnalyzer:
                 interaction_feature = interaction, 
                 cell_lines = self.CONFIG["CELL_LINES"], 
             )
+
     
     def find_instances_where_interaction_larger_than_main_effects(self): 
         

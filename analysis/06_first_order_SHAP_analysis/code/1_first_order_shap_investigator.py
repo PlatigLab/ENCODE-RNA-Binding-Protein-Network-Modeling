@@ -147,7 +147,6 @@ class FirstOrderShapInvestigator:
         "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
         "position_3_4_activating_and_others_repressing": {
             "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
-            "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
         }, 
         "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
         "dpsi_vs_local_SHAP_scatterplot_data": {
@@ -315,7 +314,6 @@ class FirstOrderShapInvestigator:
         },
         "position_3_4_activating_and_others_repressing": {
             "Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_bound_local_SHAP.png",
-            "NOT Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_NOT_bound_local_SHAP.png",
             "Average Bar Plot": "../outputs/publication_figures/middle_position_activating_others_repressing/position_3_4_activating_and_others_repressing_average_bar_plot.pdf",
         },
         "elasticnet_coefficients_heatmap": {
@@ -7921,13 +7919,12 @@ class FirstOrderShapInvestigator:
     def is_position_3_4_activating_and_others_repressing(self): 
 
         BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["Bound Local SHAP Values"]
-        NOT_BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["NOT Bound Local SHAP Values"]
 
-        if Path(BOUND_LOCAL_SHAP).exists() and Path(NOT_BOUND_LOCAL_SHAP).exists():
+        if Path(BOUND_LOCAL_SHAP).exists(): 
 
             logger.info("FROM CACHE: loading dataframes and plotting...")
             
-            for file_path, col_name in [(BOUND_LOCAL_SHAP, "Bound Local SHAP"), (NOT_BOUND_LOCAL_SHAP, "NOT Bound Local SHAP")]:
+            for file_path, col_name in [(BOUND_LOCAL_SHAP, "Bound Local SHAP")]:
                 df = pl.read_csv(file_path, separator="\t").to_pandas()
 
                 position_order = sorted(df["Position"].unique())
@@ -8293,7 +8290,6 @@ class FirstOrderShapInvestigator:
             logger.info("No cache found. Compiling dataframe with local SHAP values by binding value, per position, per cell line...")
             
             file_to_binding_value = {
-                NOT_BOUND_LOCAL_SHAP: 0,
                 BOUND_LOCAL_SHAP: 1
             }
 
@@ -8306,8 +8302,6 @@ class FirstOrderShapInvestigator:
 
                 if key == BOUND_LOCAL_SHAP:
                     col_name = "Bound Local SHAP"
-                elif key == NOT_BOUND_LOCAL_SHAP:
-                    col_name = "NOT Bound Local SHAP"
         
                 # Accumulate all cell line/position/SHAP values into a single DataFrame
                 all_rows = []
@@ -11099,11 +11093,11 @@ if __name__ == "__main__":
 
     if args.parallelize:
 
-        sbatch_prefix = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
-        sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
+        SBATCH_PREFIX = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
+        SBATCH_COMMAND = f"{SBATCH_PREFIX} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
-        logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-        subprocess.run(sbatch_command, shell=True, check=True)
+        logger.info(f"Submitting job with sbatch command:\n\n{SBATCH_COMMAND}")
+        subprocess.run(SBATCH_COMMAND, shell=True, check=True)
     
     elif args.job_type: 
 
@@ -11200,15 +11194,15 @@ if __name__ == "__main__":
 
             for bw_adjust in BW_ADJUST_VALS:
                 for levels in LEVELS_VALS:
-                    sbatch_command = (
+                    KDE_PLOT_SLURM_COMMAND = (
                         "sbatch -N2 --partition=parallel -n4 --mem=16GB --account=platiglab_paid --time=23:00:00 "
                         f"--job-name=actual_vs_pred_kde_bw{bw_adjust}_levels{levels} "
                         f"--output=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.out "
                         f"--error=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.err "
                         f"--wrap='python3.11 {__file__} --create_actual_vs_pred_kde_plots \"{bw_adjust} {levels}\"'"
                     )
-                    logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-                    subprocess.run(sbatch_command, shell=True, check=True)
+                    logger.info(f"Submitting job with sbatch command:\n\n{KDE_PLOT_SLURM_COMMAND}")
+                    subprocess.run(KDE_PLOT_SLURM_COMMAND, shell=True, check=True)
             
         else: 
 

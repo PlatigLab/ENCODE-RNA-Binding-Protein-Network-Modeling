@@ -324,7 +324,7 @@ if __name__ == "__main__":
         CPUS = 32
         MEM= 256
         PARTITION="standard"
-        ACCOUNT="platiglab_paid"
+        ACCOUNT="platiglab"
         SLURM_DIR="../outputs/SLURM_logs/"
 
         # Get all JSON config files in the directory
