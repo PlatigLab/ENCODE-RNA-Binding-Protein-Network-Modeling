@@ -139,7 +139,7 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
     print(f"Here is the shape of matches between {rbp} KD events and the BAT for {cell_line}:")
     print(RBP_KD_matches_BAT.shape)
 
-    CTRL_rows = RBP_KD_matches_BAT.filter(pl.col("index").str.contains("CTRL"))
+    CTRL_rows = RBP_KD_matches_BAT.filter(pl.col("index").str.contains("_CTRL-"))
 
     unique_ctrl_rows = (
         CTRL_rows.with_columns(
@@ -254,7 +254,7 @@ def run_pipeline_single(rbp, BAT, cell_line, read_counts_threshold):
 
     write_result(
         final_table,
-        path=f"../Results/{cell_line}_results_{rbp}.csv"
+        path=f"../Results/{cell_line}_individual_results/{cell_line}_results_{rbp}.csv"
     )
     print(f"Finished run for {rbp} in {cell_line}")
 
@@ -280,6 +280,6 @@ if __name__ == "__main__":
 
     write_result(
         final_table,
-        path=f"../Results/{cell_line}_results_{rbp}.csv"
+        path=f"../Results/{cell_line}_individual_results/{cell_line}_results_{rbp}.csv"
     )
     print(f"Finished run for {rbp} in {cell_line}")
