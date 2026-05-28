@@ -6,7 +6,7 @@
 #SBATCH --partition=standard
 #SBATCH --time=01:00:00
 #SBATCH -n 4
-#SBATCH --mem=16G
+#SBATCH --mem=32GB
 #SBATCH --array=0-51
 
 # -----------------------------------------------------------------------

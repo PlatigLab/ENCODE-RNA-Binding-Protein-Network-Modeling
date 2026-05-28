@@ -5,8 +5,8 @@
 #SBATCH --account=PlatigLab
 #SBATCH --partition=standard
 #SBATCH --time=02:00:00
-#SBATCH -n 4
-#SBATCH --mem=96G
+#SBATCH -n 20
+#SBATCH --mem=160GB
 #SBATCH --array=0-1                       # one task per cell line
 
 # Map array index → cell line

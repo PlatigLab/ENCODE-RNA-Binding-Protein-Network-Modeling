@@ -23,7 +23,6 @@ from statsmodels.stats.multitest import multipletests
 from great_tables import loc, style
 from IPython.display import display_pdf
 
-
 # CUSTOM FILE
 from waterfall_plot import waterfall
 
@@ -1430,11 +1429,11 @@ class FirstOrderShapInvestigator:
                 cbar_ax.set_title(cbar_title_fmtd, fontsize=50, pad=20, loc="center")
                 cbar_ax.tick_params(labelsize=45)
 
-                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
+                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'], fontweight="bold")
 
                 y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
 
-                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
+                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center", fontweight="bold")
                 plt.suptitle(
                     f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
                     fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
@@ -1820,8 +1819,7 @@ class FirstOrderShapInvestigator:
             cbar_ax.set_title(legend_title, fontsize=10, pad=5)
             cbar_ax.tick_params(labelsize=10)
 
-            fig.supylabel("RBP", fontsize=14, x=0.03, y=.51, fontweight="bold")
-            fig.supxlabel("Position", fontsize=14, x=0.52, y=0.04, fontweight="bold")
+            fig.supxlabel("Position", fontsize=14, x=0.5, y=0.04, fontweight="bold")
             plt.suptitle(
                 f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
                 f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
@@ -1915,16 +1913,21 @@ class FirstOrderShapInvestigator:
                     x_coord_legend =0.88
                     y_coord_legend = 1.06
 
-                elif row_idx ==1: 
-                    x_coord_legend = 0.13
-                    y_coord_legend = 0.4
+                # elif row_idx ==1: 
+                #     x_coord_legend = 0.13
+                #     y_coord_legend = 0.4
                 
-                handles = [
-                    Line2D([0], [0], marker="o", color="w", markerfacecolor=palette[k], markeredgecolor="black", markeredgewidth=0.8, markersize=5.5, label=k)
-                    for k in ["Activating", "Repressing", "Zero"]
-                ]
-                ax_strip.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=11, bbox_to_anchor=(x_coord_legend, y_coord_legend))
-                
+
+
+                if row_idx==0: 
+                    handles = [
+                        Line2D([0], [0], marker="o", color="w", markerfacecolor=palette[k], markeredgecolor="black", markeredgewidth=0.8, markersize=5.5, label=k)
+                        for k in ["Activating", "Repressing", "Zero"]
+                    ]
+                    ax_strip.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=11, bbox_to_anchor=(x_coord_legend, y_coord_legend))
+
+                else: 
+                    ax_strip.legend_.remove()  
                 ax_strip.grid(axis='y', linestyle='--', which='major', alpha=0.4, linewidth=0.5)
 
                 ax_strip.set_title(f"{cell_line}", fontsize=16, pad=15, x= 0.72)
@@ -9731,7 +9734,7 @@ class FirstOrderShapInvestigator:
                             sub = df[
                                 (df["Cell Line"] == cell_line) &
                                 (df["rMATS FDR"] <= fdr_thr) &
-                                (df["dPSI"].abs() >= dpsi_thr) &
+                                (df["dPSI"].abs() > dpsi_thr) &
                                 (df["Bound Local SHAP"].abs() >= delta_shap_thr)
                             ].copy(deep=True)
 
@@ -9750,12 +9753,12 @@ class FirstOrderShapInvestigator:
                                 "percentages": pct_df
                             }
 
-                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>={dpsi_thr}, |ΔSHAP|>={delta_shap_thr}, FDR<={fdr_thr}")
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>{dpsi_thr}, |ΔSHAP|>={delta_shap_thr}, FDR<={fdr_thr}")
                             display(pct_df)
 
                         fig.suptitle(
                             f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
-                            f"|{DPSI_SYMBOL}|>={dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>={delta_shap_thr}, rMATS FDR<={fdr_thr}",
+                            f"|{DPSI_SYMBOL}|>{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>={delta_shap_thr}, rMATS FDR<={fdr_thr}",
                             fontsize=10,
                             y=0.94
                         )
@@ -9865,7 +9868,7 @@ class FirstOrderShapInvestigator:
                                 sub = df[
                                         (df["Cell Line"] == cell_line) &
                                         (df["rMATS FDR"] <= fdr_thr) &
-                                        (df["dPSI"].abs() >= dpsi_thr) &
+                                        (df["dPSI"].abs() > dpsi_thr) &
                                         (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
                                     ].copy(deep=True)
                                 
@@ -10173,7 +10176,7 @@ class FirstOrderShapInvestigator:
 
 
     def plot_dpsi_vs_local_SHAP_mcc_as_barplot(self): 
-        logger.warning('"Test Candidate Features" are ignored and instead all features (i.e. "Test") are used\n\n')
+        logger.info('All features are used with rows only coming from "Test" data.\n\n')
 
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
@@ -10249,10 +10252,10 @@ class FirstOrderShapInvestigator:
                     labelpad=5
                 )
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
                         fontsize=4, y=0.98)
             
-            fig.text(0.27, .83, '"Test" Data', ha='left', fontsize=11)
+            fig.text(0.24, .83, 'Test Data Predictions', ha='left', fontsize=11)
 
             fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
             fig.supylabel(f"{DELTA_LOCAL_SHAP_SYMBOL} Threshold", fontsize=12, x=0.04, y=0.51, fontweight='bold')

@@ -1709,17 +1709,18 @@ class SecondOrderShapNetworkAnalyzer:
                                     data = curve_data[plot_type][cell_line_iterated][ppi_source][ppi_type]
                                     
                                     if cell_line_combined: 
-                                        prefix_label = f"{cell_line_iterated} - "
+                                        cleaned_ppi_source = ppi_source.replace("Street et al ", "").replace("IP/SEC-MS (Both)", "IP & SEC-MS")
+                                        prefix_label = f"{cell_line_iterated} - {cleaned_ppi_source}"
                                     else:
-                                        prefix_label = ""
+                                        prefix_label = f"{ppi_source} & {ppi_type}"
 
                                     if curve_type == "roc":
-                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})".replace(" | ", " "), alpha=0.8)
+                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label} (AUC={data['roc_auc']:.3f})".replace(" | ", " "), alpha=0.8)
                                     else:
                                         ax.plot(
                                             data["recall"],
                                             data["precision"],
-                                            label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]".replace(" | ", " "),
+                                            label=f"{prefix_label} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]".replace(" | ", " "),
                                             alpha=0.8
                                         )
                         
@@ -3483,10 +3484,25 @@ class SecondOrderShapNetworkAnalyzer:
         # top row -> PSI violin plots (one subplot per cell line)
         # bottom row -> SHAP averages (one subplot per cell line)
         
-        colors = {
-            "HepG2": "#f39b7f", 
-            "K562": "#f39b7f"
-        }
+        if len(cell_lines) ==2: 
+
+            # Color scheme: 3 unique colors regardless of cell line or plot type
+            color_palette = [
+                "#e64b35", 
+                "#4dbbd5", 
+                "#b09c85"
+            ]  # interaction, feature1, feature2
+
+            interaction_color = color_palette[0]
+            feature_color1 = color_palette[1]
+            feature_color2 = color_palette[2]
+
+        elif len(cell_lines) == 1:
+
+            color_palette = ["#f39b7f"] *3
+            interaction_color = color_palette[0]
+            feature_color1 = color_palette[1]
+            feature_color2 = color_palette[2]
 
         x_axis_tick_fontsize = 12 if len(cell_lines) == 2 else 10.5
         x_axis_line_spacing= 0.5 if len(cell_lines) == 2 else 1.5
@@ -3507,6 +3523,9 @@ class SecondOrderShapNetworkAnalyzer:
                 # --- Top row: violinplot (actual PSI distributions) ---
                 cell_plot_df = plot_df[plot_df["Cell Line"] == cell_line]
 
+                # Create palette for violins: 3 unique colors
+                palette = [interaction_color, feature_color1, feature_color2]
+
                 sns.violinplot(
                     data=cell_plot_df,
                     x="Binding Mode",
@@ -3516,7 +3535,7 @@ class SecondOrderShapNetworkAnalyzer:
                     density_norm='width',
                     inner=None,
                     ax=ax_top,
-                    color= colors[cell_line],
+                    palette=palette,
                 )
 
                 # Add counts and mean values above each violin
@@ -3542,7 +3561,7 @@ class SecondOrderShapNetworkAnalyzer:
 
                 ax_top.set_xticklabels(
                     [
-                        label.get_text().replace("Only", "\nOnly")
+                        label.get_text().replace("Only", "")
                         for label in ax_top.get_xticklabels()
                     ], 
                     linespacing=x_axis_line_spacing
@@ -3550,7 +3569,7 @@ class SecondOrderShapNetworkAnalyzer:
                 ax_top.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
 
                 ax_top.set_ylabel(self.CONFIG["LATEX_SYMBOLS"]["PSI"], fontsize=20, labelpad=10)
-                ax_top.set_xlabel("Binding Category", fontsize=18)
+                ax_top.set_xlabel("", fontsize=18)
 
                 ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)
                 ax_top.spines['top'].set_visible(False)
@@ -3559,22 +3578,25 @@ class SecondOrderShapNetworkAnalyzer:
                 # --- Bottom row: barplot (main + interaction SHAP values) ---
                 cell_bar_df = bar_df_bottom[bar_df_bottom["Cell Line"] == cell_line]
 
+                # Create palette for bars: 3 unique colors (interaction, feature1, feature2)
+                bar_palette = [interaction_color, feature_color1, feature_color2]
+
                 sns.barplot(
                     data=cell_bar_df,
                     x="Feature",
                     y="Value",
                     order=feature_names,
                     ax=ax_bottom,
-                    color= colors[cell_line],
+                    palette=bar_palette,
                     edgecolor='black',
                     linewidth=1,
                     width=0.4
                 )
 
                 ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
-                ax_bottom.set_ylabel("Avg. SHAP (indiv./inter.)", fontsize=16, labelpad=0)
+                ax_bottom.set_ylabel("Avg. SHAP (indiv./inter.)", fontsize=16, labelpad=0, fontweight='bold')
                 ax_bottom.set_title("")
-                ax_bottom.set_xlabel("SHAP Features", fontsize=18)
+                ax_bottom.set_xlabel("")
                 ax_bottom.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
                 ax_bottom.tick_params(axis='y', labelsize=13)
                 ax_bottom.grid(True, alpha=0.3, axis='y')
