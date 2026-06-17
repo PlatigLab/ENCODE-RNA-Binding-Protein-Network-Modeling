@@ -10255,7 +10255,7 @@ class FirstOrderShapInvestigator:
             fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
                         fontsize=4, y=0.98)
             
-            fig.text(0.24, .83, 'Test Data Predictions', ha='left', fontsize=11)
+            fig.text(0.24, .83, 'Test Data', ha='left', fontsize=13)
 
             fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
             fig.supylabel(f"{DELTA_LOCAL_SHAP_SYMBOL} Threshold", fontsize=12, x=0.04, y=0.51, fontweight='bold')
