@@ -88,3 +88,7 @@ XGBOOST_BEST_MODEL_HASHES:
 # Table to see if interaction SHAP values can be used to screen for interactions with real changes in PSI
 INTERACTION_PSI_CHANGES_SCREENING: "../outputs/interaction_psi_changes_screening/interaction_psi_changes_screening_results.tsv"
 INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING: "../outputs/interaction_psi_changes_screening/interactions_larger_than_main_effect_screening_results.tsv"
+
+SUPPLEMENTARY_TABLES: 
+    composite_shap_metric_table: "../outputs/supplementary_tables/feature_feature_interaction_shap_metric_table_with_PPI_info.tsv"
+    cleaned_cell_line_specific_interaction_greater_than_individual_effects_table: "../outputs/supplementary_tables/cell_line_specific_interactions_greater_than_individual_effects.tsv"

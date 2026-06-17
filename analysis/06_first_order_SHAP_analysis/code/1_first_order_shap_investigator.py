@@ -333,8 +333,7 @@ class FirstOrderShapInvestigator:
     }
 
     SUPPLEMENTARY_TABLES = {
-        "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_tables/unique_binding_avg_shap.tsv", 
-        "Bound-Only": "../outputs/publication_tables/unique_binding_avg_absolute_value_shap.tsv"
+        "shap_metrics_and_activity_score": "../outputs/publication_tables/individual_feature_shap_metrics_and_activity_score.tsv"
     }
 
 
@@ -4134,44 +4133,6 @@ class FirstOrderShapInvestigator:
             
             logger.success(f"Specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data} saved to {OUTPUT_FILE}")
             return specialized_global_SHAP
-
-    
-    def create_supplementary_tables_of_bound_global_shap_metrics(self): 
-        modes = {
-            "Signed-Local-SHAP-Mean-Bound-Only": "Avg. SHAP", 
-            "Bound-Only": "Avg. |SHAP|"
-        }
-        condition = None
-        underlying_data = "Unique-Binding"
-
-        for mode in modes: 
-            raw_pkl_file = self.CACHE_INFO["specialized_global_SHAP"][mode][condition][underlying_data]
-            with open(raw_pkl_file, "rb") as f:
-                specialized_global_SHAP = pickle.load(f)
-
-            long_tables = []
-            for cell_line, cell_line_df in specialized_global_SHAP.items():
-
-                position_col = cell_line_df.index.name 
-                long_df = (
-                    cell_line_df
-                    .reset_index()
-                    .melt(id_vars=position_col, var_name="RBP", value_name=modes[mode])
-                    .rename(columns={position_col: "Position"})
-                )
-                long_df["Feature"] = long_df["RBP"].astype(str) + "_" + long_df["Position"].astype(str)
-                long_df["Cell Line"] = cell_line
-                long_df = long_df[["Feature", "Cell Line", "RBP", "Position", modes[mode]]]
-                long_tables.append(long_df)
-
-            supplementary_df = pd.concat(long_tables, axis=0, ignore_index=True).sort_values(by=["Feature", "Cell Line"])
-            supplementary_df.to_csv(
-                self.SUPPLEMENTARY_TABLES[mode],
-                index=False, 
-                sep="\t", 
-            )
-
-        logger.success("Finished creating Supplementary Tables Bound Global SHAP Metrics.")
 
 
     def plot_specialized_vs_regular_global_SHAP(self, underlying_data=None):
@@ -10446,6 +10407,113 @@ class FirstOrderShapInvestigator:
             plt.show()
 
 
+
+    def make_composite_table_of_individual_feature_shap_metrics_and_activity_scores(self): 
+        logger.info("This functions pulls in results from work done by @reeceaa on calculating 'Activity' scores for RBPs.")
+        
+        signed_mean_bound_only = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+        bound_only = self.calculate_specialized_global_SHAP(
+            mode="Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+
+        shap_rows = []
+        for cell_line in self.cell_lines:
+            signed_df = signed_mean_bound_only[cell_line].copy()
+            bound_df = bound_only[cell_line].copy()
+
+            signed_long = (
+                signed_df
+                .rename_axis("position")
+                .reset_index()
+                .melt(
+                    id_vars="position",
+                    var_name="rbp",
+                    value_name="signed_mean_bound_only"
+                )
+            )
+
+            bound_long = (
+                bound_df
+                .rename_axis("position")
+                .reset_index()
+                .melt(
+                    id_vars="position",
+                    var_name="rbp",
+                    value_name="bound_only"
+                )
+            )
+
+            merged_shap = signed_long.merge(bound_long, on=["position", "rbp"], how="inner", validate="1:1")
+            merged_shap["cell_line"] = cell_line
+            merged_shap["feature"] = merged_shap["rbp"] + "_" + merged_shap["position"].astype(str) 
+
+            assert len(merged_shap) == len(bound_long) == len(signed_long)
+            
+            shap_rows.append(merged_shap)
+
+        shap_metrics_df = pd.concat(shap_rows, ignore_index=True)
+
+        activity_file = "../../07_reece_biological_validations/2_RBP_Activity/rbp_activity_heatmap.csv"
+        activity_df = pd.read_csv(activity_file)
+        activity_df.columns = [str(col).strip() for col in activity_df.columns]
+
+        lower_to_actual = {col.lower(): col for col in activity_df.columns}
+        rbp_col = lower_to_actual.get("rbp")
+        cell_line_col = lower_to_actual.get("cell line")
+
+        assert rbp_col is not None, "Could not find an 'rbp' column in rbp_activity_heatmap.csv"
+        assert cell_line_col is not None, "Could not find a 'cell line' column in rbp_activity_heatmap.csv"
+
+        position_cols = [col for col in activity_df.columns if str(col).strip() in {str(i) for i in range(1, 7)}]
+        assert len(position_cols) ==6, f"Expected to find 6 position columns (1-6) in rbp_activity_heatmap.csv, but found {len(position_cols)}: {position_cols}"
+                
+        activity_long = activity_df.melt(
+            id_vars=[rbp_col, cell_line_col],
+            value_vars=position_cols,
+            var_name="position",
+            value_name="activity_score"
+        ).rename(columns={
+            rbp_col: "rbp",
+            cell_line_col: "cell_line"
+        })
+
+        activity_long["position"] = activity_long["position"].astype(int)
+        activity_long["feature"] = activity_long["rbp"] + "_" + activity_long["position"].astype(str)
+
+        composite_df = (
+            shap_metrics_df
+            .merge(
+                activity_long[["cell_line", "feature", "activity_score"]],
+                on=["cell_line", "feature"],
+                how="left"
+            )
+            [["cell_line", "feature", "rbp", "position", "signed_mean_bound_only", "bound_only", "activity_score"]]
+            .sort_values(["cell_line", "rbp", "position"])
+            .rename(
+                columns = {
+                    "cell_line": "Cell Line",
+                    "feature": "Feature",
+                    "rbp": "RBP",
+                    "position": "Position",
+                    "signed_mean_bound_only": "Avg. SHAP", 
+                    "bound_only": "Avg. |SHAP|",
+                    "activity_score": "Activity Score"
+                }
+            )
+            .reset_index(drop=True)
+        )
+
+        OUTPUT_FILE = self.SUPPLEMENTARY_TABLES["shap_metrics_and_activity_score"]
+        composite_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+
+        logger.success(f"Saved composite table of SHAP metrics and activity scores to {OUTPUT_FILE} with {composite_df.shape[0]} rows")
+        return composite_df
 
 
 ###############################################################

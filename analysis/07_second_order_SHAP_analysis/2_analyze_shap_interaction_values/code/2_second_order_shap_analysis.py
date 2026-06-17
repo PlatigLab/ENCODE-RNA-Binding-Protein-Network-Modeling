@@ -4527,7 +4527,152 @@ class SecondOrderShapNetworkAnalyzer:
             cell_line = row["Cell Line"]
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction, cell_lines = [cell_line])
             
-               
+
+    def create_composite_shap_table(self): 
+        metric_bound_only = "Bound-Only"
+        metric_signed_bound_only = "Signed-Local-SHAP-Mean-Bound-Only"
+
+        table_bound_only = self.retrieve_shap_values_for_metric(metric=metric_bound_only)
+        table_signed_bound_only = self.retrieve_shap_values_for_metric(metric=metric_signed_bound_only)
+
+        val_col_bound_only = f"Value - {metric_bound_only}"
+        val_col_signed_bound_only = f"Value - {metric_signed_bound_only}"
+        ubp_col_bound_only = f"# UBPs - {metric_bound_only}"
+        ubp_col_signed_bound_only = f"# UBPs - {metric_signed_bound_only}"
+
+        ppi_designation_prefixes = ("Rec-Y2H", "Street et al")
+        ppi_designation_cols = [
+            col
+            for col in table_bound_only.columns
+            if col.startswith(ppi_designation_prefixes) and (col in table_signed_bound_only.columns)
+        ]
+
+        excluded_join_cols = {
+            val_col_bound_only,
+            val_col_signed_bound_only,
+            ubp_col_bound_only,
+            ubp_col_signed_bound_only,
+            *ppi_designation_cols,
+        }
+
+        join_cols = [
+            col
+            for col in table_bound_only.columns
+            if (col in table_signed_bound_only.columns) and (col not in excluded_join_cols)
+        ]
+        assert len(join_cols) == 8, "Expected 8 join columns"
+
+        n_rows_bound_only = table_bound_only.height
+        n_rows_signed_bound_only = table_signed_bound_only.height
+
+        composite_table = table_bound_only.join(
+            table_signed_bound_only,
+            on=join_cols,
+            how="inner",
+            validate="1:1",
+        )
+
+        n_rows_composite = composite_table.height
+        assert n_rows_bound_only == n_rows_signed_bound_only == n_rows_composite, (
+            "Row-count mismatch between original metric tables and final joined table: "
+            f"Bound-Only={n_rows_bound_only}, "
+            f"Signed-Local-SHAP-Mean-Bound-Only={n_rows_signed_bound_only}, "
+            f"Composite={n_rows_composite}"
+        )
+
+        for col in ppi_designation_cols:
+            right_col = f"{col}_right"
+            assert (
+                composite_table
+                .select(pl.col(col) == pl.col(right_col))
+                .to_series()
+                .all()
+            ), f"Mismatch found between '{col}' and '{right_col}'."
+
+        assert (
+            composite_table
+            .select(pl.col(ubp_col_bound_only) == pl.col(ubp_col_signed_bound_only))
+            .to_series()
+            .all()
+        ), (
+            f"Mismatch found between '{ubp_col_bound_only}' and '{ubp_col_signed_bound_only}'."
+        )
+
+        composite_table = composite_table.drop(
+            [ubp_col_signed_bound_only, *[f"{col}_right" for col in ppi_designation_cols]]
+        )
+
+        metric_cols = [
+            ubp_col_bound_only,
+            val_col_signed_bound_only,
+            val_col_bound_only,
+        ]
+
+        ordered_cols = (
+            # Keep all original columns except the metric and PPI designation columns first (in their original order)
+            # then add metric columns, then add PPI designation columns at the end
+            [col for col in composite_table.columns if col not in metric_cols and col not in ppi_designation_cols]
+            + metric_cols
+            + [col for col in ppi_designation_cols if col in composite_table.columns]
+        )
+
+        composite_table = (
+            composite_table
+            .select(ordered_cols)
+            .rename(
+                {
+                    ubp_col_bound_only: "# UBPs",
+                    val_col_bound_only: "Avg. |Interaction SHAP|",
+                    val_col_signed_bound_only: "Avg. Interaction SHAP",
+                }
+            )
+            .sort(by=["Cell Line", "RBP 1", "Position 1", "RBP 2", "Position 2"])
+        )
+
+        composite_table.write_csv(
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["composite_shap_metric_table"],
+            separator="\t"
+        )
+
+        logger.success(
+            f"Composite SHAP metric table created with {composite_table.height} rows and saved to {self.CONFIG['SUPPLEMENTARY_TABLES']['composite_shap_metric_table']}"
+        )
+
+
+    def create_cleaned_table_of_cell_line_specific_interaction_larger_than_individual_effects_table(self): 
+        table = pl.read_csv(
+            self.CONFIG["INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING"],
+            separator="\t"
+        )
+        
+        # Keep first 5 columns and any columns containing "MWU"
+        first_5_cols = table.columns[:5]
+        mwu_cols = [col for col in table.columns if "MWU" in col]
+        cols_to_keep = first_5_cols + mwu_cols
+        
+        cleaned_table = table.select(cols_to_keep).rename(
+            {
+                "interaction_shap": "Interaction SHAP Value",
+                "f1_main_effect": "Feature 1 SHAP Value",
+                "f2_main_effect": "Feature 2 SHAP Value",
+            }
+        ).sort(
+            sorted(mwu_cols),
+            descending=[True, False, False]
+        )
+        
+        cleaned_table.write_csv(
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["cleaned_cell_line_specific_interaction_greater_than_individual_effects_table"],
+            separator="\t"
+        )
+        
+        logger.success(
+            f"Cleaned table created with {cleaned_table.height} rows and {len(cols_to_keep)} columns. "
+            f"Saved to {self.CONFIG['SUPPLEMENTARY_TABLES']['cleaned_cell_line_specific_interaction_greater_than_individual_effects_table']}"
+        )
+        
+        return cleaned_table
+
 
 #########################################################
 ############## NON-CLASS FUNCTIONS ######################
