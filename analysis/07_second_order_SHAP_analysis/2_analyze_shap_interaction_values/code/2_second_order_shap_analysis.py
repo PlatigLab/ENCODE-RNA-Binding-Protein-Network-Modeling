@@ -4674,6 +4674,56 @@ class SecondOrderShapNetworkAnalyzer:
         return cleaned_table
 
 
+    def get_number_sign_switching_events(self):
+        def sign_col(col_name: str) -> pl.Expr:
+            return (
+                pl.when(pl.col(col_name).is_null() | pl.col(col_name).is_nan() | (pl.col(col_name) == 0))
+                .then(None)
+                .when(pl.col(col_name) > 0)
+                .then(1)
+                .otherwise(-1)
+            )
+
+        psi_changes_table = pl.read_csv(
+            self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"],
+            separator="\t"
+        ).with_columns([
+            sign_col("HepG2 - Interaction SHAP").alias("interaction_sign"),
+            sign_col("HepG2 - F1 (1st Individual Feature in Interaction) SHAP").alias("f1_sign"),
+            sign_col("HepG2 - F2 (2nd Individual Feature in Interaction) SHAP").alias("f2_sign"),
+        ])
+
+        larger_than_main_effects_table = pl.read_csv(
+            self.CONFIG["INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING"],
+            separator="\t"
+        ).with_columns([
+            sign_col("interaction_shap").alias("interaction_sign"),
+            sign_col("f1_main_effect").alias("f1_sign"),
+            sign_col("f2_main_effect").alias("f2_sign"),
+        ])
+
+        sign_switch_filter = (
+            pl.col("interaction_sign").is_not_null()
+            & pl.col("f1_sign").is_not_null()
+            & pl.col("f2_sign").is_not_null()
+        ) & (
+            (pl.col("interaction_sign") != pl.col("f1_sign"))
+            | (pl.col("interaction_sign") != pl.col("f2_sign"))
+            | (pl.col("f1_sign") != pl.col("f2_sign"))
+        )
+
+        psi_changes_count = psi_changes_table.filter(sign_switch_filter).height
+        larger_than_main_effects_count = larger_than_main_effects_table.filter(sign_switch_filter).height
+        total_count = psi_changes_count + larger_than_main_effects_count
+
+        logger.success(
+            f"Sign-switching rows found: PSI changes={psi_changes_count}, "
+            f"larger-than-main-effects={larger_than_main_effects_count}, total={total_count}"
+        )
+
+        return total_count
+
+
 #########################################################
 ############## NON-CLASS FUNCTIONS ######################
 #########################################################
