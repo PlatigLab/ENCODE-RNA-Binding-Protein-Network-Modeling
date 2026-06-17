@@ -10407,6 +10407,152 @@ class FirstOrderShapInvestigator:
             plt.show()
 
 
+    def make_table_of_positional_preference_and_signed_bound_global_shap(self): 
+
+        OUTPUT_FILE = f"{self.FIGURES['positional_preferences_dir']}/positional_preference_vs_signed_bound_shap_scatterplot_data.tsv"
+
+        if Path(OUTPUT_FILE).exists():
+            logger.success(f"FROM CACHE: retrieving positional preference and signed bound global SHAP data from {OUTPUT_FILE}")
+            return pd.read_csv(OUTPUT_FILE, sep="\t") 
+        
+        else: 
+            logger.info("Computing positional preference and signed bound global SHAP...")
+
+            final_shap_lazy = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+            signed_bound_global_shap = self.calculate_specialized_global_SHAP(
+                mode="Signed-Local-SHAP-Mean-Bound-Only",
+                condition=None,
+                underlying_data="Unique-Binding"
+            )
+
+            # Cache schemas once
+            schemas = {
+                cell_line: set(final_shap_lazy[cell_line].collect_schema().names())
+                for cell_line in self.cell_lines
+            }
+
+            preference_and_shap_rows = []
+
+            for cell_line in self.cell_lines:
+                schema = schemas[cell_line]
+                shap_table = signed_bound_global_shap[cell_line]
+
+                # Get all binding columns and compute sums efficiently
+                binding_cols = [col for col in schema if col.endswith("_binding")]
+                sums = final_shap_lazy[cell_line].select([
+                    pl.col(col).sum().alias(col)
+                    for col in binding_cols
+                ]).collect().to_dicts()[0]
+
+                # Extract RBPs and group sums by RBP and position
+                rbp_pos_sums = {}
+                for col, val in sums.items():
+                    rbp = col.split("_")[0]
+                    pos = int(col.split("_")[1])
+                    if rbp not in rbp_pos_sums:
+                        rbp_pos_sums[rbp] = {}
+                    rbp_pos_sums[rbp][pos] = val
+
+                for rbp in sorted(rbp_pos_sums.keys()):
+                    pos_sums = rbp_pos_sums[rbp]
+                    total_binding = sum(pos_sums.values())
+                    if total_binding == 0:
+                        continue
+
+                    for pos, binding_val in pos_sums.items():
+                        pct = (binding_val / total_binding) * 100
+                        signed_bound_shap_val = shap_table.at[pos, rbp]
+
+                        if not np.isnan(signed_bound_shap_val):
+                            preference_and_shap_rows.append({
+                                "RBP": rbp,
+                                "Cell Line": cell_line,
+                                "Position": pos,
+                                "Positional Preference (%)": pct,
+                                "Avg. SHAP": signed_bound_shap_val,
+                            })
+
+            combined_df = pd.DataFrame(preference_and_shap_rows).sort_values(by=["RBP", "Position", "Cell Line"]).reset_index(drop=True)
+            
+            combined_df.to_csv(
+                OUTPUT_FILE,
+                sep="\t",
+                index=False
+            )
+
+            return combined_df
+
+
+    def create_scatterplot_of_positional_preference_vs_signed_bound_global_shap(self): 
+        
+        combined_df = self.make_table_of_positional_preference_and_signed_bound_global_shap()
+
+        palette = {
+            "HepG2": "#91D1C2",
+            "K562": "#F39B7F",
+        }
+
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(
+                nrows=1,
+                ncols=2,
+                sharex=True, 
+                sharey=True,
+                figsize=(9, 4),
+                dpi=150,
+            )
+
+            for col_idx, cell_line in enumerate(self.cell_lines):
+                ax = axes[col_idx]
+                plot_data = combined_df[combined_df["Cell Line"] == cell_line].copy()
+                
+                # Create scatterplot
+                ax.scatter(
+                    plot_data["Positional Preference (%)"],
+                    plot_data["Avg. SHAP"],
+                    s=20,
+                    alpha=0.4,
+                    color=palette[cell_line],
+                    edgecolor='black',
+                    linewidth=0.3
+                )
+                
+                # Calculate correlations
+                x_vals = plot_data["Positional Preference (%)"].values
+                y_vals = plot_data["Avg. SHAP"].values
+                
+                spearman_corr, spearman_pval = spearmanr(x_vals, y_vals)
+                pearson_corr, pearson_pval = pearsonr(x_vals, y_vals)
+                n_points = len(plot_data)
+                
+                # Add text annotation
+                textstr = f"Points: {n_points}\nSpearman = {spearman_corr:.3f}\nPearson = {pearson_corr:.3f}"
+                ax.text(
+                    0.95, 0.9, textstr,
+                    transform=ax.transAxes,
+                    fontsize=11,
+                    verticalalignment='top',
+                    horizontalalignment='right',
+                    bbox=dict(boxstyle='round', alpha=0.8, facecolor='white')
+                )
+                
+                ax.set_xlabel("RBP Positional Preference (%)", fontsize=14, fontweight='bold')
+                ax.set_ylabel("Avg. SHAP", fontsize=14, fontweight='bold')
+                ax.set_title(f"{cell_line}", fontsize=16)
+                
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.grid(axis='y', linestyle='--', which='major', alpha=0.6, linewidth=0.5)
+                ax.tick_params(axis='both', labelsize=11)
+
+            plt.tight_layout()
+            plt.savefig(
+                f"{self.FIGURES['positional_preferences_dir']}/positional_preference_vs_signed_bound_shap_scatterplot.pdf",
+                dpi=600,
+                bbox_inches='tight'
+            )
+            plt.show()
+
 
     def make_composite_table_of_individual_feature_shap_metrics_and_activity_scores(self): 
         logger.info("This functions pulls in results from work done by @reeceaa on calculating 'Activity' scores for RBPs.")
