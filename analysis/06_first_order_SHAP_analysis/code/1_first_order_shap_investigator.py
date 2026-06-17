@@ -10605,7 +10605,7 @@ class FirstOrderShapInvestigator:
 
         shap_metrics_df = pd.concat(shap_rows, ignore_index=True)
 
-        activity_file = "../../07_reece_biological_validations/2_RBP_Activity/rbp_activity_heatmap.csv"
+        activity_file = "../../08_reece_anderson_biological_validations/2_RBP_Activity/rbp_activity_heatmap.csv"
         activity_df = pd.read_csv(activity_file)
         activity_df.columns = [str(col).strip() for col in activity_df.columns]
 
