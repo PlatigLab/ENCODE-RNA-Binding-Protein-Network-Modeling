@@ -1569,9 +1569,14 @@ class SecondOrderShapNetworkAnalyzer:
                             # For a given (Cell Line, Sorted RBP Pair), PPI should be consistent across summed rows
                             assert (curve_input["PPI_n_unique"] == 1).all(), "Inconsistent PPI labels found within a (Cell Line, Sorted RBP Pair) group."
                             curve_input = curve_input.drop("PPI_n_unique")
-                            
+
                         # Sort by shap_col_name_for_curves descending
-                        curve_input = curve_input.sort([shap_col_name_for_curves, "Sorted RBP Pair"], descending=True)
+
+                        if "Column" in curve_input.columns:
+                            final_sorting_columns = [shap_col_name_for_curves, "Column"]
+                        else:
+                            final_sorting_columns = [shap_col_name_for_curves]
+                        curve_input = curve_input.sort(final_sorting_columns, descending=True)
                         
                         # Validation assertions
                         assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
@@ -1788,16 +1793,17 @@ class SecondOrderShapNetworkAnalyzer:
                 plt.show()  
     
 
-    def plot_all_roc_and_pr_curve_combinations_for_rbp_specific_max_value(self, metric = None):
+    def plot_all_roc_and_pr_curve_combinations_for_rbp_specific_sum_value(self, metric = None):
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
 
         # Only plot RBP-Specific
         curve_data = self.calculate_roc_and_pr_curve_data_for_metric(metric=metric)
-        del curve_data["FEATURE-SPECIFIC"]
 
         plot = self.plot_roc_and_pr_curves_for_metric(
             metric=metric, 
-            curve_data=curve_data, 
+            curve_data= {
+                "RBP-SPECIFIC_SUM_VALUE": curve_data["RBP-SPECIFIC_SUM_VALUE"]
+            },
             figure_file_name_suffix="roc_pr_curves-SUPPLEMENTARY_ALL_COMBINATIONS"
         )
 
