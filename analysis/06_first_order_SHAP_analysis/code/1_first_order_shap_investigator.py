@@ -1871,7 +1871,8 @@ class FirstOrderShapInvestigator:
                 # Long-form values for stripplot: x=position, y=Avg. SHAP
                 long_df = (
                     heatmap
-                    .stack(dropna=True)
+                    .stack()
+                    .dropna()
                     .reset_index()
                     .rename(columns={0: shap_label})
                 )
