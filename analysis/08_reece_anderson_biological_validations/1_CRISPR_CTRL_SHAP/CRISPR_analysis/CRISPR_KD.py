@@ -39,8 +39,9 @@ def load_rmats(rbp, BAT, cell_line, read_counts_threshold):
 
     print(f"This is for {rbp} in {cell_line} with read counts = {read_counts_threshold}")
 
+    CRISPR_RMATS_DIR = "/project/PlatigLab/data/ENCORE2026/XGB_SHAP_CRISPR/rMATS_run/CRISPR_KD_rMATS"
     rMATS_data = pl.read_csv(
-        f'/project/PlatigLab/data/ENCORE2026/XGB_SHAP_CRISPR/rMATS_run/CRISPR_KD_rMATS/{rbp}-CRISPR-{cell_line}/SE.MATS.JC.txt',
+        f'{CRISPR_RMATS_DIR}/{rbp}-CRISPR-{cell_line}/SE.MATS.JC.txt',
         separator='\t'
     )
 
