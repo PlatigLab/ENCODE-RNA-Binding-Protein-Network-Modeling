@@ -10494,11 +10494,11 @@ class FirstOrderShapInvestigator:
 
         with plt.style.context("../../paper.mplstyle"):
             fig, axes = plt.subplots(
-                nrows=1,
-                ncols=2,
-                sharex=True, 
+                nrows=2,
+                ncols=1,
+                sharex=False, 
                 sharey=True,
-                figsize=(9, 4),
+                figsize=(5,9),
                 dpi=150,
             )
 
@@ -10535,6 +10535,8 @@ class FirstOrderShapInvestigator:
                     horizontalalignment='right',
                     bbox=dict(boxstyle='round', alpha=0.8, facecolor='white')
                 )
+
+                ax.set_xlim(-5, 105)
                 
                 ax.set_xlabel("RBP Positional Preference (%)", fontsize=14, fontweight='bold')
                 ax.set_ylabel("Avg. SHAP", fontsize=14, fontweight='bold')
@@ -10545,7 +10547,7 @@ class FirstOrderShapInvestigator:
                 ax.grid(axis='y', linestyle='--', which='major', alpha=0.6, linewidth=0.5)
                 ax.tick_params(axis='both', labelsize=11)
 
-            plt.tight_layout()
+            plt.tight_layout(h_pad=6)
             plt.savefig(
                 f"{self.FIGURES['positional_preferences_dir']}/positional_preference_vs_signed_bound_shap_scatterplot.pdf",
                 dpi=600,
