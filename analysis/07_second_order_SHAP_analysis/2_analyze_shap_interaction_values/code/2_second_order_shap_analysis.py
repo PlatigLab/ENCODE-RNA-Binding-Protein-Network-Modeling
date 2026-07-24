@@ -4645,10 +4645,7 @@ class SecondOrderShapNetworkAnalyzer:
 
 
     def create_cleaned_table_of_cell_line_specific_interaction_larger_than_individual_effects_table(self): 
-        table = pl.read_csv(
-            self.CONFIG["INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING"],
-            separator="\t"
-        )
+        table = self.find_instances_where_interaction_larger_than_main_effects()
         
         # Keep first 5 columns and any columns containing "MWU"
         first_5_cols = table.columns[:5]
