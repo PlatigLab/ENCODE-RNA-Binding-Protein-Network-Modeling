@@ -6290,7 +6290,7 @@ class FirstOrderShapInvestigator:
         }
 
         table = (
-            great_tables.GT(performance_df)
+            great_tables.GT(performance_df, id="avg_performance_table")
             .tab_header(
                 title="Performance Across Top 5 Models",
                 subtitle="Mean ± Standard Deviation"
