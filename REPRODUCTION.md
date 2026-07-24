@@ -472,4 +472,102 @@ cd ./analysis/07_second_order_SHAP_analysis/2_analyze_shap_interaction_values/co
 jupyter notebook 2_analysis_of_second_order_SHAP_interactions.ipynb
 ```
 
+<br>
+<br>
 
+# 8 - CRISPR Data Retrieval and Pipeline Processing
+
+## 8.1 - Retrieve `CRISPR KD RNA-Seq` metadata from `ENCODE` portal
+Take metadata file automatically downloaded from clicking [here](https://www.encodeproject.org/metadata/?status=released&assay_title=CRISPR+RNA-seq&control_type%21=%2A&biosample_ontology.term_name=K562&biosample_ontology.term_name=HepG2&type=Experiment).
+
+## 8.2 - Re-run `rMATS` analysis pipeline for `CRISPR KD RNA-Seq` data
+
+### 8.2.1 - Reclone pipeline analysis repo
+
+```
+rm -rf ../as-rmats-turbo-encode/
+cd ../
+git clone https://github.com/NNeuralDynamics/as-rmats-turbo-encode
+```
+
+### 8.2.2 - Update packages before re-installing
+
+* In the file `../as-rmats-turbo-encode/Makefile`: 
+    * Replace all instances of the term `2.7.11a` with `2.7.11b` (this is for `STAR` aligner). 
+    * Replace all instances of the term `v4.2.0` with `v4.3.0` (this is for `rMATS`).
+    
+### 8.2.3 - Install necessary packages
+
+```
+cd ../as-rmats-turbo-encode
+make
+make clean
+```
+
+### 8.2.4 - Use `CRISPR KD RNA-Seq` metadata file instead of `shRNA KD RNA-Seq` metadata file
+
+1. First, do the below: 
+```
+mv {CRISPR METADATA FILE FROM ENCODE PORTAL} ../as-rmats-turbo-encode/pipeline/encode-CRISPR-metadata.tsv
+```
+
+2. Then, in the file `../as-rmats-turbo-encode/pipeline/run_script.sh`, replace `encode-shRNA-metadata.tsv` with `encode-CRISPR-metadata.tsv`. 
+
+3. Finally, in the file `../as-rmats-turbo-encode/pipeline/parse_pipeline_output.py`, replace `encode-shRNA-metadata.tsv` with `encode-CRISPR-metadata.tsv`.
+
+### 8.2.5 - Update `config JSON` file
+
+The `config JSON` file (`../as-rmats-turbo-encode/src/config.json`) only requires updating the `STAR executable` path (`STAR.exe`) whereas the rest of the parameters match exactly what we used for our `shRNA RBP KD RNA-Seq` processing.
+
+### 8.2.6 - Run `STAR` alignment and `rMATS` differential splicing for all `CRISPR KD RNA-Seq` experiments
+
+‼️Before running the script below, set the `BASE` variable in `../as-rmats-turbo-encode/pipeline/run_script.sh` to the folder where you want to output the `rMATS` results. This should be a folder outside of this repository.‼️
+
+```
+cd ../as-rmats-turbo-encode/
+
+sh ./pipeline/run_script.sh
+```
+
+### 8.2.7 - Organize `rMATS` output files into expected structure for downstream analyses
+
+```
+cp ../as-rmats-turbo-encode/pipeline/parse_pipeline_output.py {BASE variable from previous step}
+python3.11 {BASE}/parse_pipeline_output.py 
+
+# return back to original working directory
+cd ${REPO_DIR}
+```
+
+<br>
+<br>
+
+# 9 - `CRISPR rMATS SHAP` Generation & Analysis
+
+## 9.1 - Determine `SE` events from `CTRL` samples with a binding pattern that also exists in our `shRNA SI` dataset
+
+* Before running the below script, update the `CRISPR_RMATS_DIR` variable to the folder where the `CRISPR rMATS` results across all cell lines and RBPs are located. 
+
+```
+cd ./analysis/08_reece_anderson_biological_validations/1_CRISPR_CTRL_SHAP/CRISPR_analysis/
+
+sbatch preprocess_CRISPR.sh
+```
+
+## 9.2 - Subset to `SE` events from `RBP KD CRISPR` samples where the `KD RBP` is bound in the `eCLIP` data to that location (`in-silico KD` instances)
+
+```
+cd ./analysis/08_reece_anderson_biological_validations/1_CRISPR_CTRL_SHAP/CRISPR_analysis/
+
+sbatch CRISPR_slurm.sh
+```
+
+## 9.3 - Aggregate `CRISPR` results across all RBPs per cell line
+
+Run the one and only cell in the notebook below: 
+
+```
+cd ./analysis/08_reece_anderson_biological_validations/1_CRISPR_CTRL_SHAP/Analyses/
+
+jupyter notebook final_results_table.ipynb
+```
