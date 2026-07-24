@@ -1570,12 +1570,11 @@ class SecondOrderShapNetworkAnalyzer:
                             assert (curve_input["PPI_n_unique"] == 1).all(), "Inconsistent PPI labels found within a (Cell Line, Sorted RBP Pair) group."
                             curve_input = curve_input.drop("PPI_n_unique")
 
-                        # Sort by shap_col_name_for_curves descending
-
+                        # Sort by Abs. SHAP Value and then by Column or Sorted RBP Pair for deterministic ordering 
                         if "Column" in curve_input.columns:
                             final_sorting_columns = [shap_col_name_for_curves, "Column"]
                         else:
-                            final_sorting_columns = [shap_col_name_for_curves]
+                            final_sorting_columns = [shap_col_name_for_curves, "Sorted RBP Pair"]
                         curve_input = curve_input.sort(final_sorting_columns, descending=True)
                         
                         # Validation assertions
