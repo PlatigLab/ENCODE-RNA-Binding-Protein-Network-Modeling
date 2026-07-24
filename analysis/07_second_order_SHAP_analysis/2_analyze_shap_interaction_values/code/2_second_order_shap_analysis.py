@@ -3990,7 +3990,7 @@ class SecondOrderShapNetworkAnalyzer:
     
     def create_table_from_systematic_screen_of_interactions_for_psi_changes(self): 
 
-        OUTPUT_FILE = self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"]
+        OUTPUT_FILE = self.CONFIG["SUPPLEMENTARY_TABLES"]["cell_line_concordant_interactions_screening_table"]
 
         if pathlib.Path(OUTPUT_FILE).exists():
             logger.success("FROM CACHE: loading screened interaction PSI changes table")
@@ -4690,7 +4690,7 @@ class SecondOrderShapNetworkAnalyzer:
             )
 
         psi_changes_table = pl.read_csv(
-            self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"],
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["cell_line_concordant_interactions_screening_table"],
             separator="\t"
         ).with_columns([
             sign_col("HepG2 - Interaction SHAP").alias("interaction_sign"),
