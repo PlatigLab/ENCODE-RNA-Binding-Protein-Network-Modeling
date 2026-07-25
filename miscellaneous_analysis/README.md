@@ -47,14 +47,17 @@ Run side experiment to see how different combinations of feature and data variat
 
 📂 `09_reproduce_probability_SHAP_bug/`:
 
-Add minimal code to reproduce a grave, dangerous, fatal bug in `SHAP` when using `probability` outputs. When asking for too many rows at once, the `local SHAP` values returned are extremely far off from what one would expect (too large numbers). @bcjonescbt has also independently verified this bug. Issue was submitted on GitHub: https://github.com/shap/shap/issues/4151
+Minimal code to reproduce a grave and dangerous bug in `SHAP` when using `probability` outputs. When asking for too many rows at once, the `local SHAP` values returned are extremely far off from what one would expect (too large numbers). @bcjonescbt has also independently verified this bug. Issue was submitted on GitHub: https://github.com/shap/shap/issues/4151
 
 
 📂 `10_no_sample_importance_downsampling_SHAP_pilot/`: 
 
-Pilot study to see whether models trained on downsampled data (less 1.0 `PSI` values) are better at modeling differential splicing, in which case we would take these models since the `R^2` values are better. In the end, these models were worse than the lower `R^2` models that we already have. 
+Pilot study to see whether models trained on downsampled data (less 1.0 `PSI` values) are better at modeling differential splicing, in which case we might consider using these models. In the end, these model variations were worse than the lower `R^2` models that we originally had. 
 
 
 📂 `11_eCLIP_GTF_mismatch_investigation/`: 
 
-2 aims: [1] nderstand statistics around how many and what RBPs in each cell line were done with `GENCODE V24` vs `V29` and [2] understand the differences in exons and splice junctions between `GENCODE V24` and `V29` to understand how much of a problem this mismatch is for our analyses.
+2 Aims:  
+
+1. Understand statistics around how many and what eCLIP RBPs in each cell line were done with `GENCODE V24` vs those done with `V29`.
+2. Understand the differences in exons and splice junctions between `GENCODE V24` and `V29` to understand how problematic this mismatch might be.

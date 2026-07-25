@@ -2,15 +2,27 @@ NOTE: all `Supplementary Table` references are from the following publication:
 
 Benjamin Lang, Jae-Seong Yang, Mireia Garriga-Canut, Silvia Speroni, Moritz Aschern, Maria Gili, Tobias Hoffmann, Gian Gaetano Tartaglia, Sebastian P Maurer, Matrix-screening reveals a vast potential for direct protein-protein interactions among RNA binding proteins, Nucleic Acids Research, Volume 49, Issue 12, 9 July 2021, Pages 6702–6721, https://doi.org/10.1093/nar/gkab490
 
-📄 `all_rbps_screened.xlsx`: 
+📄 `Rec-Y2H/all_rbps_screened.xlsx`: 
 
 Provides the names (but no IDs) for all the RBPs screened (`Supplementary Table S1`) from cited paper. 
 
 <br>
 
-📄 `lang_et_al_rec-y2h_screening_results.xlsx`: 
+📄 `Rec-Y2H/lang_et_al_rec-y2h_screening_results.xlsx`: 
 
-Contains info table quantifying and delineating high-confidence `RBP-RBP PPIs` across all `RBPs` (`Supplementary Table S2`).
+Contains info table quantifying and delineating high-confidence `RBP-RBP PPIs` across all screened `RBPs`(`Supplementary Table S2`).
+
+<br>
+
+📄 `Street_et_al/INPUT_street_et_al_gene_yeo_molecular_cell_table_s1_ip_ms_baits.xlsx`:
+
+Contains all `RBPs` that were used as baits with `IP-MS` (`Supplementary Table S1`).
+
+<br>
+
+📄 `Street_et_al/INPUT_street_et_al_gene_yeo_molecular_cell_table_s2_full_ppi.csv`:
+
+Table of all the `RBP-RBP PPIs` found across either `IP-MS`, `SEC-MS`, or `both` either in the presence or absence of RNA (`Supplementary Table S2`).
 
 <br>
 

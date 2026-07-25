@@ -34,13 +34,16 @@ Steps are as follows:
 
 Contains input data and code to retrieve RBP-RBP protein interaction data from [Street et al. 2024 Molecular Cell](https://doi.org/10.1016/j.molcel.2024.08.030) and save as a `JSON` object for downstream analysis and as a lab resource.
 
-📂 `06_first_order_SHAP_analysis`: 
+📂 `06_first_order_SHAP_analysis/`: 
 
 Too many analyses to list here but in summary, this contains several analyses related to `first order SHAP` values (i.e. individual feature contributions and no feature-feature interactions). 
 
 **NOTE**: Non-`SHAP` analyses (`ElasticNet` and `Model Performance`) are also included here.
 
-#TODO need to update this README
+📂 `07_second_order_SHAP_analysis/`:
+
+* Varying analyses related to `second order SHAP` values (i.e. feature-feature interactions).
+
 
 📂 `08_reece_anderson_biological_validations/`: 
 
