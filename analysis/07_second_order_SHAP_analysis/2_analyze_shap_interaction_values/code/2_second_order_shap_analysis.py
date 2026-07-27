@@ -38,33 +38,41 @@ class SecondOrderShapNetworkAnalyzer:
 
     def load_features(self):
 
-        rbp_feature_metadata = {}
-        for cell_line in self.CONFIG["CELL_LINES"]:
-            rbp_feature_metadata[cell_line] = {}
+        OUTPUT_FILE = self.CONFIG["RBP_FEATURE_INFO_FILE"]
 
-            files = glob.glob(
-                f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
-            )
+        if not pathlib.Path(OUTPUT_FILE).exists(): 
+            logger.info("Cached RBP feature metadata file not found. Generating RBP feature metadata from interaction values files...")
+            rbp_feature_metadata = {}
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                rbp_feature_metadata[cell_line] = {}
 
-            columns = pl.scan_ipc(files[0]).collect_schema().names()
-            shap_cols = [col for col in columns if col.endswith('-shap')]
-            assert len(shap_cols) == len(columns) - 1, "Expected all columns except index to be SHAP value columns."
-
-            rbp_feature_metadata[cell_line]["Features"] = shap_cols
-
-            rbp_feature_metadata[cell_line]["RBPs"] = sorted(
-                list(
-                    {
-                        col.split("_")[0] for col in shap_cols if col.endswith("-main-shap")
-                    }
+                files = glob.glob(
+                    f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
                 )
-            )
 
-        output_file = self.CONFIG["RBP_FEATURE_INFO_FILE"]
-        with open(output_file, "w") as f:
-            json.dump(rbp_feature_metadata, f, indent=4)
+                columns = pl.scan_ipc(files[0]).collect_schema().names()
+                shap_cols = [col for col in columns if col.endswith('-shap')]
+                assert len(shap_cols) == len(columns) - 1, "Expected all columns except index to be SHAP value columns."
 
-        self.rbp_feature_metadata = rbp_feature_metadata
+                rbp_feature_metadata[cell_line]["Features"] = shap_cols
+
+                rbp_feature_metadata[cell_line]["RBPs"] = sorted(
+                    list(
+                        {
+                            col.split("_")[0] for col in shap_cols if col.endswith("-main-shap")
+                        }
+                    )
+                )
+
+            with open(OUTPUT_FILE, "w") as f:
+                json.dump(rbp_feature_metadata, f, indent=4)
+
+            self.rbp_feature_metadata = rbp_feature_metadata
+
+        else:             
+            logger.success(f"FROM CACHE: loading RBP feature metadata from '{OUTPUT_FILE}'...")
+            with open(OUTPUT_FILE, "r") as f:
+                self.rbp_feature_metadata = json.load(f)
 
 
     def load_ppi(self):
@@ -75,6 +83,7 @@ class SecondOrderShapNetworkAnalyzer:
         cols = pl.scan_csv(OUTPUT_FILE, separator="\t").collect_schema().names()
         dtypes = {col: pl.String if col in ["Interaction", "RBP 1", "RBP 2"] else pl.Boolean for col in cols}
 
+        logger.success(f"FROM CACHE: loading PPI table from '{OUTPUT_FILE}'...")
         self.ppi = pl.read_csv(OUTPUT_FILE, separator="\t", schema_overrides=dtypes)
 
 
