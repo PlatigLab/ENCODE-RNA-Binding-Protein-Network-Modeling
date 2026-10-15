@@ -164,7 +164,8 @@ class FirstOrderShapInvestigator:
         "fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign": {
             "test": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_ALL_IN_SILICO_KD_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
             "test candidate features": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_CANDIDATE_FEATURES_ONLY_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
-        }, 
+        },
+        "signed_bound_global_shap_by_sequencing_depth_decile": "../outputs/specialized_global_SHAP/signed_bound_global_shap_by_sequencing_depth_decile.tsv"
 
     }
 
@@ -10663,6 +10664,137 @@ class FirstOrderShapInvestigator:
 
         logger.success(f"Saved composite table of SHAP metrics and activity scores to {OUTPUT_FILE} with {composite_df.shape[0]} rows")
         return composite_df
+
+    
+    def check_signed_bound_global_shap_as_function_of_sequencing_depth_decile(self): 
+
+        OUTPUT_FILE = self.CACHE_INFO["signed_bound_global_shap_by_sequencing_depth_decile"]
+
+
+        if Path(OUTPUT_FILE).exists():
+            result_df = pd.read_csv(OUTPUT_FILE, sep="\t")
+            # result_df = result_df[result_df["Signed Bound Global SHAP"].abs() > 0.1]
+            
+            count_metrics = ["Inclusion Counts", "Total Read Counts"]
+            SYMBOL = self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-Bound-Only"]
+
+            for mode in ["All Positions", "Positions 3 & 4"]:   
+            
+                fig, axes = plt.subplots(
+                    nrows=len(self.cell_lines), ncols=len(count_metrics),
+                    figsize=(7* len(count_metrics), 5 * len(self.cell_lines)),
+                    sharex=True, sharey=True, squeeze=False, dpi=300
+                )
+
+                for row_idx, cell_line in enumerate(self.cell_lines):
+                    for col_idx, count_metric in enumerate(count_metrics):
+                        ax = axes[row_idx, col_idx]
+                        sub_df = result_df[
+                            (result_df["Cell Line"] == cell_line) &
+                            (result_df["Count Metric"] == count_metric)
+                        ]
+
+                        if mode == "Positions 3 & 4":
+                            sub_df = sub_df[sub_df["Feature"].str.endswith(("_3", "_4"), na=False)]
+
+                        sns.violinplot(
+                            data=sub_df, x="Decile", y="Signed Bound Global SHAP", color="lightgray", cut=0, ax=ax
+                        )
+
+                        # Line per feature tracking change across deciles (categorical x positions are 0-indexed)
+                        for feature, feat_df in sub_df.groupby("Feature"):
+                            feat_df = feat_df.sort_values("Decile")
+                            ax.plot(
+                                feat_df["Decile"].astype(int) - 1, feat_df["Signed Bound Global SHAP"],
+                                color="tab:blue", alpha=0.3, linewidth=0.5, marker="o", markersize=1
+                            )
+
+                        ax.grid(visible=True, which='major', axis='y', linestyle='--', alpha=1, linewidth=0.7, color='red', zorder=0)
+
+                        ax.set_xlabel("Decile")
+
+                        if col_idx == 0:
+                            ax.set_ylabel(f"{cell_line}", fontweight='bold', fontsize=14)
+                        
+                        if row_idx ==0: 
+                            ax.set_title(count_metric, fontweight='bold', fontsize=14)
+            
+
+                fig.suptitle(f"{mode}\n{SYMBOL} by Sequencing-Depth Decile", fontsize=18, y=1.01)
+                plt.tight_layout()
+                plt.show()
+
+
+        else: 
+            final_shap_lazy = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)        
+            exon_cols = ["Upstream Exon", "Main Exon", "Downstream Exon"]
+            count_cols = ["Inclusion Counts", "Total Read Counts"]
+
+            result_rows = []
+
+            for count_col in tqdm.tqdm(count_cols, desc="Count metric", ):
+
+                for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell line", leave=False):
+
+                    lf = final_shap_lazy[cell_line]
+                    schema = lf.collect_schema().names()
+
+                    required_cols = exon_cols + [count_col, "RBP_KD_Target"]
+                    missing_cols = [col for col in required_cols if col not in schema]
+                    assert not missing_cols, f"Missing columns in {cell_line} final SHAP cache: {missing_cols}"
+
+                    # Work in memory and temporarily add each exon combination's decile
+                    df = lf.filter(pl.col("RBP_KD_Target") == "CTRL").collect()
+                    combination_means = df.group_by(exon_cols).agg(
+                        pl.col(count_col).mean().alias("Avg. Depth")
+                    )
+                    
+                    assert combination_means.height != 0, f"No combinations found for {cell_line} under control condition with count column {count_col}"
+
+                    combinations_df = combination_means.to_pandas()
+                    count_ranks = combinations_df["Avg. Depth"].rank(method="average", pct=True)
+                    combinations_df["Decile"] = np.ceil(count_ranks * 10).clip(1, 10).astype(int)
+                    
+                    original_size = df.height
+                    df = df.join(
+                        pl.from_pandas(combinations_df[exon_cols + ["Decile"]]),
+                        on=exon_cols,
+                        how="left",
+                        validate = "m:1"
+                    )
+                    assert df.height == original_size
+
+                    shap_cols = [col for col in df.columns if col.endswith("_shap")]
+
+                    for shap_col in tqdm.tqdm(shap_cols, desc="SHAP feature", leave=False):
+                        binding_col = shap_col.replace("_shap", "_binding")
+                        
+                        feature_values = (
+                            df
+                            .filter(pl.col(binding_col) == 1)
+                            .select(
+                                pl.lit(shap_col.removesuffix("_shap")).alias("Feature"),
+                                pl.col("Decile"),
+                                pl.col(shap_col).alias("Signed Bound Global SHAP"),
+                            )
+                            .group_by(["Feature", "Decile"])
+                            .agg(pl.col("Signed Bound Global SHAP").mean().alias("Signed Bound Global SHAP"))
+                        )
+                        for row in feature_values.iter_rows(named=True):
+                            result_rows.append({
+                                "Cell Line": cell_line,
+                                "Count Metric": count_col,
+                                **row,
+                            })
+
+            result_df = pd.DataFrame(result_rows)
+            result_df = result_df[[
+                "Cell Line", "Count Metric", "Feature", "Decile", "Signed Bound Global SHAP"
+            ]].sort_values(["Cell Line", "Count Metric", "Feature", "Decile"]).reset_index(drop=True)
+
+            result_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Saved decile-stratified signed bound global SHAP values to {OUTPUT_FILE}")            
+
 
 
 ###############################################################
