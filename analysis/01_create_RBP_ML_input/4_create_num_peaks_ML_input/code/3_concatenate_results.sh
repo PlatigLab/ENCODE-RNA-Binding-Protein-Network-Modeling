@@ -2,10 +2,10 @@
 #SBATCH --account=platiglab    
 #SBATCH --partition=standard    
 #SBATCH -N 1
-#SBATCH -n 2
+#SBATCH -n 4
 #SBATCH --output=../SLURM_output/final_dataset_creation_output_%A_%a.txt
 #SBATCH --error=../SLURM_output/final_dataset_creation_error_%A_%a.txt
-#SBATCH --mem=55GB
+#SBATCH --mem=64GB
 #SBATCH --array=0-11
 
 

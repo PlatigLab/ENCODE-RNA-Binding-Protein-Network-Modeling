@@ -25,7 +25,7 @@ data_mode = args.data_mode
 ############################################
 # Literals #
 ############################################
-rmats_data_path = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/"
+RMATS_DATA_PATH = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/"
 
 exon_ordering = {
     "+": {
@@ -84,7 +84,7 @@ control_associations = tmp_df.set_index("RBP KD").to_dict()["Control Accession"]
 ############################################
 # Get the rMATS file #
 ############################################
-rmats_file = [file for file in glob.glob("{}/{}-*-{}/SE.*.txt".format(rmats_data_path, rbp, cell_line)) if "Transfection" not in file and rbp in selected_rbps]
+rmats_file = [file for file in glob.glob("{}/{}-*-{}/SE.*.txt".format(RMATS_DATA_PATH, rbp, cell_line)) if "Transfection" not in file and rbp in selected_rbps]
 assert len(rmats_file)==1, print(rmats_file)
 
 rmats_file = rmats_file[0]

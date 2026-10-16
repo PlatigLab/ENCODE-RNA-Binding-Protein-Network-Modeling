@@ -3,7 +3,6 @@
 thresholds=(50 100 150 200 250 500)
 cell_lines=(HepG2 K562)
 data_modes=("all-events")
-data_path="/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/"
 
 for cell_line in "${cell_lines[@]}"
 do

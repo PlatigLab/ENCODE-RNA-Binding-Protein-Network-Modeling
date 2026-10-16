@@ -23,7 +23,6 @@ from statsmodels.stats.multitest import multipletests
 from great_tables import loc, style
 from IPython.display import display_pdf
 
-
 # CUSTOM FILE
 from waterfall_plot import waterfall
 
@@ -147,7 +146,6 @@ class FirstOrderShapInvestigator:
         "SHAP_additivity_assertions": "../outputs/SHAP_additivity_assertions/SHAP_additivity_assertions.tsv.gz",
         "position_3_4_activating_and_others_repressing": {
             "Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/bound_local_SHAP_values.tsv.gz", 
-            "NOT Bound Local SHAP Values": "../outputs/position_3_4_activating_others_repressing/not_bound_local_SHAP_values.tsv.gz",
         }, 
         "waterfall_plot_data": "../outputs/waterfall_plot_data/waterfall_plot_data.pkl", 
         "dpsi_vs_local_SHAP_scatterplot_data": {
@@ -166,7 +164,8 @@ class FirstOrderShapInvestigator:
         "fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign": {
             "test": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_ALL_IN_SILICO_KD_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
             "test candidate features": "../outputs/dpsi_vs_local_SHAP/test_partition/fishers_test_between_dpsi_sign_and_delta_local_SHAP_sign/TEST_CANDIDATE_FEATURES_ONLY_fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign.tsv",
-        }, 
+        },
+        "signed_bound_global_shap_by_sequencing_depth_decile": "../outputs/specialized_global_SHAP/signed_bound_global_shap_by_sequencing_depth_decile.tsv"
 
     }
 
@@ -315,7 +314,6 @@ class FirstOrderShapInvestigator:
         },
         "position_3_4_activating_and_others_repressing": {
             "Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_bound_local_SHAP.png",
-            "NOT Bound Local SHAP": "../outputs/publication_figures/middle_position_activating_others_repressing/is_position_3_4_activating_and_others_repressing_NOT_bound_local_SHAP.png",
             "Average Bar Plot": "../outputs/publication_figures/middle_position_activating_others_repressing/position_3_4_activating_and_others_repressing_average_bar_plot.pdf",
         },
         "elasticnet_coefficients_heatmap": {
@@ -336,8 +334,7 @@ class FirstOrderShapInvestigator:
     }
 
     SUPPLEMENTARY_TABLES = {
-        "Signed-Local-SHAP-Mean-Bound-Only": "../outputs/publication_tables/unique_binding_avg_shap.tsv", 
-        "Bound-Only": "../outputs/publication_tables/unique_binding_avg_absolute_value_shap.tsv"
+        "shap_metrics_and_activity_score": "../outputs/publication_tables/individual_feature_shap_metrics_and_activity_score.tsv"
     }
 
 
@@ -1432,11 +1429,11 @@ class FirstOrderShapInvestigator:
                 cbar_ax.set_title(cbar_title_fmtd, fontsize=50, pad=20, loc="center")
                 cbar_ax.tick_params(labelsize=45)
 
-                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'])
+                fig.supxlabel("Position", fontsize=60, x=.51, y=plot_config[glossary_heatmap_type]['x_axis_label_y'], fontweight="bold")
 
                 y_label_suffix = "\n(Alphabetized)" if glossary_heatmap_type == "global_SHAP_alphabetical_glossary_heatmap" else ""
 
-                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center")
+                fig.supylabel(f"RBP{y_label_suffix}", fontsize=50, x=0.01, ha="center", fontweight="bold")
                 plt.suptitle(
                     f"{prefix}: {self.latex_symbols[binding_unique][mode]} Alphabetical Glossary Heatmap\nNOTE: RBPs are union of both cell lines, sorted alphabetically",
                     fontsize=18, y=plot_config[glossary_heatmap_type]['suptitle_y'], x=0.51
@@ -1822,8 +1819,7 @@ class FirstOrderShapInvestigator:
             cbar_ax.set_title(legend_title, fontsize=10, pad=5)
             cbar_ax.tick_params(labelsize=10)
 
-            fig.supylabel("RBP", fontsize=14, x=0.03, y=.51, fontweight="bold")
-            fig.supxlabel("Position", fontsize=14, x=0.52, y=0.04, fontweight="bold")
+            fig.supxlabel("Position", fontsize=14, x=0.5, y=0.04, fontweight="bold")
             plt.suptitle(
                 f"NOTE 1: Per cell line, took max and min of each RBP across all 6 positions and then took the top {top_n}\n"
                 f"highest max values and top {top_n} RBPs with lowest min values while dropping duplicates between min and max by favoring 'min'\n\n"
@@ -1876,7 +1872,8 @@ class FirstOrderShapInvestigator:
                 # Long-form values for stripplot: x=position, y=Avg. SHAP
                 long_df = (
                     heatmap
-                    .stack(dropna=True)
+                    .stack()
+                    .dropna()
                     .reset_index()
                     .rename(columns={0: shap_label})
                 )
@@ -1917,16 +1914,21 @@ class FirstOrderShapInvestigator:
                     x_coord_legend =0.88
                     y_coord_legend = 1.06
 
-                elif row_idx ==1: 
-                    x_coord_legend = 0.13
-                    y_coord_legend = 0.4
+                # elif row_idx ==1: 
+                #     x_coord_legend = 0.13
+                #     y_coord_legend = 0.4
                 
-                handles = [
-                    Line2D([0], [0], marker="o", color="w", markerfacecolor=palette[k], markeredgecolor="black", markeredgewidth=0.8, markersize=5.5, label=k)
-                    for k in ["Activating", "Repressing", "Zero"]
-                ]
-                ax_strip.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=11, bbox_to_anchor=(x_coord_legend, y_coord_legend))
-                
+
+
+                if row_idx==0: 
+                    handles = [
+                        Line2D([0], [0], marker="o", color="w", markerfacecolor=palette[k], markeredgecolor="black", markeredgewidth=0.8, markersize=5.5, label=k)
+                        for k in ["Activating", "Repressing", "Zero"]
+                    ]
+                    ax_strip.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=11, bbox_to_anchor=(x_coord_legend, y_coord_legend))
+
+                else: 
+                    ax_strip.legend_.remove()  
                 ax_strip.grid(axis='y', linestyle='--', which='major', alpha=0.4, linewidth=0.5)
 
                 ax_strip.set_title(f"{cell_line}", fontsize=16, pad=15, x= 0.72)
@@ -4134,44 +4136,6 @@ class FirstOrderShapInvestigator:
             logger.success(f"Specialized global SHAP for mode {mode}, condition {condition}, and underlying_data {underlying_data} saved to {OUTPUT_FILE}")
             return specialized_global_SHAP
 
-    
-    def create_supplementary_tables_of_bound_global_shap_metrics(self): 
-        modes = {
-            "Signed-Local-SHAP-Mean-Bound-Only": "Avg. SHAP", 
-            "Bound-Only": "Avg. |SHAP|"
-        }
-        condition = None
-        underlying_data = "Unique-Binding"
-
-        for mode in modes: 
-            raw_pkl_file = self.CACHE_INFO["specialized_global_SHAP"][mode][condition][underlying_data]
-            with open(raw_pkl_file, "rb") as f:
-                specialized_global_SHAP = pickle.load(f)
-
-            long_tables = []
-            for cell_line, cell_line_df in specialized_global_SHAP.items():
-
-                position_col = cell_line_df.index.name 
-                long_df = (
-                    cell_line_df
-                    .reset_index()
-                    .melt(id_vars=position_col, var_name="RBP", value_name=modes[mode])
-                    .rename(columns={position_col: "Position"})
-                )
-                long_df["Feature"] = long_df["RBP"].astype(str) + "_" + long_df["Position"].astype(str)
-                long_df["Cell Line"] = cell_line
-                long_df = long_df[["Feature", "Cell Line", "RBP", "Position", modes[mode]]]
-                long_tables.append(long_df)
-
-            supplementary_df = pd.concat(long_tables, axis=0, ignore_index=True).sort_values(by=["Feature", "Cell Line"])
-            supplementary_df.to_csv(
-                self.SUPPLEMENTARY_TABLES[mode],
-                index=False, 
-                sep="\t", 
-            )
-
-        logger.success("Finished creating Supplementary Tables Bound Global SHAP Metrics.")
-
 
     def plot_specialized_vs_regular_global_SHAP(self, underlying_data=None):
         assert underlying_data == "Unique-Binding", "Currently only 'Unique-Binding' is supported for underlying_data"
@@ -6327,7 +6291,7 @@ class FirstOrderShapInvestigator:
         }
 
         table = (
-            great_tables.GT(performance_df)
+            great_tables.GT(performance_df, id="avg_performance_table")
             .tab_header(
                 title="Performance Across Top 5 Models",
                 subtitle="Mean ± Standard Deviation"
@@ -7921,13 +7885,12 @@ class FirstOrderShapInvestigator:
     def is_position_3_4_activating_and_others_repressing(self): 
 
         BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["Bound Local SHAP Values"]
-        NOT_BOUND_LOCAL_SHAP = self.CACHE_INFO["position_3_4_activating_and_others_repressing"]["NOT Bound Local SHAP Values"]
 
-        if Path(BOUND_LOCAL_SHAP).exists() and Path(NOT_BOUND_LOCAL_SHAP).exists():
+        if Path(BOUND_LOCAL_SHAP).exists(): 
 
             logger.info("FROM CACHE: loading dataframes and plotting...")
             
-            for file_path, col_name in [(BOUND_LOCAL_SHAP, "Bound Local SHAP"), (NOT_BOUND_LOCAL_SHAP, "NOT Bound Local SHAP")]:
+            for file_path, col_name in [(BOUND_LOCAL_SHAP, "Bound Local SHAP")]:
                 df = pl.read_csv(file_path, separator="\t").to_pandas()
 
                 position_order = sorted(df["Position"].unique())
@@ -8293,7 +8256,6 @@ class FirstOrderShapInvestigator:
             logger.info("No cache found. Compiling dataframe with local SHAP values by binding value, per position, per cell line...")
             
             file_to_binding_value = {
-                NOT_BOUND_LOCAL_SHAP: 0,
                 BOUND_LOCAL_SHAP: 1
             }
 
@@ -8306,8 +8268,6 @@ class FirstOrderShapInvestigator:
 
                 if key == BOUND_LOCAL_SHAP:
                     col_name = "Bound Local SHAP"
-                elif key == NOT_BOUND_LOCAL_SHAP:
-                    col_name = "NOT Bound Local SHAP"
         
                 # Accumulate all cell line/position/SHAP values into a single DataFrame
                 all_rows = []
@@ -9737,7 +9697,7 @@ class FirstOrderShapInvestigator:
                             sub = df[
                                 (df["Cell Line"] == cell_line) &
                                 (df["rMATS FDR"] <= fdr_thr) &
-                                (df["dPSI"].abs() >= dpsi_thr) &
+                                (df["dPSI"].abs() > dpsi_thr) &
                                 (df["Bound Local SHAP"].abs() >= delta_shap_thr)
                             ].copy(deep=True)
 
@@ -9756,12 +9716,12 @@ class FirstOrderShapInvestigator:
                                 "percentages": pct_df
                             }
 
-                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>={dpsi_thr}, |ΔSHAP|>={delta_shap_thr}, FDR<={fdr_thr}")
+                            logger.info(f"Data Mode: {data_mode}, Cell Line: {cell_line}, |dPSI|>{dpsi_thr}, |ΔSHAP|>={delta_shap_thr}, FDR<={fdr_thr}")
                             display(pct_df)
 
                         fig.suptitle(
                             f'{note_prefix}"{data_mode.capitalize()}":\n{DPSI_SYMBOL} Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign Confusion Matrix\n\n'
-                            f"|{DPSI_SYMBOL}|>={dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>={delta_shap_thr}, rMATS FDR<={fdr_thr}",
+                            f"|{DPSI_SYMBOL}|>{dpsi_thr}, |{DELTA_LOCAL_SHAP_SYMBOL}|>={delta_shap_thr}, rMATS FDR<={fdr_thr}",
                             fontsize=10,
                             y=0.94
                         )
@@ -9871,7 +9831,7 @@ class FirstOrderShapInvestigator:
                                 sub = df[
                                         (df["Cell Line"] == cell_line) &
                                         (df["rMATS FDR"] <= fdr_thr) &
-                                        (df["dPSI"].abs() >= dpsi_thr) &
+                                        (df["dPSI"].abs() > dpsi_thr) &
                                         (df["CTRL - KD Model Prediction (Probability)"].abs() >= delta_thr)
                                     ].copy(deep=True)
                                 
@@ -10179,7 +10139,7 @@ class FirstOrderShapInvestigator:
 
 
     def plot_dpsi_vs_local_SHAP_mcc_as_barplot(self): 
-        logger.warning('"Test Candidate Features" are ignored and instead all features (i.e. "Test") are used\n\n')
+        logger.info('All features are used with rows only coming from "Test" data.\n\n')
 
         INPUT_FILE = self.CACHE_INFO["fishers_exact_between_dpsi_sign_and_delta_local_SHAP_sign"]["test"]
         results_df = pd.read_csv(INPUT_FILE, sep="\t")
@@ -10255,10 +10215,10 @@ class FirstOrderShapInvestigator:
                     labelpad=5
                 )
 
-            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI >= {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
+            fig.suptitle(f"\nNOTE 1: Using all 'Test' Data\nNOTE 2: dPSI > {CHOSEN_DPSI_THRESHOLD} and rMATS FDR <= {CHOSEN_FDR_THRESHOLD} used for these bars\n\nMCC values for 'Test' dPSI Sign vs {DELTA_LOCAL_SHAP_SYMBOL} Sign\nby CTRL Bound Local SHAP Threshold",
                         fontsize=4, y=0.98)
             
-            fig.text(0.27, .83, '"Test" Data', ha='left', fontsize=11)
+            fig.text(0.24, .83, 'Test Data', ha='left', fontsize=13)
 
             fig.supxlabel("MCC", fontsize=12, y=0.065, x=0.57, fontweight='bold')
             fig.supylabel(f"{DELTA_LOCAL_SHAP_SYMBOL} Threshold", fontsize=12, x=0.04, y=0.51, fontweight='bold')
@@ -10448,6 +10408,392 @@ class FirstOrderShapInvestigator:
 
             plt.show()
 
+
+    def make_table_of_positional_preference_and_signed_bound_global_shap(self): 
+
+        OUTPUT_FILE = f"{self.FIGURES['positional_preferences_dir']}/positional_preference_vs_signed_bound_shap_scatterplot_data.tsv"
+
+        if Path(OUTPUT_FILE).exists():
+            logger.success(f"FROM CACHE: retrieving positional preference and signed bound global SHAP data from {OUTPUT_FILE}")
+            return pd.read_csv(OUTPUT_FILE, sep="\t") 
+        
+        else: 
+            logger.info("Computing positional preference and signed bound global SHAP...")
+
+            final_shap_lazy = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)
+            signed_bound_global_shap = self.calculate_specialized_global_SHAP(
+                mode="Signed-Local-SHAP-Mean-Bound-Only",
+                condition=None,
+                underlying_data="Unique-Binding"
+            )
+
+            # Cache schemas once
+            schemas = {
+                cell_line: set(final_shap_lazy[cell_line].collect_schema().names())
+                for cell_line in self.cell_lines
+            }
+
+            preference_and_shap_rows = []
+
+            for cell_line in self.cell_lines:
+                schema = schemas[cell_line]
+                shap_table = signed_bound_global_shap[cell_line]
+
+                # Get all binding columns and compute sums efficiently
+                binding_cols = [col for col in schema if col.endswith("_binding")]
+                sums = final_shap_lazy[cell_line].select([
+                    pl.col(col).sum().alias(col)
+                    for col in binding_cols
+                ]).collect().to_dicts()[0]
+
+                # Extract RBPs and group sums by RBP and position
+                rbp_pos_sums = {}
+                for col, val in sums.items():
+                    rbp = col.split("_")[0]
+                    pos = int(col.split("_")[1])
+                    if rbp not in rbp_pos_sums:
+                        rbp_pos_sums[rbp] = {}
+                    rbp_pos_sums[rbp][pos] = val
+
+                for rbp in sorted(rbp_pos_sums.keys()):
+                    pos_sums = rbp_pos_sums[rbp]
+                    total_binding = sum(pos_sums.values())
+                    if total_binding == 0:
+                        continue
+
+                    for pos, binding_val in pos_sums.items():
+                        pct = (binding_val / total_binding) * 100
+                        signed_bound_shap_val = shap_table.at[pos, rbp]
+
+                        if not np.isnan(signed_bound_shap_val):
+                            preference_and_shap_rows.append({
+                                "RBP": rbp,
+                                "Cell Line": cell_line,
+                                "Position": pos,
+                                "Positional Preference (%)": pct,
+                                "Avg. SHAP": signed_bound_shap_val,
+                            })
+
+            combined_df = pd.DataFrame(preference_and_shap_rows).sort_values(by=["RBP", "Position", "Cell Line"]).reset_index(drop=True)
+            
+            combined_df.to_csv(
+                OUTPUT_FILE,
+                sep="\t",
+                index=False
+            )
+
+            return combined_df
+
+
+    def create_scatterplot_of_positional_preference_vs_signed_bound_global_shap(self): 
+        
+        combined_df = self.make_table_of_positional_preference_and_signed_bound_global_shap()
+
+        palette = {
+            "HepG2": "#91D1C2",
+            "K562": "#F39B7F",
+        }
+
+        with plt.style.context("../../paper.mplstyle"):
+            fig, axes = plt.subplots(
+                nrows=2,
+                ncols=1,
+                sharex=False, 
+                sharey=True,
+                figsize=(5,9),
+                dpi=150,
+            )
+
+            for col_idx, cell_line in enumerate(self.cell_lines):
+                ax = axes[col_idx]
+                plot_data = combined_df[combined_df["Cell Line"] == cell_line].copy()
+                
+                # Create scatterplot
+                ax.scatter(
+                    plot_data["Positional Preference (%)"],
+                    plot_data["Avg. SHAP"],
+                    s=20,
+                    alpha=0.4,
+                    color=palette[cell_line],
+                    edgecolor='black',
+                    linewidth=0.3
+                )
+                
+                # Calculate correlations
+                x_vals = plot_data["Positional Preference (%)"].values
+                y_vals = plot_data["Avg. SHAP"].values
+                
+                spearman_corr, spearman_pval = spearmanr(x_vals, y_vals)
+                pearson_corr, pearson_pval = pearsonr(x_vals, y_vals)
+                n_points = len(plot_data)
+                
+                # Add text annotation
+                textstr = f"Points: {n_points}\nSpearman = {spearman_corr:.3f}\nPearson = {pearson_corr:.3f}"
+                ax.text(
+                    0.95, 0.9, textstr,
+                    transform=ax.transAxes,
+                    fontsize=11,
+                    verticalalignment='top',
+                    horizontalalignment='right',
+                    bbox=dict(boxstyle='round', alpha=0.8, facecolor='white')
+                )
+
+                ax.set_xlim(-5, 105)
+                
+                ax.set_xlabel("RBP Positional Preference (%)", fontsize=14, fontweight='bold')
+                ax.set_ylabel("Avg. SHAP", fontsize=14, fontweight='bold')
+                ax.set_title(f"{cell_line}", fontsize=16)
+                
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.grid(axis='y', linestyle='--', which='major', alpha=0.6, linewidth=0.5)
+                ax.tick_params(axis='both', labelsize=11)
+
+            plt.tight_layout(h_pad=6)
+            plt.savefig(
+                f"{self.FIGURES['positional_preferences_dir']}/positional_preference_vs_signed_bound_shap_scatterplot.pdf",
+                dpi=600,
+                bbox_inches='tight'
+            )
+            plt.show()
+
+
+    def make_composite_table_of_individual_feature_shap_metrics_and_activity_scores(self): 
+        logger.info("This functions pulls in results from work done by @reeceaa on calculating 'Activity' scores for RBPs.")
+        
+        signed_mean_bound_only = self.calculate_specialized_global_SHAP(
+            mode="Signed-Local-SHAP-Mean-Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+        bound_only = self.calculate_specialized_global_SHAP(
+            mode="Bound-Only",
+            condition=None,
+            underlying_data="Unique-Binding"
+        )
+
+        shap_rows = []
+        for cell_line in self.cell_lines:
+            signed_df = signed_mean_bound_only[cell_line].copy()
+            bound_df = bound_only[cell_line].copy()
+
+            signed_long = (
+                signed_df
+                .rename_axis("position")
+                .reset_index()
+                .melt(
+                    id_vars="position",
+                    var_name="rbp",
+                    value_name="signed_mean_bound_only"
+                )
+            )
+
+            bound_long = (
+                bound_df
+                .rename_axis("position")
+                .reset_index()
+                .melt(
+                    id_vars="position",
+                    var_name="rbp",
+                    value_name="bound_only"
+                )
+            )
+
+            merged_shap = signed_long.merge(bound_long, on=["position", "rbp"], how="inner", validate="1:1")
+            merged_shap["cell_line"] = cell_line
+            merged_shap["feature"] = merged_shap["rbp"] + "_" + merged_shap["position"].astype(str) 
+
+            assert len(merged_shap) == len(bound_long) == len(signed_long)
+            
+            shap_rows.append(merged_shap)
+
+        shap_metrics_df = pd.concat(shap_rows, ignore_index=True)
+
+        activity_file = "../../08_reece_anderson_biological_validations/2_RBP_Activity/rbp_activity_heatmap.csv"
+        activity_df = pd.read_csv(activity_file)
+        activity_df.columns = [str(col).strip() for col in activity_df.columns]
+
+        lower_to_actual = {col.lower(): col for col in activity_df.columns}
+        rbp_col = lower_to_actual.get("rbp")
+        cell_line_col = lower_to_actual.get("cell line")
+
+        assert rbp_col is not None, "Could not find an 'rbp' column in rbp_activity_heatmap.csv"
+        assert cell_line_col is not None, "Could not find a 'cell line' column in rbp_activity_heatmap.csv"
+
+        position_cols = [col for col in activity_df.columns if str(col).strip() in {str(i) for i in range(1, 7)}]
+        assert len(position_cols) ==6, f"Expected to find 6 position columns (1-6) in rbp_activity_heatmap.csv, but found {len(position_cols)}: {position_cols}"
+                
+        activity_long = activity_df.melt(
+            id_vars=[rbp_col, cell_line_col],
+            value_vars=position_cols,
+            var_name="position",
+            value_name="activity_score"
+        ).rename(columns={
+            rbp_col: "rbp",
+            cell_line_col: "cell_line"
+        })
+
+        activity_long["position"] = activity_long["position"].astype(int)
+        activity_long["feature"] = activity_long["rbp"] + "_" + activity_long["position"].astype(str)
+
+        composite_df = (
+            shap_metrics_df
+            .merge(
+                activity_long[["cell_line", "feature", "activity_score"]],
+                on=["cell_line", "feature"],
+                how="left"
+            )
+            [["cell_line", "feature", "rbp", "position", "signed_mean_bound_only", "bound_only", "activity_score"]]
+            .sort_values(["cell_line", "rbp", "position"])
+            .rename(
+                columns = {
+                    "cell_line": "Cell Line",
+                    "feature": "Feature",
+                    "rbp": "RBP",
+                    "position": "Position",
+                    "signed_mean_bound_only": "Avg. SHAP", 
+                    "bound_only": "Avg. |SHAP|",
+                    "activity_score": "Activity Score"
+                }
+            )
+            .reset_index(drop=True)
+        )
+
+        OUTPUT_FILE = self.SUPPLEMENTARY_TABLES["shap_metrics_and_activity_score"]
+        composite_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+
+        logger.success(f"Saved composite table of SHAP metrics and activity scores to {OUTPUT_FILE} with {composite_df.shape[0]} rows")
+        return composite_df
+
+    
+    def check_signed_bound_global_shap_as_function_of_sequencing_depth_decile(self): 
+
+        OUTPUT_FILE = self.CACHE_INFO["signed_bound_global_shap_by_sequencing_depth_decile"]
+
+
+        if Path(OUTPUT_FILE).exists():
+            result_df = pd.read_csv(OUTPUT_FILE, sep="\t")
+            # result_df = result_df[result_df["Signed Bound Global SHAP"].abs() > 0.1]
+            
+            count_metrics = ["Inclusion Counts", "Total Read Counts"]
+            SYMBOL = self.latex_symbols["Unique-Binding"]["Signed-Local-SHAP-Mean-Bound-Only"]
+
+            for mode in ["All Positions", "Positions 3 & 4"]:   
+            
+                fig, axes = plt.subplots(
+                    nrows=len(self.cell_lines), ncols=len(count_metrics),
+                    figsize=(7* len(count_metrics), 5 * len(self.cell_lines)),
+                    sharex=True, sharey=True, squeeze=False, dpi=300
+                )
+
+                for row_idx, cell_line in enumerate(self.cell_lines):
+                    for col_idx, count_metric in enumerate(count_metrics):
+                        ax = axes[row_idx, col_idx]
+                        sub_df = result_df[
+                            (result_df["Cell Line"] == cell_line) &
+                            (result_df["Count Metric"] == count_metric)
+                        ]
+
+                        if mode == "Positions 3 & 4":
+                            sub_df = sub_df[sub_df["Feature"].str.endswith(("_3", "_4"), na=False)]
+
+                        sns.violinplot(
+                            data=sub_df, x="Decile", y="Signed Bound Global SHAP", color="lightgray", cut=0, ax=ax
+                        )
+
+                        # Line per feature tracking change across deciles (categorical x positions are 0-indexed)
+                        for feature, feat_df in sub_df.groupby("Feature"):
+                            feat_df = feat_df.sort_values("Decile")
+                            ax.plot(
+                                feat_df["Decile"].astype(int) - 1, feat_df["Signed Bound Global SHAP"],
+                                color="tab:blue", alpha=0.3, linewidth=0.5, marker="o", markersize=1
+                            )
+
+                        ax.grid(visible=True, which='major', axis='y', linestyle='--', alpha=1, linewidth=0.7, color='red', zorder=0)
+
+                        ax.set_xlabel("Decile")
+
+                        if col_idx == 0:
+                            ax.set_ylabel(f"{cell_line}", fontweight='bold', fontsize=14)
+                        
+                        if row_idx ==0: 
+                            ax.set_title(count_metric, fontweight='bold', fontsize=14)
+            
+
+                fig.suptitle(f"{mode}\n{SYMBOL} by Sequencing-Depth Decile", fontsize=18, y=1.01)
+                plt.tight_layout()
+                plt.show()
+
+
+        else: 
+            final_shap_lazy = self.load_final_SHAP_data(underlying_data="All-Data", as_lazyframe=True)        
+            exon_cols = ["Upstream Exon", "Main Exon", "Downstream Exon"]
+            count_cols = ["Inclusion Counts", "Total Read Counts"]
+
+            result_rows = []
+
+            for count_col in tqdm.tqdm(count_cols, desc="Count metric", ):
+
+                for cell_line in tqdm.tqdm(self.cell_lines, desc="Cell line", leave=False):
+
+                    lf = final_shap_lazy[cell_line]
+                    schema = lf.collect_schema().names()
+
+                    required_cols = exon_cols + [count_col, "RBP_KD_Target"]
+                    missing_cols = [col for col in required_cols if col not in schema]
+                    assert not missing_cols, f"Missing columns in {cell_line} final SHAP cache: {missing_cols}"
+
+                    # Work in memory and temporarily add each exon combination's decile
+                    df = lf.filter(pl.col("RBP_KD_Target") == "CTRL").collect()
+                    combination_means = df.group_by(exon_cols).agg(
+                        pl.col(count_col).mean().alias("Avg. Depth")
+                    )
+                    
+                    assert combination_means.height != 0, f"No combinations found for {cell_line} under control condition with count column {count_col}"
+
+                    combinations_df = combination_means.to_pandas()
+                    count_ranks = combinations_df["Avg. Depth"].rank(method="average", pct=True)
+                    combinations_df["Decile"] = np.ceil(count_ranks * 10).clip(1, 10).astype(int)
+                    
+                    original_size = df.height
+                    df = df.join(
+                        pl.from_pandas(combinations_df[exon_cols + ["Decile"]]),
+                        on=exon_cols,
+                        how="left",
+                        validate = "m:1"
+                    )
+                    assert df.height == original_size
+
+                    shap_cols = [col for col in df.columns if col.endswith("_shap")]
+
+                    for shap_col in tqdm.tqdm(shap_cols, desc="SHAP feature", leave=False):
+                        binding_col = shap_col.replace("_shap", "_binding")
+                        
+                        feature_values = (
+                            df
+                            .filter(pl.col(binding_col) == 1)
+                            .select(
+                                pl.lit(shap_col.removesuffix("_shap")).alias("Feature"),
+                                pl.col("Decile"),
+                                pl.col(shap_col).alias("Signed Bound Global SHAP"),
+                            )
+                            .group_by(["Feature", "Decile"])
+                            .agg(pl.col("Signed Bound Global SHAP").mean().alias("Signed Bound Global SHAP"))
+                        )
+                        for row in feature_values.iter_rows(named=True):
+                            result_rows.append({
+                                "Cell Line": cell_line,
+                                "Count Metric": count_col,
+                                **row,
+                            })
+
+            result_df = pd.DataFrame(result_rows)
+            result_df = result_df[[
+                "Cell Line", "Count Metric", "Feature", "Decile", "Signed Bound Global SHAP"
+            ]].sort_values(["Cell Line", "Count Metric", "Feature", "Decile"]).reset_index(drop=True)
+
+            result_df.to_csv(OUTPUT_FILE, sep="\t", index=False)
+            logger.success(f"Saved decile-stratified signed bound global SHAP values to {OUTPUT_FILE}")            
 
 
 
@@ -11099,11 +11445,11 @@ if __name__ == "__main__":
 
     if args.parallelize:
 
-        sbatch_prefix = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
-        sbatch_command = f"{sbatch_prefix} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
+        SBATCH_PREFIX = "sbatch --partition=standard -n16 --mem=128GB --account=platiglab"
+        SBATCH_COMMAND = f"{SBATCH_PREFIX} --job-name={args.parallelize} --output=../SLURM_logs/{args.parallelize}.out --error=../SLURM_logs/{args.parallelize}.err --wrap='python3.11 {__file__} --job_type {args.parallelize}'"
         
-        logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-        subprocess.run(sbatch_command, shell=True, check=True)
+        logger.info(f"Submitting job with sbatch command:\n\n{SBATCH_COMMAND}")
+        subprocess.run(SBATCH_COMMAND, shell=True, check=True)
     
     elif args.job_type: 
 
@@ -11200,15 +11546,15 @@ if __name__ == "__main__":
 
             for bw_adjust in BW_ADJUST_VALS:
                 for levels in LEVELS_VALS:
-                    sbatch_command = (
+                    KDE_PLOT_SLURM_COMMAND = (
                         "sbatch -N2 --partition=parallel -n4 --mem=16GB --account=platiglab_paid --time=23:00:00 "
                         f"--job-name=actual_vs_pred_kde_bw{bw_adjust}_levels{levels} "
                         f"--output=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.out "
                         f"--error=../SLURM_logs/actual_vs_pred_kde_bw{bw_adjust}_levels{levels}.err "
                         f"--wrap='python3.11 {__file__} --create_actual_vs_pred_kde_plots \"{bw_adjust} {levels}\"'"
                     )
-                    logger.info(f"Submitting job with sbatch command:\n\n{sbatch_command}")
-                    subprocess.run(sbatch_command, shell=True, check=True)
+                    logger.info(f"Submitting job with sbatch command:\n\n{KDE_PLOT_SLURM_COMMAND}")
+                    subprocess.run(KDE_PLOT_SLURM_COMMAND, shell=True, check=True)
             
         else: 
 

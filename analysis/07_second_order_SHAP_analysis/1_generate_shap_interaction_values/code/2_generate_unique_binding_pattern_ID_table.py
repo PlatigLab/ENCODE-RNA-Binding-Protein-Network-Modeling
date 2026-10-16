@@ -4,7 +4,7 @@ import polars as pl, numpy as np
 
 def main(): 
 
-    with open("1_metadata_variables.yaml", 'r') as f:
+    with open("./1_metadata_variables.yaml", 'r') as f:
         metadata_variables = yaml.safe_load(f)
 
     for cell_line in metadata_variables["CELL_LINES"]:

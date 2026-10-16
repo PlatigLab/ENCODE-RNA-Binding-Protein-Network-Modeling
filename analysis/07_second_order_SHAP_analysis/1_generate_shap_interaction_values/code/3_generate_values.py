@@ -5,7 +5,7 @@ import shap, polars as pl, numpy as np
 
 def main(cell_line=None, unique_binding_pattern_ID_range=None):
     
-    with open("1_metadata_variables.yaml", 'r') as f:
+    with open("./1_metadata_variables.yaml", 'r') as f:
         metadata_variables = yaml.safe_load(f)
 
     assert cell_line is not None and unique_binding_pattern_ID_range is not None, "Both cell_line and unique_binding_pattern_ID_range must be provided."
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
     if args.run_all:
         
-        with open("1_metadata_variables.yaml", 'r') as f:
+        with open("./1_metadata_variables.yaml", 'r') as f:
             metadata_variables = yaml.safe_load(f)
         
         for cell_line in metadata_variables["CELL_LINES"]:
@@ -220,9 +220,10 @@ if __name__ == "__main__":
                     partition = "standard" if partition_toggle % 2 == 0 else "parallel -N2"
                     partition_toggle += 1
 
+                    SBATCH_PREFIX = f"sbatch --account=platiglab_paid --partition={partition} -n16 --mem=128GB --time=8:00:00 --out='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.out' --error='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.err'"
+
                     os.system(
-                        f"sbatch --account=platiglab_paid --partition={partition} -n16 --mem=128GB --time=8:00:00 --out='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.out' --error='../SLURM_logs/interaction_value_generation/{cell_line}_UBP_IDs_{start_id}-{end_id}_shap_interactions.err'"
-                        f" --wrap='python3.11 {__file__} --cell_line {cell_line} --unique_binding_pattern_ID_range {unique_binding_pattern_ID_range}'"
+                        f"{SBATCH_PREFIX} --wrap='python3.11 {__file__} --cell_line {cell_line} --unique_binding_pattern_ID_range {unique_binding_pattern_ID_range}'"
                     )        
 
     else: 

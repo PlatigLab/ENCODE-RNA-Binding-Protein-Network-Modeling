@@ -38,7 +38,7 @@ class EclipToSpliceJunctionAssigner:
     # final order of columns for BED file
     final_bed_order = ["chr", "start", "end", "name", "score", "strand"]
     # glob path to all SE files 
-    SE_glob = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/**/SE*.txt"
+    SE_GLOB = "/project/PlatigLab/data/collaborators/BWH/1_ENCODE_shRNA_RBP_KD_2024-04-hg38-gencode-v29/**/SE*.txt"
 
     # distance thresholds for assigning eCLIP peaks to splice junctions, in base pairs
     thresholds = [25, 50, 75, 100, 150, 200, 250, 500, 1000]
@@ -188,7 +188,7 @@ class EclipToSpliceJunctionAssigner:
 
             # get paths to all SE event rMATS files
             SE_files = glob.glob(
-                self.SE_glob, 
+                self.SE_GLOB, 
                 recursive=True
             )
             SE_files = [
@@ -337,6 +337,8 @@ class EclipToSpliceJunctionAssigner:
 
     
     def get_eCLIP_peaks(self): 
+        PEAKS_PATH = "/project/PlatigLab/data/ENCORE/eCLIP/encode/peaks/"
+        
         # key is cell line and value is all peaks 
         # for RBPs with eCLIP in that cell line
         all_peaks = {}
@@ -366,7 +368,7 @@ class EclipToSpliceJunctionAssigner:
                 
                 # get the file associated with that cell line and RBP 
                 file = glob.glob(
-                    f"/project/PlatigLab/data/ENCORE/eCLIP/encode/peaks/{tmp_metadata.iloc[0, 0]}.bed.gz"
+                    f"{PEAKS_PATH}/{tmp_metadata.iloc[0, 0]}.bed.gz"
                 )
                 assert len(file) == 1
                 
@@ -407,7 +409,7 @@ class EclipToSpliceJunctionAssigner:
 
     def run_bedtools_mapping(self): 
 
-        bedtools_path="/project/PlatigLab/software/bedtools-v2.31.1/bin/bedtools"
+        BEDTOOLS_PATH="/project/PlatigLab/software/bedtools-v2.31.1/bin/bedtools"
         
         for cell_line in self.cell_lines: 
 
@@ -415,7 +417,7 @@ class EclipToSpliceJunctionAssigner:
             eclip_peaks = f"../output/bedtools_input/{cell_line}_eclip_peaks.bed"
             sorted_eclip_peaks = f"../output/bedtools_input/{cell_line}_eclip_peaks_sorted.bed"
 
-            result = os.system(f"{bedtools_path} sort -i {eclip_peaks} > {sorted_eclip_peaks}")
+            result = os.system(f"{BEDTOOLS_PATH} sort -i {eclip_peaks} > {sorted_eclip_peaks}")
             assert result == 0, f"bedtools sort failed for {eclip_peaks} with return code {result}"
 
             for type in ['all-events', 'non-overlapping']: 
@@ -424,13 +426,13 @@ class EclipToSpliceJunctionAssigner:
                 # Sort the splice junctions and eCLIP peaks files using bedtools sort
                 sorted_splice_junctions = f"../output/bedtools_input/{cell_line}_{type}_splice_junctions_sorted.bed"
 
-                result = os.system(f"{bedtools_path} sort -i {splice_junctions} > {sorted_splice_junctions}")
+                result = os.system(f"{BEDTOOLS_PATH} sort -i {splice_junctions} > {sorted_splice_junctions}")
                 assert result == 0, f"bedtools sort failed for {splice_junctions} with return code {result}"
 
                 # get the output file 
                 output_file = f"../output/peaks_to_splice_junctions/{cell_line}_{type}_peaks_to_splice_junctions.bed"
                 # run bedtools intersect 
-                result = os.system(f"{bedtools_path} closest -a {sorted_eclip_peaks} -b {sorted_splice_junctions} -s -d -t all > {output_file}")
+                result = os.system(f"{BEDTOOLS_PATH} closest -a {sorted_eclip_peaks} -b {sorted_splice_junctions} -s -d -t all > {output_file}")
                 assert result == 0, f"bedtools intersect failed for {sorted_eclip_peaks} and {sorted_splice_junctions} with return code {result}"
 
                 os.remove(splice_junctions)

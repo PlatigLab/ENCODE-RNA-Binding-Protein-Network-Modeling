@@ -38,33 +38,41 @@ class SecondOrderShapNetworkAnalyzer:
 
     def load_features(self):
 
-        rbp_feature_metadata = {}
-        for cell_line in self.CONFIG["CELL_LINES"]:
-            rbp_feature_metadata[cell_line] = {}
+        OUTPUT_FILE = self.CONFIG["RBP_FEATURE_INFO_FILE"]
 
-            files = glob.glob(
-                f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
-            )
+        if not pathlib.Path(OUTPUT_FILE).exists(): 
+            logger.info("Cached RBP feature metadata file not found. Generating RBP feature metadata from interaction values files...")
+            rbp_feature_metadata = {}
+            for cell_line in self.CONFIG["CELL_LINES"]:
+                rbp_feature_metadata[cell_line] = {}
 
-            columns = pl.scan_ipc(files[0]).collect_schema().names()
-            shap_cols = [col for col in columns if col.endswith('-shap')]
-            assert len(shap_cols) == len(columns) - 1, "Expected all columns except index to be SHAP value columns."
-
-            rbp_feature_metadata[cell_line]["Features"] = shap_cols
-
-            rbp_feature_metadata[cell_line]["RBPs"] = sorted(
-                list(
-                    {
-                        col.split("_")[0] for col in shap_cols if col.endswith("-main-shap")
-                    }
+                files = glob.glob(
+                    f"{self.CONFIG['INTERACTION_VALUES_DIR']}/{cell_line}_*.feather"
                 )
-            )
 
-        output_file = self.CONFIG["RBP_FEATURE_INFO_FILE"]
-        with open(output_file, "w") as f:
-            json.dump(rbp_feature_metadata, f, indent=4)
+                columns = pl.scan_ipc(files[0]).collect_schema().names()
+                shap_cols = [col for col in columns if col.endswith('-shap')]
+                assert len(shap_cols) == len(columns) - 1, "Expected all columns except index to be SHAP value columns."
 
-        self.rbp_feature_metadata = rbp_feature_metadata
+                rbp_feature_metadata[cell_line]["Features"] = shap_cols
+
+                rbp_feature_metadata[cell_line]["RBPs"] = sorted(
+                    list(
+                        {
+                            col.split("_")[0] for col in shap_cols if col.endswith("-main-shap")
+                        }
+                    )
+                )
+
+            with open(OUTPUT_FILE, "w") as f:
+                json.dump(rbp_feature_metadata, f, indent=4)
+
+            self.rbp_feature_metadata = rbp_feature_metadata
+
+        else:             
+            logger.success(f"FROM CACHE: loading RBP feature metadata from '{OUTPUT_FILE}'...")
+            with open(OUTPUT_FILE, "r") as f:
+                self.rbp_feature_metadata = json.load(f)
 
 
     def load_ppi(self):
@@ -75,6 +83,7 @@ class SecondOrderShapNetworkAnalyzer:
         cols = pl.scan_csv(OUTPUT_FILE, separator="\t").collect_schema().names()
         dtypes = {col: pl.String if col in ["Interaction", "RBP 1", "RBP 2"] else pl.Boolean for col in cols}
 
+        logger.success(f"FROM CACHE: loading PPI table from '{OUTPUT_FILE}'...")
         self.ppi = pl.read_csv(OUTPUT_FILE, separator="\t", schema_overrides=dtypes)
 
 
@@ -1569,9 +1578,13 @@ class SecondOrderShapNetworkAnalyzer:
                             # For a given (Cell Line, Sorted RBP Pair), PPI should be consistent across summed rows
                             assert (curve_input["PPI_n_unique"] == 1).all(), "Inconsistent PPI labels found within a (Cell Line, Sorted RBP Pair) group."
                             curve_input = curve_input.drop("PPI_n_unique")
-                            
-                        # Sort by shap_col_name_for_curves descending
-                        curve_input = curve_input.sort([shap_col_name_for_curves, "Sorted RBP Pair"], descending=True)
+
+                        # Sort by Abs. SHAP Value and then by Column or Sorted RBP Pair for deterministic ordering 
+                        if "Column" in curve_input.columns:
+                            final_sorting_columns = [shap_col_name_for_curves, "Column"]
+                        else:
+                            final_sorting_columns = [shap_col_name_for_curves, "Sorted RBP Pair"]
+                        curve_input = curve_input.sort(final_sorting_columns, descending=True)
                         
                         # Validation assertions
                         assert curve_input.null_count().sum_horizontal().item() == 0, "Nulls found in the dataframe."
@@ -1709,17 +1722,18 @@ class SecondOrderShapNetworkAnalyzer:
                                     data = curve_data[plot_type][cell_line_iterated][ppi_source][ppi_type]
                                     
                                     if cell_line_combined: 
-                                        prefix_label = f"{cell_line_iterated} - "
+                                        cleaned_ppi_source = ppi_source.replace("Street et al ", "").replace("IP/SEC-MS (Both)", "IP & SEC-MS")
+                                        prefix_label = f"{cell_line_iterated} - {cleaned_ppi_source}"
                                     else:
-                                        prefix_label = ""
+                                        prefix_label = f"{ppi_source} & {ppi_type}"
 
                                     if curve_type == "roc":
-                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['roc_auc']:.3f})".replace(" | ", " "), alpha=0.8)
+                                        ax.plot(data["fpr"], data["tpr"], label=f"{prefix_label} (AUC={data['roc_auc']:.3f})".replace(" | ", " "), alpha=0.8)
                                     else:
                                         ax.plot(
                                             data["recall"],
                                             data["precision"],
-                                            label=f"{prefix_label}{ppi_source} & {ppi_type} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]".replace(" | ", " "),
+                                            label=f"{prefix_label} (AUC={data['pr_auc']:.3f}) [Baseline={data['baseline']:.3f}]".replace(" | ", " "),
                                             alpha=0.8
                                         )
                         
@@ -1787,16 +1801,17 @@ class SecondOrderShapNetworkAnalyzer:
                 plt.show()  
     
 
-    def plot_all_roc_and_pr_curve_combinations_for_rbp_specific_max_value(self, metric = None):
+    def plot_all_roc_and_pr_curve_combinations_for_rbp_specific_sum_value(self, metric = None):
         assert metric in self.CONFIG["VALID_FEATURE_METRICS"], f"Metric '{metric}' not recognized."
 
         # Only plot RBP-Specific
         curve_data = self.calculate_roc_and_pr_curve_data_for_metric(metric=metric)
-        del curve_data["FEATURE-SPECIFIC"]
 
         plot = self.plot_roc_and_pr_curves_for_metric(
             metric=metric, 
-            curve_data=curve_data, 
+            curve_data= {
+                "RBP-SPECIFIC_SUM_VALUE": curve_data["RBP-SPECIFIC_SUM_VALUE"]
+            },
             figure_file_name_suffix="roc_pr_curves-SUPPLEMENTARY_ALL_COMBINATIONS"
         )
 
@@ -3483,10 +3498,25 @@ class SecondOrderShapNetworkAnalyzer:
         # top row -> PSI violin plots (one subplot per cell line)
         # bottom row -> SHAP averages (one subplot per cell line)
         
-        colors = {
-            "HepG2": "#f39b7f", 
-            "K562": "#f39b7f"
-        }
+        if len(cell_lines) ==2: 
+
+            # Color scheme: 3 unique colors regardless of cell line or plot type
+            color_palette = [
+                "#e64b35", 
+                "#4dbbd5", 
+                "#b09c85"
+            ]  # interaction, feature1, feature2
+
+            interaction_color = color_palette[0]
+            feature_color1 = color_palette[1]
+            feature_color2 = color_palette[2]
+
+        elif len(cell_lines) == 1:
+
+            color_palette = ["#f39b7f"] *3
+            interaction_color = color_palette[0]
+            feature_color1 = color_palette[1]
+            feature_color2 = color_palette[2]
 
         x_axis_tick_fontsize = 12 if len(cell_lines) == 2 else 10.5
         x_axis_line_spacing= 0.5 if len(cell_lines) == 2 else 1.5
@@ -3507,6 +3537,9 @@ class SecondOrderShapNetworkAnalyzer:
                 # --- Top row: violinplot (actual PSI distributions) ---
                 cell_plot_df = plot_df[plot_df["Cell Line"] == cell_line]
 
+                # Create palette for violins: 3 unique colors
+                palette = [interaction_color, feature_color1, feature_color2]
+
                 sns.violinplot(
                     data=cell_plot_df,
                     x="Binding Mode",
@@ -3516,7 +3549,7 @@ class SecondOrderShapNetworkAnalyzer:
                     density_norm='width',
                     inner=None,
                     ax=ax_top,
-                    color= colors[cell_line],
+                    palette=palette,
                 )
 
                 # Add counts and mean values above each violin
@@ -3542,7 +3575,7 @@ class SecondOrderShapNetworkAnalyzer:
 
                 ax_top.set_xticklabels(
                     [
-                        label.get_text().replace("Only", "\nOnly")
+                        label.get_text().replace("Only", "")
                         for label in ax_top.get_xticklabels()
                     ], 
                     linespacing=x_axis_line_spacing
@@ -3550,7 +3583,7 @@ class SecondOrderShapNetworkAnalyzer:
                 ax_top.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
 
                 ax_top.set_ylabel(self.CONFIG["LATEX_SYMBOLS"]["PSI"], fontsize=20, labelpad=10)
-                ax_top.set_xlabel("Binding Category", fontsize=18)
+                ax_top.set_xlabel("", fontsize=18)
 
                 ax_top.set_title(f"{cell_line}", fontsize=18, fontweight='bold', pad=20)
                 ax_top.spines['top'].set_visible(False)
@@ -3559,22 +3592,25 @@ class SecondOrderShapNetworkAnalyzer:
                 # --- Bottom row: barplot (main + interaction SHAP values) ---
                 cell_bar_df = bar_df_bottom[bar_df_bottom["Cell Line"] == cell_line]
 
+                # Create palette for bars: 3 unique colors (interaction, feature1, feature2)
+                bar_palette = [interaction_color, feature_color1, feature_color2]
+
                 sns.barplot(
                     data=cell_bar_df,
                     x="Feature",
                     y="Value",
                     order=feature_names,
                     ax=ax_bottom,
-                    color= colors[cell_line],
+                    palette=bar_palette,
                     edgecolor='black',
                     linewidth=1,
                     width=0.4
                 )
 
                 ax_bottom.axhline(y=0, color='black', linestyle='-', linewidth=1)
-                ax_bottom.set_ylabel("Avg. SHAP (indiv./inter.)", fontsize=16, labelpad=0)
+                ax_bottom.set_ylabel("Avg. SHAP (indiv./inter.)", fontsize=16, labelpad=0, fontweight='bold')
                 ax_bottom.set_title("")
-                ax_bottom.set_xlabel("SHAP Features", fontsize=18)
+                ax_bottom.set_xlabel("")
                 ax_bottom.tick_params(axis='x', labelsize=x_axis_tick_fontsize)
                 ax_bottom.tick_params(axis='y', labelsize=13)
                 ax_bottom.grid(True, alpha=0.3, axis='y')
@@ -3963,7 +3999,7 @@ class SecondOrderShapNetworkAnalyzer:
     
     def create_table_from_systematic_screen_of_interactions_for_psi_changes(self): 
 
-        OUTPUT_FILE = self.CONFIG["INTERACTION_PSI_CHANGES_SCREENING"]
+        OUTPUT_FILE = self.CONFIG["SUPPLEMENTARY_TABLES"]["cell_line_concordant_interactions_screening_table"]
 
         if pathlib.Path(OUTPUT_FILE).exists():
             logger.success("FROM CACHE: loading screened interaction PSI changes table")
@@ -4285,6 +4321,7 @@ class SecondOrderShapNetworkAnalyzer:
                 interaction_feature = interaction, 
                 cell_lines = self.CONFIG["CELL_LINES"], 
             )
+
     
     def find_instances_where_interaction_larger_than_main_effects(self): 
         
@@ -4504,7 +4541,199 @@ class SecondOrderShapNetworkAnalyzer:
             cell_line = row["Cell Line"]
             self.plot_psi_distributions_for_interaction_feature(interaction_feature=interaction, cell_lines = [cell_line])
             
-               
+
+    def create_composite_shap_table(self): 
+        metric_bound_only = "Bound-Only"
+        metric_signed_bound_only = "Signed-Local-SHAP-Mean-Bound-Only"
+
+        table_bound_only = self.retrieve_shap_values_for_metric(metric=metric_bound_only)
+        table_signed_bound_only = self.retrieve_shap_values_for_metric(metric=metric_signed_bound_only)
+
+        val_col_bound_only = f"Value - {metric_bound_only}"
+        val_col_signed_bound_only = f"Value - {metric_signed_bound_only}"
+        ubp_col_bound_only = f"# UBPs - {metric_bound_only}"
+        ubp_col_signed_bound_only = f"# UBPs - {metric_signed_bound_only}"
+
+        ppi_designation_prefixes = ("Rec-Y2H", "Street et al")
+        ppi_designation_cols = [
+            col
+            for col in table_bound_only.columns
+            if col.startswith(ppi_designation_prefixes) and (col in table_signed_bound_only.columns)
+        ]
+
+        excluded_join_cols = {
+            val_col_bound_only,
+            val_col_signed_bound_only,
+            ubp_col_bound_only,
+            ubp_col_signed_bound_only,
+            *ppi_designation_cols,
+        }
+
+        join_cols = [
+            col
+            for col in table_bound_only.columns
+            if (col in table_signed_bound_only.columns) and (col not in excluded_join_cols)
+        ]
+        assert len(join_cols) == 8, "Expected 8 join columns"
+
+        n_rows_bound_only = table_bound_only.height
+        n_rows_signed_bound_only = table_signed_bound_only.height
+
+        composite_table = table_bound_only.join(
+            table_signed_bound_only,
+            on=join_cols,
+            how="inner",
+            validate="1:1",
+        )
+
+        n_rows_composite = composite_table.height
+        assert n_rows_bound_only == n_rows_signed_bound_only == n_rows_composite, (
+            "Row-count mismatch between original metric tables and final joined table: "
+            f"Bound-Only={n_rows_bound_only}, "
+            f"Signed-Local-SHAP-Mean-Bound-Only={n_rows_signed_bound_only}, "
+            f"Composite={n_rows_composite}"
+        )
+
+        for col in ppi_designation_cols:
+            right_col = f"{col}_right"
+            assert (
+                composite_table
+                .select(pl.col(col) == pl.col(right_col))
+                .to_series()
+                .all()
+            ), f"Mismatch found between '{col}' and '{right_col}'."
+
+        assert (
+            composite_table
+            .select(pl.col(ubp_col_bound_only) == pl.col(ubp_col_signed_bound_only))
+            .to_series()
+            .all()
+        ), (
+            f"Mismatch found between '{ubp_col_bound_only}' and '{ubp_col_signed_bound_only}'."
+        )
+
+        composite_table = composite_table.drop(
+            [ubp_col_signed_bound_only, *[f"{col}_right" for col in ppi_designation_cols]]
+        )
+
+        metric_cols = [
+            ubp_col_bound_only,
+            val_col_signed_bound_only,
+            val_col_bound_only,
+        ]
+
+        ordered_cols = (
+            # Keep all original columns except the metric and PPI designation columns first (in their original order)
+            # then add metric columns, then add PPI designation columns at the end
+            [col for col in composite_table.columns if col not in metric_cols and col not in ppi_designation_cols]
+            + metric_cols
+            + [col for col in ppi_designation_cols if col in composite_table.columns]
+        )
+
+        composite_table = (
+            composite_table
+            .select(ordered_cols)
+            .rename(
+                {
+                    ubp_col_bound_only: "# UBPs",
+                    val_col_bound_only: "Avg. |Interaction SHAP|",
+                    val_col_signed_bound_only: "Avg. Interaction SHAP",
+                }
+            )
+            .sort(by=["Cell Line", "RBP 1", "Position 1", "RBP 2", "Position 2"])
+        )
+
+        composite_table.write_csv(
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["composite_shap_metric_table"],
+            separator="\t"
+        )
+
+        logger.success(
+            f"Composite SHAP metric table created with {composite_table.height} rows and saved to {self.CONFIG['SUPPLEMENTARY_TABLES']['composite_shap_metric_table']}"
+        )
+
+
+    def create_cleaned_table_of_cell_line_specific_interaction_larger_than_individual_effects_table(self): 
+        table = self.find_instances_where_interaction_larger_than_main_effects()
+        
+        # Keep first 5 columns and any columns containing "MWU"
+        first_5_cols = table.columns[:5]
+        mwu_cols = [col for col in table.columns if "MWU" in col]
+        cols_to_keep = first_5_cols + mwu_cols
+        
+        cleaned_table = table.select(cols_to_keep).rename(
+            {
+                "interaction_shap": "Interaction SHAP Value",
+                "f1_main_effect": "Feature 1 SHAP Value",
+                "f2_main_effect": "Feature 2 SHAP Value",
+            }
+        ).sort(
+            sorted(mwu_cols),
+            descending=[True, False, False]
+        )
+        
+        cleaned_table.write_csv(
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["cleaned_cell_line_specific_interaction_greater_than_individual_effects_table"],
+            separator="\t"
+        )
+        
+        logger.success(
+            f"Cleaned table created with {cleaned_table.height} rows and {len(cols_to_keep)} columns. "
+            f"Saved to {self.CONFIG['SUPPLEMENTARY_TABLES']['cleaned_cell_line_specific_interaction_greater_than_individual_effects_table']}"
+        )
+        
+        return cleaned_table
+
+
+    def get_number_sign_switching_events(self):
+        def sign_col(col_name: str) -> pl.Expr:
+            return (
+                pl.when(pl.col(col_name).is_null() | pl.col(col_name).is_nan() | (pl.col(col_name) == 0))
+                .then(None)
+                .when(pl.col(col_name) > 0)
+                .then(1)
+                .otherwise(-1)
+            )
+
+        psi_changes_table = pl.read_csv(
+            self.CONFIG["SUPPLEMENTARY_TABLES"]["cell_line_concordant_interactions_screening_table"],
+            separator="\t"
+        ).with_columns([
+            sign_col("HepG2 - Interaction SHAP").alias("interaction_sign"),
+            sign_col("HepG2 - F1 (1st Individual Feature in Interaction) SHAP").alias("f1_sign"),
+            sign_col("HepG2 - F2 (2nd Individual Feature in Interaction) SHAP").alias("f2_sign"),
+        ])
+
+        larger_than_main_effects_table = pl.read_csv(
+            self.CONFIG["INTERACTION_LARGER_THAN_MAIN_EFFECT_SCREENING"],
+            separator="\t"
+        ).with_columns([
+            sign_col("interaction_shap").alias("interaction_sign"),
+            sign_col("f1_main_effect").alias("f1_sign"),
+            sign_col("f2_main_effect").alias("f2_sign"),
+        ])
+
+        sign_switch_filter = (
+            pl.col("interaction_sign").is_not_null()
+            & pl.col("f1_sign").is_not_null()
+            & pl.col("f2_sign").is_not_null()
+        ) & (
+            (pl.col("interaction_sign") != pl.col("f1_sign"))
+            | (pl.col("interaction_sign") != pl.col("f2_sign"))
+            | (pl.col("f1_sign") != pl.col("f2_sign"))
+        )
+
+        psi_changes_count = psi_changes_table.filter(sign_switch_filter).height
+        larger_than_main_effects_count = larger_than_main_effects_table.filter(sign_switch_filter).height
+        total_count = psi_changes_count + larger_than_main_effects_count
+
+        logger.success(
+            f"Sign-switching rows found: PSI changes={psi_changes_count}, "
+            f"larger-than-main-effects={larger_than_main_effects_count}, total={total_count}"
+        )
+
+        return total_count
+
 
 #########################################################
 ############## NON-CLASS FUNCTIONS ######################

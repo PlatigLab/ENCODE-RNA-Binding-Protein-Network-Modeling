@@ -12,10 +12,12 @@ Filters chosen:
 * Genome assembly: GRCh38
 * Available file types: bed narrowPeak
 
+<br>
+<br>
 
 📄 `ENCODE_shRNA_knockdown_FASTQ_metadata.tsv`: 
 
-`shRNA` followed by `RNA-Seq` metadata from `ENCODE` specific to `FASTQ` files. 
+`shRNA KD` followed by `RNA-Seq` metadata from `ENCODE` specific to `FASTQ` files. 
 
 URL: https://www.encodeproject.org/search/?type=Experiment&assay_title=shRNA+RNA-seq&replicates.library.biosample.donor.organism.scientific_name=Homo+sapiens&files.file_type=fastq&status=released
 
